@@ -1,0 +1,165 @@
+name: Build APK
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/**'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Spec S3.1: unit tests are not optional and must pass BEFORE assembling.
+  # The intake funnel and the evidence matcher are pure functions and they are
+  # where correctness lives.
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
+          retention-days: 14
+
+  build:
+    name: Assemble signed release APK
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version_name: ${{ steps.version.outputs.version_name }}
+      version_code: ${{ steps.version.outputs.version_code }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Read version from build file
+        id: version
+        run: |
+          VN=$(grep -oP 'val appVersionName = "\K[^"]+' app/build.gradle.kts)
+          VC=$(grep -oP 'val appVersionCode = \K[0-9]+' app/build.gradle.kts)
+          echo "version_name=$VN" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VC" >> "$GITHUB_OUTPUT"
+          echo "TaskMind $VN ($VC)"
+
+      # Preferred signing path: a keystore held in repository secrets.
+      # If KEYSTORE_BASE64 is not set, app/build.gradle.kts falls back to the
+      # checked-in ci/taskmind-release.jks so that a repo with no secrets
+      # configured still produces an installable, self-updatable APK.
+      - name: Decode keystore from secrets
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "using_secret=true" >> "$GITHUB_OUTPUT"
+            echo "Signing with keystore from repository secrets."
+          else
+            echo "using_secret=false" >> "$GITHUB_OUTPUT"
+            echo "KEYSTORE_BASE64 not set - falling back to ci/taskmind-release.jks."
+          fi
+
+      - name: Assemble release
+        env:
+          TASKMIND_KEYSTORE_FILE: ${{ steps.keystore.outputs.using_secret == 'true' && format('{0}/release.jks', runner.temp) || '' }}
+          TASKMIND_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          TASKMIND_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          TASKMIND_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Stage APK and update manifest
+        id: stage
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -n1)
+          test -n "$APK"
+          cp "$APK" dist/taskmind.apk
+          SHA=$(sha256sum dist/taskmind.apk | cut -d' ' -f1)
+          VN="${{ steps.version.outputs.version_name }}"
+          VC="${{ steps.version.outputs.version_code }}"
+          cat > dist/update.json <<EOF
+          {
+            "versionCode": $VC,
+            "versionName": "$VN",
+            "apkUrl": "https://github.com/${{ github.repository }}/releases/download/v$VN/taskmind.apk",
+            "sha256": "$SHA",
+            "releaseNotes": "Build ${{ github.sha }}",
+            "mandatory": false
+          }
+          EOF
+          cp dist/update.json update.json
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          ls -la dist
+          cat dist/update.json
+
+      - name: Verify the APK is signed
+        run: |
+          set -euo pipefail
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)
+          "$BT/apksigner" verify --print-certs dist/taskmind.apk
+          echo "APK signature OK."
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskmind-apk-${{ steps.version.outputs.version_name }}
+          path: |
+            dist/taskmind.apk
+            dist/update.json
+          retention-days: 90
+
+      # Publishing a Release on every main build is what makes the APK
+      # downloadable on a phone with two taps, and it is the URL the in-app
+      # self-updater (spec S19) points at by default.
+      - name: Publish GitHub Release
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.version.outputs.version_name }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/taskmind.apk dist/update.json --clobber
+          else
+            gh release create "$TAG" dist/taskmind.apk dist/update.json \
+              --title "TaskMind $TAG" \
+              --notes "Automated build of \`${{ github.sha }}\`.
+
+          Install \`taskmind.apk\` on the device (allow installs from unknown sources).
+          SHA-256: \`${{ steps.stage.outputs.sha256 }}\`"
+          fi
