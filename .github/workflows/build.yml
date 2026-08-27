@@ -23,6 +23,10 @@ jobs:
   test:
     name: Unit tests
     runs-on: ubuntu-latest
+    # A hung Gradle build otherwise burns the default six-hour job timeout
+    # before anyone finds out. This build takes minutes; if it takes twenty,
+    # something is wrong and a fast failure is the useful outcome.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -42,7 +46,7 @@ jobs:
       - name: Run unit tests
         run: |
           set -o pipefail
-          ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee build.log
+          ./gradlew testDebugUnitTest --stacktrace --console=plain 2>&1 | tee build.log
 
       - name: Summarise compile and test failures
         if: failure()
@@ -76,6 +80,7 @@ jobs:
     name: Assemble signed release APK
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       version_name: ${{ steps.version.outputs.version_name }}
       version_code: ${{ steps.version.outputs.version_code }}
@@ -124,7 +129,7 @@ jobs:
           TASKMIND_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           TASKMIND_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           TASKMIND_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --stacktrace --console=plain
 
       - name: Stage APK and update manifest
         id: stage
