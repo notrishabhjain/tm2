@@ -2,6 +2,7 @@ package com.taskmind.ai
 
 import com.taskmind.core.LlmJson
 import com.taskmind.core.LogLevel
+import com.taskmind.core.ProviderDiagnosis
 import com.taskmind.core.Stage
 import java.io.File
 
@@ -30,6 +31,7 @@ class ConnectionTester(
             systemPrompt = "Reply with only this JSON and nothing else: {\"ok\":true}",
             userPrompt = "ping",
             maxTokens = 32,
+            trace = TraceContext(kind = RecordedCall.KIND_TEST),
         )
         val elapsed = System.currentTimeMillis() - started
         return when (result) {
@@ -41,7 +43,7 @@ class ConnectionTester(
                     ok("LLM reachable (${config.model}), JSON reply in ${elapsed}ms", elapsed)
                 }
             }
-            else -> fail(explain(result), elapsed)
+            else -> fail(explain(result, config.model), elapsed)
         }
     }
 
@@ -59,9 +61,9 @@ class ConnectionTester(
         }
     }
 
-    private fun explain(result: AiResult<*>): String = when (result) {
+    private fun explain(result: AiResult<*>, model: String = ""): String = when (result) {
         is AiResult.Ok -> "ok"
-        is AiResult.HttpError -> when {
+        is AiResult.HttpError -> ProviderDiagnosis.diagnose(model, result.code, result.message) ?: when {
             result.code == 401 -> "Rejected: the API key is wrong or expired (HTTP 401)."
             result.code == 403 -> "Rejected: this key is not allowed to use that model (HTTP 403)."
             result.code == 404 -> "Not found: check the base URL and the model name (HTTP 404)."

@@ -83,7 +83,8 @@ data class Settings(
         /** Spec 8.2. Sarvam is materially better on Hindi phone audio. */
         val ASR_PRESETS: List<Triple<String, AsrProvider, Pair<String, String>>> = listOf(
             Triple("Sarvam AI (best for Hindi)", AsrProvider.SARVAM, "https://api.sarvam.ai" to "saarika:v2.5"),
-            Triple("Groq Whisper", AsrProvider.OPENAI_COMPATIBLE, "https://api.groq.com/openai/v1" to "whisper-large-v3"),
+            Triple("Groq Whisper turbo", AsrProvider.OPENAI_COMPATIBLE, "https://api.groq.com/openai/v1" to "whisper-large-v3-turbo"),
+            Triple("Groq Whisper large", AsrProvider.OPENAI_COMPATIBLE, "https://api.groq.com/openai/v1" to "whisper-large-v3"),
             Triple("OpenAI Whisper", AsrProvider.OPENAI_COMPATIBLE, "https://api.openai.com/v1" to "whisper-1"),
         )
 

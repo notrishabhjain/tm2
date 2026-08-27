@@ -39,6 +39,7 @@ data class AsrConfig(
 class OpenAiCompatibleTranscriber(
     private val http: OkHttpClient,
     private val configProvider: suspend () -> AsrConfig,
+    private val recorder: InferenceRecorder = InferenceRecorder.None,
 ) : Transcriber {
 
     override val label: String get() = "openai-compatible"
@@ -60,7 +61,7 @@ class OpenAiCompatibleTranscriber(
                 .post(body)
                 .build()
 
-            execute(http, request)
+            execute(http, request, recorder, config, audio.name)
         }
 
     private companion object {
@@ -78,6 +79,7 @@ class OpenAiCompatibleTranscriber(
 class SarvamTranscriber(
     private val http: OkHttpClient,
     private val configProvider: suspend () -> AsrConfig,
+    private val recorder: InferenceRecorder = InferenceRecorder.None,
 ) : Transcriber {
 
     override val label: String get() = "sarvam"
@@ -100,7 +102,7 @@ class SarvamTranscriber(
                 .post(body)
                 .build()
 
-            execute(http, request)
+            execute(http, request, recorder, config, audio.name)
         }
 
     /** Sarvam wants BCP-47-ish codes: "hi" -> "hi-IN". */
@@ -119,33 +121,74 @@ class SarvamTranscriber(
     }
 }
 
-private fun execute(http: OkHttpClient, request: Request): AiResult<String> = try {
-    http.newCall(request).execute().use { response ->
-        val raw = response.body?.string().orEmpty()
-        if (!response.isSuccessful) {
-            val message = LlmJson.errorMessage(raw) ?: raw.take(300).ifBlank { response.message }
-            AiResult.HttpError(response.code, message)
-        } else {
-            val text = LlmJson.transcriptText(raw)
-            if (text.isNullOrBlank()) {
-                // A 2xx with no text is a real outcome for silent audio. Treat
-                // it as an empty transcript, not an error: the capture still
-                // completes and is not retried forever.
-                AiResult.Ok("")
+/**
+ * Runs the multipart request and records it. Audio is not stored in the trace -
+ * only which file was sent, how long it took, and what came back - because the
+ * recording itself already lives on disk and copying it into the database
+ * would double the space it takes.
+ */
+private suspend fun execute(
+    http: OkHttpClient,
+    request: Request,
+    recorder: InferenceRecorder,
+    config: AsrConfig,
+    audioName: String,
+): AiResult<String> {
+    val startedAt = System.currentTimeMillis()
+    var status: Int? = null
+    var raw: String? = null
+
+    val result = try {
+        http.newCall(request).execute().use { response ->
+            status = response.code
+            val body = response.body?.string().orEmpty()
+            raw = body
+            if (!response.isSuccessful) {
+                val message = LlmJson.errorMessage(body) ?: body.take(300).ifBlank { response.message }
+                AiResult.HttpError(response.code, message)
             } else {
-                AiResult.Ok(text.trim())
+                val text = LlmJson.transcriptText(body)
+                if (text.isNullOrBlank()) {
+                    // A 2xx with no text is a real outcome for silent audio.
+                    // Treat it as an empty transcript, not an error: the capture
+                    // still completes and is not retried forever.
+                    AiResult.Ok("")
+                } else {
+                    AiResult.Ok(text.trim())
+                }
             }
         }
+    } catch (e: IOException) {
+        AiResult.NetworkError(e.message ?: e.javaClass.simpleName)
     }
-} catch (e: IOException) {
-    AiResult.NetworkError(e.message ?: e.javaClass.simpleName)
+
+    recorder.record(
+        RecordedCall(
+            kind = RecordedCall.KIND_ASR,
+            baseUrl = config.baseUrl,
+            model = config.model,
+            startedAt = startedAt,
+            durationMillis = System.currentTimeMillis() - startedAt,
+            userPrompt = "audio chunk: $audioName (language ${config.language})",
+            httpStatus = status,
+            ok = result is AiResult.Ok,
+            responseBody = RecordedCall.clip(raw),
+            errorText = result.errorText,
+            sourceLabel = audioName,
+        ),
+    )
+    return result
 }
 
 /** Picks the adapter the user configured. */
 object TranscriberFactory {
-    fun create(http: OkHttpClient, configProvider: suspend () -> AsrConfig, provider: AsrProvider): Transcriber =
-        when (provider) {
-            AsrProvider.SARVAM -> SarvamTranscriber(http, configProvider)
-            AsrProvider.OPENAI_COMPATIBLE -> OpenAiCompatibleTranscriber(http, configProvider)
-        }
+    fun create(
+        http: OkHttpClient,
+        configProvider: suspend () -> AsrConfig,
+        provider: AsrProvider,
+        recorder: InferenceRecorder = InferenceRecorder.None,
+    ): Transcriber = when (provider) {
+        AsrProvider.SARVAM -> SarvamTranscriber(http, configProvider, recorder)
+        AsrProvider.OPENAI_COMPATIBLE -> OpenAiCompatibleTranscriber(http, configProvider, recorder)
+    }
 }

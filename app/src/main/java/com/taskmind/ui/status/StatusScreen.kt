@@ -57,6 +57,7 @@ fun StatusScreen(
     onBack: () -> Unit,
     onOpenLog: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenModelCalls: () -> Unit,
     onShareText: (String, String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -215,6 +216,7 @@ fun StatusScreen(
                         Text(if (state.running) "Running..." else "Run self-test")
                     }
                     OutlinedButton(onClick = onOpenLog) { Text("Activity log") }
+                    OutlinedButton(onClick = onOpenModelCalls) { Text("Model calls") }
                 }
 
                 state.selfTestReport?.let { report ->

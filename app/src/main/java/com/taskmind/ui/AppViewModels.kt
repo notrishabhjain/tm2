@@ -8,12 +8,15 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.taskmind.di.AppContainer
 import com.taskmind.ui.calls.CallsViewModel
 import com.taskmind.ui.importer.ImportViewModel
+import com.taskmind.ui.inspector.ModelCallsViewModel
 import com.taskmind.ui.log.ActivityLogViewModel
 import com.taskmind.ui.onboarding.OnboardingViewModel
+import com.taskmind.ui.prompts.PromptViewModel
 import com.taskmind.ui.review.ReviewViewModel
 import com.taskmind.ui.settings.SettingsViewModel
 import com.taskmind.ui.status.StatusViewModel
 import com.taskmind.ui.tasks.TaskDetailViewModel
+import com.taskmind.ui.transparency.HowItWorksViewModel
 import com.taskmind.ui.tasks.TaskListViewModel
 
 /**
@@ -37,5 +40,8 @@ object AppViewModels {
         initializer { ActivityLogViewModel(container()) }
         initializer { CallsViewModel(container()) }
         initializer { ImportViewModel(container()) }
+        initializer { PromptViewModel(container()) }
+        initializer { ModelCallsViewModel(container()) }
+        initializer { HowItWorksViewModel(container()) }
     }
 }

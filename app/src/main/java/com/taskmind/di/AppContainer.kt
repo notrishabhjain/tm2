@@ -18,8 +18,10 @@ import com.taskmind.core.AsrProvider
 import com.taskmind.data.db.TaskMindDatabase
 import com.taskmind.data.repo.ActivityLogger
 import com.taskmind.data.repo.BackupRepository
+import com.taskmind.data.repo.RoomInferenceRecorder
 import com.taskmind.data.repo.RoomIntakePorts
 import com.taskmind.data.repo.TaskRepository
+import com.taskmind.data.settings.PromptStore
 import com.taskmind.data.settings.SecretStore
 import com.taskmind.data.settings.Settings
 import com.taskmind.data.settings.SettingsRepository
@@ -54,6 +56,9 @@ class AppContainer(context: Context) {
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(appContext) }
     val secretStore: SecretStore by lazy { SecretStore(appContext) }
+
+    /** User overrides for the system prompts (Settings -> Prompts). */
+    val promptStore: PromptStore by lazy { PromptStore(appContext) }
 
     /**
      * A snapshot of settings readable without suspending.
@@ -117,7 +122,16 @@ class AppContainer(context: Context) {
 
     val httpClient: OkHttpClient by lazy { LlmClient.defaultHttpClient() }
 
-    val llmClient: LlmClient by lazy { LlmClient(httpClient) }
+    /**
+     * Records every model call with the exact prompt and the raw reply, so the
+     * user can audit what the app sends rather than take the privacy statement
+     * on trust.
+     */
+    val inferenceRecorder: RoomInferenceRecorder by lazy {
+        RoomInferenceRecorder(database.inferenceCallDao())
+    }
+
+    val llmClient: LlmClient by lazy { LlmClient(httpClient, inferenceRecorder) }
 
     suspend fun llmConfig(): LlmClient.Config {
         val s = settingsRepository.current()
@@ -139,11 +153,22 @@ class AppContainer(context: Context) {
         )
     }
 
-    val taskExtractor: TaskExtractor by lazy { CloudTaskExtractor(llmClient) { llmConfig() } }
+    val taskExtractor: TaskExtractor by lazy {
+        CloudTaskExtractor(
+            llm = llmClient,
+            configProvider = { llmConfig() },
+            promptProvider = { promptStore.current() },
+        )
+    }
 
     suspend fun transcriber(): Pair<Transcriber, AsrProvider> {
         val provider = settingsRepository.current().asrProvider
-        return TranscriberFactory.create(httpClient, { asrConfig() }, provider) to provider
+        return TranscriberFactory.create(
+            http = httpClient,
+            configProvider = { asrConfig() },
+            provider = provider,
+            recorder = inferenceRecorder,
+        ) to provider
     }
 
     val connectionTester: ConnectionTester by lazy {

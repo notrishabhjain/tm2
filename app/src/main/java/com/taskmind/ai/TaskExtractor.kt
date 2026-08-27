@@ -6,6 +6,7 @@ import com.taskmind.core.LlmJson.dbl
 import com.taskmind.core.LlmJson.str
 import com.taskmind.core.LlmJson.strList
 import com.taskmind.core.Priority
+import com.taskmind.core.PromptSet
 import com.taskmind.core.Prompts
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -33,12 +34,17 @@ data class MessageInput(
     val groupName: String?,
     val text: String,
     val occurredAt: Long,
+    /** Carried so the model call can be traced back to the capture it came from. */
+    val rawCaptureId: String? = null,
+    val sourceLabel: String? = null,
 )
 
 data class TranscriptInput(
     val contactLabel: String,
     val transcript: String,
     val occurredAt: Long,
+    val rawCaptureId: String? = null,
+    val sourceLabel: String? = null,
 )
 
 data class ExtractedTask(
@@ -85,6 +91,12 @@ data class Verdict(
 class CloudTaskExtractor(
     private val llm: LlmClient,
     private val configProvider: suspend () -> LlmClient.Config,
+    /**
+     * The system prompts to send. Reads through to the user's overrides, so an
+     * edit in Settings -> Prompts takes effect on the very next capture with no
+     * restart.
+     */
+    private val promptProvider: suspend () -> PromptSet = { PromptSet.DEFAULT },
 ) : TaskExtractor {
 
     override val originLabel: String get() = cachedOrigin
@@ -101,7 +113,17 @@ class CloudTaskExtractor(
             groupName = input.groupName,
             messageText = input.text,
         )
-        val result = llm.complete(config, Prompts.NOTIFICATION_SYSTEM, user, maxTokens = 600)
+        val result = llm.complete(
+            config = config,
+            systemPrompt = promptProvider().notificationSystem,
+            userPrompt = user,
+            maxTokens = 600,
+            trace = TraceContext(
+                kind = RecordedCall.KIND_MESSAGE,
+                rawCaptureId = input.rawCaptureId,
+                sourceLabel = input.sourceLabel ?: input.senderKey,
+            ),
+        )
         return when (result) {
             is AiResult.Ok -> parseMessage(result.value)
             is AiResult.HttpError -> result
@@ -140,7 +162,17 @@ class CloudTaskExtractor(
         val config = configProvider()
         cachedOrigin = "cloud:${config.model}"
         val user = Prompts.callUser(input.occurredAt, input.contactLabel, input.transcript)
-        val result = llm.complete(config, Prompts.CALL_SYSTEM, user, maxTokens = 2000)
+        val result = llm.complete(
+            config = config,
+            systemPrompt = promptProvider().callSystem,
+            userPrompt = user,
+            maxTokens = 2000,
+            trace = TraceContext(
+                kind = RecordedCall.KIND_TRANSCRIPT,
+                rawCaptureId = input.rawCaptureId,
+                sourceLabel = input.sourceLabel ?: input.contactLabel,
+            ),
+        )
         return when (result) {
             is AiResult.Ok -> parseTranscript(result.value)
             is AiResult.HttpError -> result
@@ -189,7 +221,13 @@ class CloudTaskExtractor(
             }
         }
         val user = Prompts.verifyUser(source, rendered)
-        val result = llm.complete(config, Prompts.VERIFY_SYSTEM, user, maxTokens = 900)
+        val result = llm.complete(
+            config = config,
+            systemPrompt = promptProvider().verifySystem,
+            userPrompt = user,
+            maxTokens = 900,
+            trace = TraceContext(kind = RecordedCall.KIND_VERIFY),
+        )
         return when (result) {
             is AiResult.Ok -> {
                 val obj = LlmJson.parseObject(result.value.content)

@@ -44,6 +44,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskmind.core.AsrProvider
+import com.taskmind.core.ProviderDiagnosis
 import com.taskmind.data.settings.Settings
 import com.taskmind.ui.components.KeyValueRow
 import com.taskmind.ui.components.LabeledSwitch
@@ -57,6 +58,9 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
     onShareText: (String, String) -> Unit,
+    onOpenPrompts: () -> Unit = {},
+    onOpenModelCalls: () -> Unit = {},
+    onOpenHowItWorks: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -97,6 +101,7 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 48.dp),
         ) {
+            TransparencySection(onOpenHowItWorks, onOpenPrompts, onOpenModelCalls)
             PrivacySection(settings, viewModel)
             LlmSection(settings, ui, viewModel)
             AsrSection(settings, ui, viewModel)
@@ -128,6 +133,55 @@ fun SettingsScreen(
                 }
             },
             dismissButton = { TextButton(onClick = { confirmErase = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+/**
+ * The app reads the user's messages and decides what becomes a task. These
+ * three screens are how that stays accountable rather than magic, so they sit
+ * at the top of settings instead of buried at the bottom.
+ */
+@Composable
+private fun TransparencySection(
+    onOpenHowItWorks: () -> Unit,
+    onOpenPrompts: () -> Unit,
+    onOpenModelCalls: () -> Unit,
+) {
+    SectionCard(
+        title = "Look inside",
+        subtitle = "Every rule, every prompt, and every request this app has made.",
+    ) {
+        Button(onClick = onOpenHowItWorks, modifier = Modifier.fillMaxWidth()) {
+            Text("How TaskMind decides")
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Every filter, threshold and rule in plain language, showing the value each one is using " +
+                "right now.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(14.dp))
+        OutlinedButton(onClick = onOpenPrompts, modifier = Modifier.fillMaxWidth()) {
+            Text("Prompts — read and edit")
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "The exact instructions sent to the model. Editable, and every one can be reset.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(14.dp))
+        OutlinedButton(onClick = onOpenModelCalls, modifier = Modifier.fillMaxWidth()) {
+            Text("Model calls — what was sent and returned")
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "The last hundred requests, with the prompt, your data as it was sent, and the unedited " +
+                "reply. This is where a failing provider explains itself.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -202,6 +256,14 @@ private fun LlmSection(settings: Settings, ui: SettingsUiState, viewModel: Setti
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
+        ProviderDiagnosis.settingsWarningFor(model)?.let { warning ->
+            Spacer(Modifier.height(6.dp))
+            Text(
+                warning,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = apiKey,

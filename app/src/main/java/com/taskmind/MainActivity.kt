@@ -23,10 +23,14 @@ import com.taskmind.ui.calls.CallsScreen
 import com.taskmind.ui.calls.CallsViewModel
 import com.taskmind.ui.importer.ImportTranscriptScreen
 import com.taskmind.ui.importer.ImportViewModel
+import com.taskmind.ui.inspector.ModelCallsScreen
+import com.taskmind.ui.inspector.ModelCallsViewModel
 import com.taskmind.ui.log.ActivityLogScreen
 import com.taskmind.ui.log.ActivityLogViewModel
 import com.taskmind.ui.onboarding.OnboardingScreen
 import com.taskmind.ui.onboarding.OnboardingViewModel
+import com.taskmind.ui.prompts.PromptScreen
+import com.taskmind.ui.prompts.PromptViewModel
 import com.taskmind.ui.review.ReviewScreen
 import com.taskmind.ui.review.ReviewViewModel
 import com.taskmind.ui.settings.SettingsScreen
@@ -37,6 +41,8 @@ import com.taskmind.ui.tasks.TaskDetailScreen
 import com.taskmind.ui.tasks.TaskDetailViewModel
 import com.taskmind.ui.tasks.TaskListScreen
 import com.taskmind.ui.tasks.TaskListViewModel
+import com.taskmind.ui.transparency.HowItWorksScreen
+import com.taskmind.ui.transparency.HowItWorksViewModel
 import com.taskmind.ui.theme.TaskMindTheme
 import kotlinx.coroutines.launch
 
@@ -107,6 +113,9 @@ object Routes {
     const val LOG = "log"
     const val CALLS = "calls"
     const val IMPORT = "import"
+    const val PROMPTS = "prompts"
+    const val MODEL_CALLS = "model_calls"
+    const val HOW_IT_WORKS = "how_it_works"
 
     fun taskDetail(id: String) = "task/$id"
 }
@@ -170,6 +179,7 @@ fun TaskMindNavHost(
                 onBack = { navController.popBackStack() },
                 onOpenLog = { navController.navigate(Routes.LOG) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onOpenModelCalls = { navController.navigate(Routes.MODEL_CALLS) },
                 onShareText = onShareText,
             )
         }
@@ -180,6 +190,38 @@ fun TaskMindNavHost(
                 viewModel = vm,
                 onBack = { navController.popBackStack() },
                 onShareText = onShareText,
+                onOpenPrompts = { navController.navigate(Routes.PROMPTS) },
+                onOpenModelCalls = { navController.navigate(Routes.MODEL_CALLS) },
+                onOpenHowItWorks = { navController.navigate(Routes.HOW_IT_WORKS) },
+            )
+        }
+
+        composable(Routes.PROMPTS) {
+            val vm: PromptViewModel = viewModel(factory = AppViewModels.factory)
+            PromptScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onShareText = onShareText,
+            )
+        }
+
+        composable(Routes.MODEL_CALLS) {
+            val vm: ModelCallsViewModel = viewModel(factory = AppViewModels.factory)
+            ModelCallsScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onShareText = onShareText,
+            )
+        }
+
+        composable(Routes.HOW_IT_WORKS) {
+            val vm: HowItWorksViewModel = viewModel(factory = AppViewModels.factory)
+            HowItWorksScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onOpenPrompts = { navController.navigate(Routes.PROMPTS) },
+                onOpenModelCalls = { navController.navigate(Routes.MODEL_CALLS) },
+                onOpenLog = { navController.navigate(Routes.LOG) },
             )
         }
 

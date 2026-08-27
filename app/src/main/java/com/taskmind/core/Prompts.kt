@@ -1,16 +1,21 @@
 package com.taskmind.core
 
 /**
- * Spec 14.3, 14.4, 14.5 - the extraction and verification prompts, verbatim.
+ * Spec 14.3, 14.4, 14.5 - the extraction and verification prompts.
  *
- * These are the quality-critical stage. Do not "improve" them casually: the
- * examples encode Hinglish behaviour that took production failures to find, and
- * the grounding paragraph is what makes the evidence matcher (spec 13) able to
- * do its job.
+ * These are the DEFAULTS. The user can read and rewrite every one of them in
+ * Settings -> Prompts, and what they write is what gets sent; nothing is
+ * hidden behind the app.
+ *
+ * They are also the quality-critical stage, so the editor warns rather than
+ * blocks: the examples encode Hinglish behaviour that took production failures
+ * to find, and the grounding paragraph is what makes the evidence matcher
+ * (spec 13) able to do its job. Remove the grounding paragraph and the evidence
+ * check will start dropping tasks the model can no longer justify.
  */
 object Prompts {
 
-    val NOTIFICATION_SYSTEM: String = """
+    val DEFAULT_NOTIFICATION_SYSTEM: String = """
 You decide whether ONE incoming message creates a task for the user of a personal task
 manager. Your verdict is final and goes straight onto their list, so a wrong task costs
 them more than a missed one.
@@ -74,7 +79,7 @@ EXAMPLES
 {"reasoning":"Small talk closing a chat. No action requested or committed. Test 2 fails.","isTask":false,"evidence":null,"title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.97}
 """.trim()
 
-    val CALL_SYSTEM: String = """
+    val DEFAULT_CALL_SYSTEM: String = """
 You extract commitments from a phone-call transcript for a personal task manager used by an
 Indian professional. The transcript may be Hindi, English or Hinglish and WILL contain
 speech-recognition errors - read for intended meaning, but never invent content.
@@ -128,7 +133,7 @@ Common Hindi/Hinglish action phrases: "bhej dena", "bhej do", "kar dena", "dekh 
 If there are no action items, return "tasks": []. That is a correct and common answer.
 """.trim()
 
-    val VERIFY_SYSTEM: String = """
+    val DEFAULT_VERIFY_SYSTEM: String = """
 You are a strict reviewer of tasks extracted from a source text. You receive the source and
 a list of candidate tasks. For each candidate, judge it against the source:
 
