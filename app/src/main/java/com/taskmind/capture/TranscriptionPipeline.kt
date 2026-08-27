@@ -2,6 +2,8 @@ package com.taskmind.capture
 
 import android.content.Context
 import com.taskmind.ai.AiResult
+import com.taskmind.ai.errorText
+import com.taskmind.ai.retryable
 import com.taskmind.ai.Transcriber
 import com.taskmind.core.AsrProvider
 import com.taskmind.core.Backoff

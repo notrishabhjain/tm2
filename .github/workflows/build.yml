@@ -35,8 +35,33 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # The full Gradle log is thousands of lines of stack trace around a
+      # handful of "e: file.kt:12:34 error:" lines. Keeping the log and
+      # printing just those on failure is what makes a compile error
+      # diagnosable without an Android toolchain to reproduce it on.
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee build.log
+
+      - name: Summarise compile and test failures
+        if: failure()
+        run: |
+          echo "::group::Kotlin compile errors"
+          grep -E "^e: |^w: .*error|error:" build.log | head -n 120 || echo "(none found)"
+          echo "::endgroup::"
+          echo "::group::Failed tests"
+          grep -E "FAILED|AssertionError|ComparisonFailure" build.log | head -n 60 || echo "(none found)"
+          echo "::endgroup::"
+
+      - name: Upload full build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload test report
         if: always()

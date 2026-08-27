@@ -193,8 +193,13 @@ class TaskRepository(
         taskDao.setDueAt(id, dueAt, System.currentTimeMillis())
     }
 
+    /**
+     * Empties the soft-delete bin. `allForExport` deliberately excludes DELETED
+     * rows, so this needs its own query - filtering that list for deleted tasks
+     * would always have found nothing.
+     */
     suspend fun purgeDeleted() {
-        val deleted = taskDao.allForExport().filter { it.status == TaskStatus.DELETED }.map { it.id }
+        val deleted = taskDao.deletedIds()
         if (deleted.isNotEmpty()) taskDao.hardDelete(deleted)
     }
 

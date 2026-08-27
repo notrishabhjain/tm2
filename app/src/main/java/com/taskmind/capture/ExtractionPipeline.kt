@@ -1,6 +1,7 @@
 package com.taskmind.capture
 
 import com.taskmind.ai.AiResult
+import com.taskmind.ai.errorText
 import com.taskmind.ai.ExtractedTask
 import com.taskmind.ai.MessageInput
 import com.taskmind.ai.TaskExtractor

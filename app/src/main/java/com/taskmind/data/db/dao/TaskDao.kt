@@ -75,6 +75,9 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE status != 'DELETED'")
     suspend fun allForExport(): List<TaskEntity>
 
+    @Query("SELECT id FROM tasks WHERE status = 'DELETED'")
+    suspend fun deletedIds(): List<String>
+
     @Query("SELECT COUNT(*) FROM tasks")
     suspend fun total(): Int
 
