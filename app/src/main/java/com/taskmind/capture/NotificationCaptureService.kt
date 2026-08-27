@@ -10,6 +10,7 @@ import android.os.Looper
 import android.provider.CallLog
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import androidx.core.app.NotificationCompat
 import com.taskmind.core.LogLevel
 import com.taskmind.core.NotificationResolver
 import com.taskmind.core.Stage
@@ -125,14 +126,20 @@ class NotificationCaptureService : NotificationListenerService() {
         val notification = sbn.notification ?: return null
         val extras = notification.extras ?: return null
 
-        val messages = runCatching {
-            Notification.MessagingStyle.extractMessagingStyleFromNotification(notification)
+        // Spec 10.1: the LAST entry of EXTRA_MESSAGES is the correct source when
+        // present, and WhatsApp provides it. The AndroidX extractor is used
+        // rather than the framework one: it reads the same extras bundle, it is
+        // the API that is actually public, and it handles the shape changes
+        // between platform versions.
+        val messages: List<NotificationResolver.Message> = runCatching {
+            NotificationCompat.MessagingStyle
+                .extractMessagingStyleFromNotification(notification)
                 ?.messages
-                ?.map { m ->
+                ?.map { message ->
                     NotificationResolver.Message(
-                        sender = m.senderPerson?.name?.toString() ?: m.sender?.toString(),
-                        text = m.text?.toString(),
-                        timestamp = m.timestamp,
+                        sender = message.person?.name?.toString(),
+                        text = message.text?.toString(),
+                        timestamp = message.timestamp,
                     )
                 }
                 .orEmpty()
