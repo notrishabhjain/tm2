@@ -19,8 +19,15 @@ import java.util.concurrent.TimeUnit
 /**
  * Spec 8.1: any OpenAI-compatible `/v1/chat/completions` endpoint, configured
  * by the user as base URL + key + model.
+ *
+ * Every call is handed to the [InferenceRecorder] whether it succeeds or fails,
+ * with the exact prompts sent and the unedited reply. Nothing the app sends to
+ * a model is invisible to the person whose messages are in it.
  */
-class LlmClient(private val http: OkHttpClient) {
+class LlmClient(
+    private val http: OkHttpClient,
+    private val recorder: InferenceRecorder = InferenceRecorder.None,
+) {
 
     data class Config(
         val baseUrl: String,
@@ -33,6 +40,15 @@ class LlmClient(private val http: OkHttpClient) {
         val totalTokens: Int?,
         /** Whether JSON mode was actually used, for the activity log. */
         val jsonMode: Boolean,
+        val latencyMillis: Long,
+    )
+
+    /** Everything one HTTP attempt produced, for the trace. */
+    private data class Attempt(
+        val result: AiResult<Completion>,
+        val httpStatus: Int?,
+        val rawBody: String?,
+        val durationMillis: Long,
     )
 
     /**
@@ -45,13 +61,36 @@ class LlmClient(private val http: OkHttpClient) {
         systemPrompt: String,
         userPrompt: String,
         maxTokens: Int = 1200,
+        trace: TraceContext = TraceContext(RecordedCall.KIND_MESSAGE),
     ): AiResult<Completion> = withContext(Dispatchers.IO) {
-        val first = post(config, systemPrompt, userPrompt, maxTokens, jsonMode = true)
+        val startedAt = System.currentTimeMillis()
+        var attempt = post(config, systemPrompt, userPrompt, maxTokens, jsonMode = true)
+
+        val first = attempt.result
         if (first is AiResult.HttpError && first.code == 400 && mentionsResponseFormat(first.message)) {
-            val second = post(config, systemPrompt, userPrompt, maxTokens, jsonMode = false)
-            return@withContext second
+            attempt = post(config, systemPrompt, userPrompt, maxTokens, jsonMode = false)
         }
-        first
+
+        recorder.record(
+            RecordedCall(
+                kind = trace.kind,
+                baseUrl = config.baseUrl,
+                model = config.model,
+                startedAt = startedAt,
+                durationMillis = attempt.durationMillis,
+                systemPrompt = RecordedCall.clip(systemPrompt),
+                userPrompt = RecordedCall.clip(userPrompt),
+                httpStatus = attempt.httpStatus,
+                ok = attempt.result is AiResult.Ok,
+                responseBody = RecordedCall.clip(attempt.rawBody),
+                totalTokens = (attempt.result as? AiResult.Ok)?.value?.totalTokens,
+                errorText = attempt.result.errorText,
+                rawCaptureId = trace.rawCaptureId,
+                sourceLabel = trace.sourceLabel,
+            ),
+        )
+
+        attempt.result
     }
 
     private fun mentionsResponseFormat(message: String): Boolean {
@@ -65,7 +104,7 @@ class LlmClient(private val http: OkHttpClient) {
         userPrompt: String,
         maxTokens: Int,
         jsonMode: Boolean,
-    ): AiResult<Completion> {
+    ): Attempt {
         val payload: JsonObject = buildJsonObject {
             put("model", config.model)
             put("temperature", 0)
@@ -100,21 +139,39 @@ class LlmClient(private val http: OkHttpClient) {
             .post(LlmJson.json.encodeToString(JsonObject.serializer(), payload).toRequestBody(JSON))
             .build()
 
+        val began = System.currentTimeMillis()
+        fun elapsed() = System.currentTimeMillis() - began
+
         return try {
             http.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
                     val message = LlmJson.errorMessage(body) ?: body.take(300).ifBlank { response.message }
-                    return AiResult.HttpError(response.code, message)
+                    return Attempt(
+                        AiResult.HttpError(response.code, message),
+                        response.code,
+                        body,
+                        elapsed(),
+                    )
                 }
                 val content = LlmJson.chatContent(body)
-                    ?: return AiResult.BadResponse("no message content in reply: ${body.take(200)}")
-                AiResult.Ok(Completion(content, LlmJson.usageTokens(body), jsonMode))
+                    ?: return Attempt(
+                        AiResult.BadResponse("no message content in reply: ${body.take(200)}"),
+                        response.code,
+                        body,
+                        elapsed(),
+                    )
+                Attempt(
+                    AiResult.Ok(Completion(content, LlmJson.usageTokens(body), jsonMode, elapsed())),
+                    response.code,
+                    body,
+                    elapsed(),
+                )
             }
         } catch (e: IOException) {
-            AiResult.NetworkError(e.message ?: e.javaClass.simpleName)
+            Attempt(AiResult.NetworkError(e.message ?: e.javaClass.simpleName), null, null, elapsed())
         } catch (e: IllegalStateException) {
-            AiResult.BadResponse(e.message ?: "illegal state")
+            Attempt(AiResult.BadResponse(e.message ?: "illegal state"), null, null, elapsed())
         }
     }
 

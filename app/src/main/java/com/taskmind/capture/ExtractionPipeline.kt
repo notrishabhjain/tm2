@@ -11,6 +11,7 @@ import com.taskmind.core.CaptureState
 import com.taskmind.core.DateResolver
 import com.taskmind.core.LogLevel
 import com.taskmind.core.SourceRef
+import com.taskmind.core.ProviderDiagnosis
 import com.taskmind.core.SourceType
 import com.taskmind.core.Stage
 import com.taskmind.data.db.dao.FingerprintDao
@@ -128,6 +129,8 @@ class ExtractionPipeline(
             groupName = context.group,
             text = text,
             occurredAt = capture.occurredAt,
+            rawCaptureId = capture.id,
+            sourceLabel = capture.sourceLabel,
         )
 
         logger.write(
@@ -174,7 +177,13 @@ class ExtractionPipeline(
         logger.write(Stage.EXTRACT, LogLevel.DEBUG, "LLM call for transcript", "engine=${extractor.originLabel} label=$label")
 
         val result = extractor.extractFromTranscript(
-            TranscriptInput(contactLabel = label, transcript = transcript, occurredAt = capture.occurredAt),
+            TranscriptInput(
+                contactLabel = label,
+                transcript = transcript,
+                occurredAt = capture.occurredAt,
+                rawCaptureId = capture.id,
+                sourceLabel = capture.sourceLabel,
+            ),
         )
         settingsRepository.recordLlmCall(todayKey, capture.sourceApp)
 
@@ -308,21 +317,37 @@ class ExtractionPipeline(
 
     private suspend fun failure(capture: RawCaptureEntity, result: AiResult<*>, now: Long): Outcome {
         val error = result.errorText ?: "unknown error"
+        val modelName = extractor.originLabel.substringAfter("cloud:", extractor.originLabel)
 
         // Spec 9: 400 and 401 are configuration errors. Retrying them against a
         // wrong base URL forever costs money and hides the real problem, so
         // they surface on the status screen instead.
         val configurationError = result is AiResult.HttpError && result.configuration
         if (configurationError) {
+            // The capture is parked with nextAttemptAt = null so the next drain
+            // picks it up the moment the configuration is fixed.
+            //
+            // attemptCount is deliberately NOT incremented. A wrong model name
+            // is not a failed attempt against a working setup, and counting it
+            // as one burns the five-attempt budget: a capture that sat through
+            // a misconfiguration would then hit FAILED_PERMANENT on its first
+            // real network blip after the key was fixed.
             rawCaptureDao.setRetry(
                 id = capture.id,
                 state = CaptureState.PENDING_EXTRACTION,
-                attemptCount = capture.attemptCount + 1,
+                attemptCount = capture.attemptCount,
                 error = error,
                 nextAttemptAt = null,
             )
-            logger.write(Stage.EXTRACT, LogLevel.ERROR, "provider configuration error", error)
-            return Outcome.Parked(error)
+            val status = (result as? AiResult.HttpError)?.code ?: 0
+            val diagnosis = ProviderDiagnosis.diagnose(modelName, status, error)
+            logger.write(
+                Stage.EXTRACT,
+                LogLevel.ERROR,
+                "provider configuration error",
+                if (diagnosis != null) "$error\n\n$diagnosis" else error,
+            )
+            return Outcome.Parked(diagnosis ?: error)
         }
 
         val attempts = capture.attemptCount + 1

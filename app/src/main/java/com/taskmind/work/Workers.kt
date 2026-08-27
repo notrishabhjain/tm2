@@ -9,6 +9,7 @@ import com.taskmind.core.CaptureState
 import com.taskmind.core.DateResolver
 import com.taskmind.core.LogLevel
 import com.taskmind.core.Stage
+import com.taskmind.data.repo.RoomInferenceRecorder
 import com.taskmind.di.AppContainer
 import java.io.File
 
@@ -182,6 +183,7 @@ class RetentionWorker(context: Context, params: WorkerParameters) : CoroutineWor
             container.database.fingerprintDao().purgeOlderThan(System.currentTimeMillis() - SEVEN_DAYS)
             container.database.reviewItemDao().purgeResolved(cutoff)
             container.database.activityLogDao().trimTo(500)
+            container.database.inferenceCallDao().trimTo(RoomInferenceRecorder.KEEP)
             Result.success()
         } catch (t: Throwable) {
             container.logger.write(Stage.WORKER, LogLevel.ERROR, "retention worker failed", t.toString())

@@ -39,6 +39,12 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # If the build ever fails in a way that is not a compile error, this
+      # says whether the environment or the code is at fault: it exercises
+      # Gradle, the wrapper and the Android SDK locator without compiling.
+      - name: Check the toolchain resolves
+        run: ./gradlew --version && ./gradlew :app:tasks --dry-run --console=plain
+
       # The full Gradle log is thousands of lines of stack trace around a
       # handful of "e: file.kt:12:34 error:" lines. Keeping the log and
       # printing just those on failure is what makes a compile error

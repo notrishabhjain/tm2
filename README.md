@@ -79,6 +79,30 @@ recordings outside any app's own folder.
 
 ---
 
+## Looking inside
+
+An app that reads your messages and decides what becomes a task is asking for a
+lot of trust. Four screens are the argument for it, all under **Settings**.
+
+**How TaskMind decides** lists every rule the app applies — which apps get read,
+each pre-filter pattern, how closely a quote has to match, where the confidence
+thresholds sit, what the retry schedule is, what is stored and for how long —
+with the value each one is using right now, read from live settings rather than
+written into the text.
+
+**Prompts** shows the exact instructions sent to the model. All three are
+editable and take effect on the next capture, with a reset on each. Each one
+says what it is for and what breaks if you change it carelessly.
+
+**Model calls** keeps the last hundred requests: the system prompt, your data as
+it was actually sent, and the unedited reply. This is how you check the privacy
+statement against the bytes, and it is usually where a failure explains itself —
+a provider refusing a model you never selected reads as a mystery in a log line
+and as an obvious answer here.
+
+**Activity log** records every decision for every capture: which pre-filter rule
+fired, what score the quote check got, what the funnel decided.
+
 ## When something doesn't work
 
 There is no `adb logcat` on a phone, so the app carries its own diagnostics.
@@ -94,6 +118,15 @@ it passes, capture works; if it fails, it names the stage.
 **Activity log** records every step of every capture: which pre-filter rule
 rejected a message, what score the evidence check got, what the funnel decided,
 whether it was a duplicate. Filter it by level and stage, and share it as text.
+
+**Model calls** is usually faster when extraction produces nothing: it shows
+whether the request went out and what the provider said back.
+
+A note on picking models: TaskMind sends one prompt and expects one JSON object.
+It has no use for a routing or agentic model's tool-calling — and those models
+call other models underneath, so they fail with errors naming models you never
+chose. A plain instruction-following model is faster and more predictable here.
+Settings warns you if the model name looks like a router.
 
 ---
 

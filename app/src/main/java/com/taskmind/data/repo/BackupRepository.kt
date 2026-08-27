@@ -208,8 +208,9 @@ class BackupRepository(
         database.fingerprintDao().deleteAll()
         database.reviewItemDao().deleteAll()
         database.activityLogDao().deleteAll()
+        database.inferenceCallDao().deleteAll()
         database.seenPackageDao().deleteAll()
-        logger.write(Stage.SYSTEM, LogLevel.INFO, "erased captured content", "${captures.size} captures; tasks kept")
+        logger.write(Stage.SYSTEM, LogLevel.INFO, "erased captured content", "${captures.size} captures, plus the model-call trace; tasks kept")
         captures.size
     }
 

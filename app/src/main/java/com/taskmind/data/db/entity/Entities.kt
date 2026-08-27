@@ -222,3 +222,38 @@ data class SeenPackageEntity(
     val lastSeenAt: Long,
     val notificationCount: Int = 0,
 )
+
+/**
+ * Every call TaskMind makes to a cloud model, with the exact prompt it sent and
+ * the raw reply it got back.
+ *
+ * This exists because "the app sends your messages to an AI" is a claim the
+ * user has to take on trust unless they can see the actual bytes. They can:
+ * Settings -> Model calls shows this table, and each row expands to the full
+ * system prompt, the user message, and the unedited response.
+ *
+ * It is capped and is cleared by "Erase all captured content", because these
+ * rows contain the message text and transcripts themselves.
+ */
+@Entity(tableName = "inference_calls", indices = [Index(value = ["startedAt"])])
+data class InferenceCallEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val startedAt: Long,
+    val durationMillis: Long,
+    /** extract-message | extract-transcript | verify | asr | connection-test */
+    val kind: String,
+    val baseUrl: String,
+    val model: String,
+    val systemPrompt: String? = null,
+    val userPrompt: String? = null,
+    val httpStatus: Int? = null,
+    val ok: Boolean,
+    val responseBody: String? = null,
+    val totalTokens: Int? = null,
+    val errorText: String? = null,
+    /** A plain-language diagnosis when the failure has a known cause. */
+    val diagnosis: String? = null,
+    /** Which capture this call was for, so a task can be traced back to it. */
+    val rawCaptureId: String? = null,
+    val sourceLabel: String? = null,
+)

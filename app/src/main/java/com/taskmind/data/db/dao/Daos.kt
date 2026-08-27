@@ -12,6 +12,7 @@ import com.taskmind.core.ReviewState
 import com.taskmind.data.db.entity.ActivityLogEntity
 import com.taskmind.data.db.entity.CallRecordEntity
 import com.taskmind.data.db.entity.FingerprintEntity
+import com.taskmind.data.db.entity.InferenceCallEntity
 import com.taskmind.data.db.entity.ProjectEntity
 import com.taskmind.data.db.entity.RawCaptureEntity
 import com.taskmind.data.db.entity.ReviewItemEntity
@@ -86,6 +87,9 @@ interface RawCaptureDao {
 
     @Query("SELECT COUNT(*) FROM raw_captures WHERE state = :state")
     suspend fun countByState(state: CaptureState): Int
+
+    @Query("SELECT COUNT(*) FROM raw_captures")
+    suspend fun total(): Int
 
     // -- retention (spec 6.3) ------------------------------------------------
 
@@ -259,5 +263,34 @@ interface SeenPackageDao {
     fun observeAll(): Flow<List<SeenPackageEntity>>
 
     @Query("DELETE FROM seen_packages")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface InferenceCallDao {
+
+    @Insert
+    suspend fun insert(call: InferenceCallEntity): Long
+
+    /** Kept small: each row can hold several kilobytes of prompt and reply. */
+    @Query("DELETE FROM inference_calls WHERE id NOT IN (SELECT id FROM inference_calls ORDER BY id DESC LIMIT :keep)")
+    suspend fun trimTo(keep: Int)
+
+    @Query("SELECT * FROM inference_calls ORDER BY id DESC LIMIT :limit")
+    fun observeRecent(limit: Int): Flow<List<InferenceCallEntity>>
+
+    @Query("SELECT * FROM inference_calls ORDER BY id DESC LIMIT :limit")
+    suspend fun recent(limit: Int): List<InferenceCallEntity>
+
+    @Query("SELECT * FROM inference_calls WHERE rawCaptureId = :rawCaptureId ORDER BY id ASC")
+    suspend fun forCapture(rawCaptureId: String): List<InferenceCallEntity>
+
+    @Query("SELECT COUNT(*) FROM inference_calls WHERE ok = 0 AND startedAt > :since")
+    suspend fun failuresSince(since: Long): Int
+
+    @Query("SELECT COUNT(*) FROM inference_calls")
+    suspend fun total(): Int
+
+    @Query("DELETE FROM inference_calls")
     suspend fun deleteAll()
 }
