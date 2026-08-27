@@ -65,16 +65,28 @@ object PermissionState {
         fixIntent = NotificationCaptureService.settingsIntent(),
     )
 
-    fun allFilesAccess(context: Context) = Item(
-        key = "all_files",
-        label = "All files access",
-        granted = Environment.isExternalStorageManager(),
-        required = false,
-        explanation = "Needed to find the recordings your phone app writes. Call capture cannot work without it.",
-        fixIntent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-            data = Uri.parse("package:${context.packageName}")
-        },
-    )
+    fun allFilesAccess(context: Context): Item {
+        // API 30 introduced both the check and the settings screen. Below that
+        // the legacy storage permission applies and there is nothing to grant
+        // here, so report it granted rather than crashing on the check.
+        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+            Environment.isExternalStorageManager()
+        val fix = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                data = Uri.parse("package:${context.packageName}")
+            }
+        } else {
+            appSettings(context)
+        }
+        return Item(
+            key = "all_files",
+            label = "All files access",
+            granted = granted,
+            required = false,
+            explanation = "Needed to find the recordings your phone app writes. Call capture cannot work without it.",
+            fixIntent = fix,
+        )
+    }
 
     fun postNotifications(context: Context) = Item(
         key = "post_notifications",

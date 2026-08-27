@@ -10,7 +10,10 @@ sealed interface AiResult<out T> {
     data class Ok<T>(val value: T) : AiResult<T>
 
     data class HttpError(val code: Int, val message: String) : AiResult<Nothing> {
-        val retryable: Boolean get() = code == 429 || code in 500..599 || code == 408
+        /** A transport or capacity problem: the same request may work later. */
+        val transient: Boolean get() = code == 429 || code == 408 || code in 500..599
+
+        /** The request itself is wrong. Retrying cannot fix it. */
         val configuration: Boolean get() = code == 400 || code == 401 || code == 403 || code == 404
     }
 
@@ -18,23 +21,23 @@ sealed interface AiResult<out T> {
 
     /** A 2xx whose body we could not use. Not retryable: it will not improve. */
     data class BadResponse(val message: String) : AiResult<Nothing>
-
-    val retryable: Boolean
-        get() = when (this) {
-            is Ok -> false
-            is HttpError -> retryable
-            is NetworkError -> true
-            is BadResponse -> false
-        }
-
-    val errorText: String?
-        get() = when (this) {
-            is Ok -> null
-            is HttpError -> "HTTP $code: $message"
-            is NetworkError -> "network: $message"
-            is BadResponse -> "bad response: $message"
-        }
 }
+
+val AiResult<*>.retryable: Boolean
+    get() = when (this) {
+        is AiResult.Ok -> false
+        is AiResult.HttpError -> transient
+        is AiResult.NetworkError -> true
+        is AiResult.BadResponse -> false
+    }
+
+val AiResult<*>.errorText: String?
+    get() = when (this) {
+        is AiResult.Ok -> null
+        is AiResult.HttpError -> "HTTP $code: $message"
+        is AiResult.NetworkError -> "network: $message"
+        is AiResult.BadResponse -> "bad response: $message"
+    }
 
 inline fun <T, R> AiResult<T>.map(transform: (T) -> R): AiResult<R> = when (this) {
     is AiResult.Ok -> AiResult.Ok(transform(value))

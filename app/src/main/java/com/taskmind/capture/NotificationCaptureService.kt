@@ -1,6 +1,7 @@
 package com.taskmind.capture
 
 import android.app.Notification
+import android.content.ComponentName
 import android.content.Intent
 import android.database.ContentObserver
 import android.net.Uri
@@ -67,8 +68,9 @@ class NotificationCaptureService : NotificationListenerService() {
             container.logger.post(Stage.SYSTEM, LogLevel.WARN, "notification listener disconnected - requesting rebind")
             unregisterCallLogObserver()
             // Spec 10.4: ask the system to bind us again rather than waiting.
+            // requestRebind is a static on NotificationListenerService.
             requestRebind(
-                android.content.ComponentName(this, NotificationCaptureService::class.java),
+                ComponentName(this, NotificationCaptureService::class.java),
             )
         } catch (t: Throwable) {
             container.logger.post(Stage.SYSTEM, LogLevel.ERROR, "onListenerDisconnected failed", t.toString())

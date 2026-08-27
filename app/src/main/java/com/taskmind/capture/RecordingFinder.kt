@@ -2,6 +2,7 @@ package com.taskmind.capture
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
@@ -53,7 +54,8 @@ class RecordingFinder(private val context: Context) {
      * Spec 11.3: detect denial explicitly. Discovery fails silently without All
      * Files Access and looks exactly like "the dialer is not recording".
      */
-    fun hasAllFilesAccess(): Boolean = Environment.isExternalStorageManager()
+    fun hasAllFilesAccess(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
     /**
      * Spec 18.7: does call recording appear to be enabled at all? Used during

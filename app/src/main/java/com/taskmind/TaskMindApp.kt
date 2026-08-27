@@ -6,6 +6,7 @@ import com.taskmind.core.LogLevel
 import com.taskmind.core.Stage
 import com.taskmind.di.AppContainer
 import com.taskmind.work.Scheduler
+import kotlinx.coroutines.launch
 
 class TaskMindApp : Application() {
 
@@ -28,9 +29,13 @@ class TaskMindApp : Application() {
         Scheduler.ensurePeriodicWork(this)
         Scheduler.ensureWatchdog(this)
 
-        val settings = container.cachedSettings
-        if (settings.cloudConsent && settings.captureCalls) {
-            ResidencyService.start(this)
+        // cachedSettings is still at its defaults this early - the collector
+        // that fills it has not run yet - so read the store directly.
+        container.applicationScope.launch {
+            val settings = container.settingsRepository.current()
+            if (settings.cloudConsent && settings.captureCalls) {
+                ResidencyService.start(this@TaskMindApp)
+            }
         }
     }
 }
