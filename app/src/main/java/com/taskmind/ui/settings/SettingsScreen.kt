@@ -64,6 +64,7 @@ fun SettingsScreen(
     onOpenPrompts: () -> Unit = {},
     onOpenModelCalls: () -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
+    onOpenRecordings: () -> Unit = {},
     onOpenHowItWorks: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -105,7 +106,7 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 48.dp),
         ) {
-            TransparencySection(onOpenHowItWorks, onOpenPrompts, onOpenModelCalls, onOpenDiagnostics)
+            TransparencySection(onOpenHowItWorks, onOpenPrompts, onOpenModelCalls, onOpenDiagnostics, onOpenRecordings)
             PrivacySection(settings, viewModel)
             LlmSection(settings, ui, viewModel)
             AsrSection(settings, ui, viewModel)
@@ -152,6 +153,7 @@ private fun TransparencySection(
     onOpenPrompts: () -> Unit,
     onOpenModelCalls: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onOpenRecordings: () -> Unit,
 ) {
     SectionCard(
         title = "Look inside",
@@ -191,6 +193,17 @@ private fun TransparencySection(
         Spacer(Modifier.height(14.dp))
         OutlinedButton(onClick = onOpenDiagnostics, modifier = Modifier.fillMaxWidth()) {
             Text("Test and diagnose")
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Run every stage end to end, push ten sample messages through task creation, or export " +
+                "one file with everything in it.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(14.dp))
+        OutlinedButton(onClick = onOpenRecordings, modifier = Modifier.fillMaxWidth()) {
+            Text("Recordings — choose what to transcribe")
         }
         Spacer(Modifier.height(8.dp))
         Text(

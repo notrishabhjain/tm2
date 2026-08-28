@@ -40,6 +40,16 @@ enum class CaptureState {
      */
     BLOCKED_CONFIG,
 
+    /**
+     * A recording exists but nobody asked for it to be transcribed.
+     *
+     * The device that prompted this had 6463 recordings on it. Uploading all of
+     * them is minutes of audio per call against a daily budget, for calls the
+     * user may have no interest in. When automatic transcription is off, calls
+     * park here and the Recordings screen is where they get picked.
+     */
+    AWAITING_SELECTION,
+
     DONE,
     REJECTED,
     FAILED_PERMANENT,

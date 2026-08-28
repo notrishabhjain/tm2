@@ -113,6 +113,26 @@ class RecordingFinder(private val context: Context) {
         AudioSource.isStable(context, candidate.path, MIN_USABLE_BYTES)
 
     /**
+     * The recordings on the device, newest first, whatever call they belong to.
+     *
+     * Discovery matches a recording to a call within a time window; this does
+     * not, because the Recordings screen is about picking a file to transcribe
+     * rather than about which call it came from.
+     */
+    suspend fun listRecent(limit: Int, userDirUri: String?): List<Candidate> =
+        withContext(Dispatchers.IO) {
+            buildList {
+                addAll(scanUserDirectory(userDirUri))
+                addAll(scanKnownPaths())
+                addAll(queryMediaStore(0))
+            }
+                .distinctBy { it.path }
+                .filter { it.sizeBytes > MIN_USABLE_BYTES }
+                .sortedByDescending { it.lastModified }
+                .take(limit)
+        }
+
+    /**
      * What discovery can actually see right now, for the diagnostic report.
      *
      * Deliberately unfiltered by time: "the folder has 40 recordings but none

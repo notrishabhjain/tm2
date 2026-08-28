@@ -28,6 +28,15 @@ data class Settings(
     val captureNotifications: Boolean = true,
     val captureCalls: Boolean = true,
     val minCallDurationSeconds: Long = 15,
+
+    /**
+     * Whether a discovered recording is transcribed without being asked for.
+     *
+     * On a phone with thousands of recordings this is the difference between a
+     * useful feature and an unbounded upload bill, so it can be turned off and
+     * recordings picked by hand instead.
+     */
+    val autoTranscribeCalls: Boolean = true,
     val callRecordingDirUri: String? = null,
 
     // -- extraction quality (spec 13, 14.2) --------------------------------
