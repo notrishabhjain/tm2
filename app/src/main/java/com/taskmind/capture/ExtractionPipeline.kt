@@ -19,6 +19,8 @@ import com.taskmind.data.db.dao.RawCaptureDao
 import com.taskmind.data.db.entity.FingerprintEntity
 import com.taskmind.data.db.entity.RawCaptureEntity
 import com.taskmind.data.repo.ActivityLogger
+import com.taskmind.core.RateLimit
+import com.taskmind.data.settings.RuntimeStateStore
 import com.taskmind.data.settings.SettingsRepository
 import com.taskmind.intake.IntakeFunnel
 import com.taskmind.intake.IntakeResult
@@ -36,6 +38,7 @@ class ExtractionPipeline(
     private val rawCaptureDao: RawCaptureDao,
     private val fingerprintDao: FingerprintDao,
     private val settingsRepository: SettingsRepository,
+    private val runtimeStateStore: RuntimeStateStore,
     private val extractor: TaskExtractor,
     private val funnel: IntakeFunnel,
     private val logger: ActivityLogger,
@@ -67,6 +70,18 @@ class ExtractionPipeline(
 
         val settings = settingsRepository.current()
         val now = System.currentTimeMillis()
+
+        // A rate limit already reported by the provider applies to this request
+        // too. Discovering that again costs a request against the very quota
+        // that is exhausted, so the gate is checked before anything is sent.
+        val cooldown = runtimeStateStore.current().llmCooldown
+        if (cooldown.activeAt(now)) {
+            return Outcome.Parked(
+                "provider rate limited - waiting ${formatDuration(cooldown.remainingMillis(now))}" +
+                    if (cooldown.reason.isNotBlank()) " (${cooldown.reason})" else "",
+            )
+        }
+
         val todayKey = DateResolver.dayKey(now)
         settingsRepository.rollBudgetIfNeeded(todayKey)
         val usage = settingsRepository.currentUsage()
@@ -322,23 +337,64 @@ class ExtractionPipeline(
         // Spec 9: 400 and 401 are configuration errors. Retrying them against a
         // wrong base URL forever costs money and hides the real problem, so
         // they surface on the status screen instead.
-        val configurationError = result is AiResult.HttpError && result.configuration
-        if (configurationError) {
-            // The capture is parked with nextAttemptAt = null so the next drain
-            // picks it up the moment the configuration is fixed.
-            //
-            // attemptCount is deliberately NOT incremented. A wrong model name
-            // is not a failed attempt against a working setup, and counting it
-            // as one burns the five-attempt budget: a capture that sat through
-            // a misconfiguration would then hit FAILED_PERMANENT on its first
-            // real network blip after the key was fixed.
+        // A rate limit belongs to the provider, not to this capture. Every
+        // other queued capture would get the same answer, so the whole provider
+        // goes quiet until the reset and no attempt is charged to anyone.
+        if (result is AiResult.HttpError && result.rateLimited) {
+            val waitMillis = RateLimit.cooldownMillis(result.retryAfter, error)
+            val until = now + waitMillis
+            val daily = RateLimit.isDailyLimit(error)
+            runtimeStateStore.startLlmCooldown(
+                until = until,
+                reason = if (daily) "daily request limit reached" else "rate limited",
+            )
             rawCaptureDao.setRetry(
                 id = capture.id,
                 state = CaptureState.PENDING_EXTRACTION,
                 attemptCount = capture.attemptCount,
                 error = error,
+                nextAttemptAt = until,
+            )
+            logger.write(
+                Stage.BUDGET,
+                LogLevel.WARN,
+                "provider rate limited - pausing for ${formatDuration(waitMillis)}",
+                if (daily) {
+                    "$error\n\nThis is a per-day limit, so it resets on the provider's " +
+                        "schedule rather than in a few minutes. Nothing is lost: every capture " +
+                        "waits and is processed once the quota resets."
+                } else {
+                    error
+                },
+            )
+            return Outcome.BudgetHeld("provider rate limited")
+        }
+
+        val configurationError = result is AiResult.HttpError && result.configuration
+        if (configurationError) {
+            // BLOCKED_CONFIG, not PENDING_EXTRACTION.
+            //
+            // This used to park in PENDING_EXTRACTION with nextAttemptAt = null,
+            // with the reasoning that the next drain should pick it up the
+            // moment the configuration was fixed. But the work queue treats a
+            // null next-attempt as "due now", so every drain re-sent every
+            // parked capture as a live request. On the device that spent all
+            // 250 of a day's requests on a model that could never answer.
+            //
+            // These wait for the configuration to actually change - see
+            // releaseBlockedIfConfigChanged - or for the user to ask.
+            //
+            // attemptCount is still not incremented: a wrong model name is not
+            // a failed attempt against a working setup, and counting it as one
+            // would burn the five-attempt budget before the setup ever worked.
+            rawCaptureDao.setRetry(
+                id = capture.id,
+                state = CaptureState.BLOCKED_CONFIG,
+                attemptCount = capture.attemptCount,
+                error = error,
                 nextAttemptAt = null,
             )
+            runtimeStateStore.setBlockedConfigFingerprint(configFingerprint(settingsRepository.current()))
             val status = (result as? AiResult.HttpError)?.code ?: 0
             val diagnosis = ProviderDiagnosis.diagnose(modelName, status, error)
             logger.write(
@@ -360,6 +416,58 @@ class ExtractionPipeline(
             rawCaptureDao.setRetry(capture.id, CaptureState.PENDING_EXTRACTION, attempts, error, nextAt)
             logger.write(Stage.EXTRACT, LogLevel.WARN, "extraction failed, retrying (attempt $attempts)", error)
             Outcome.Retry(error, nextAt)
+        }
+    }
+
+    /**
+     * Lets captures blocked by a bad provider configuration try again once that
+     * configuration changes.
+     *
+     * Called before each drain. The fingerprint is the base URL and model the
+     * captures were blocked against; when the live pair differs, the user has
+     * changed something and the backlog is worth another request. Without this
+     * the captures would sit in BLOCKED_CONFIG forever after a fix.
+     */
+    suspend fun releaseBlockedIfConfigChanged(): Int {
+        val blocked = rawCaptureDao.countByState(CaptureState.BLOCKED_CONFIG)
+        if (blocked == 0) return 0
+        val fingerprint = configFingerprint(settingsRepository.current())
+        if (fingerprint == runtimeStateStore.current().blockedConfigFingerprint) return 0
+        rawCaptureDao.releaseState(CaptureState.BLOCKED_CONFIG, CaptureState.PENDING_EXTRACTION)
+        logger.write(
+            Stage.EXTRACT,
+            LogLevel.INFO,
+            "provider settings changed - retrying $blocked blocked capture(s)",
+        )
+        return blocked
+    }
+
+    /**
+     * Unconditional release, for when the user says to try now.
+     *
+     * Distinct from [releaseBlockedIfConfigChanged] because the user may have
+     * fixed something this app cannot see - enabling the model in the
+     * provider's console changes nothing on the device, so the fingerprint is
+     * unchanged and the automatic release would correctly decline.
+     */
+    suspend fun retryBlockedNow(): Int {
+        val blocked = rawCaptureDao.countByState(CaptureState.BLOCKED_CONFIG)
+        if (blocked == 0) return 0
+        rawCaptureDao.releaseState(CaptureState.BLOCKED_CONFIG, CaptureState.PENDING_EXTRACTION)
+        logger.write(Stage.EXTRACT, LogLevel.INFO, "retrying $blocked blocked capture(s) at your request")
+        return blocked
+    }
+
+    /** What the user has to change for a blocked capture to be worth retrying. */
+    private fun configFingerprint(settings: com.taskmind.data.settings.Settings): String =
+        "${settings.llmBaseUrl.trim().trimEnd('/')}|${settings.llmModel.trim()}"
+
+    private fun formatDuration(millis: Long): String {
+        val totalMinutes = millis / 60_000
+        return when {
+            totalMinutes < 1 -> "${(millis / 1000).coerceAtLeast(1)}s"
+            totalMinutes < 60 -> "${totalMinutes}m"
+            else -> "${totalMinutes / 60}h ${totalMinutes % 60}m"
         }
     }
 

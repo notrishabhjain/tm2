@@ -206,17 +206,25 @@ class CallPipeline(
         val record = callRecordDao.byId(callRecordId) ?: return@withContext false
         if (record.recordingPath != null) return@withContext true
 
-        if (!recordingFinder.hasAllFilesAccess()) {
+        val settings = settingsRepository.current()
+
+        // All Files Access is needed to sweep the OEM paths, but NOT to read a
+        // folder the user nominated with the system picker - that grant stands
+        // on its own. Refusing to look at all unless All Files Access is held
+        // made the folder picker useless for exactly the people who chose it
+        // because they could not, or would not, grant blanket storage access.
+        val hasUserDir = !settings.callRecordingDirUri.isNullOrBlank()
+        if (!recordingFinder.hasAllFilesAccess() && !hasUserDir) {
             logger.write(
                 Stage.CALL,
                 LogLevel.WARN,
-                "cannot search for recordings - All Files Access not granted",
-                "call=${record.phoneNumber}",
+                "cannot search for recordings - no All Files Access and no folder chosen",
+                "call=${record.phoneNumber}. Grant All Files Access, or pick your dialer's " +
+                    "recording folder in Settings.",
             )
             return@withContext false
         }
 
-        val settings = settingsRepository.current()
         val callEnd = record.startTime + (record.durationSeconds ?: 0L) * 1000
 
         for ((attempt, delayMillis) in DISCOVERY_DELAYS.withIndex()) {

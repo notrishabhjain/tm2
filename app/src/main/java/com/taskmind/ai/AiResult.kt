@@ -9,12 +9,24 @@ sealed interface AiResult<out T> {
 
     data class Ok<T>(val value: T) : AiResult<T>
 
-    data class HttpError(val code: Int, val message: String) : AiResult<Nothing> {
+    data class HttpError(
+        val code: Int,
+        val message: String,
+        /** The response's `Retry-After`, when it sent one. Only 429s use it. */
+        val retryAfter: String? = null,
+    ) : AiResult<Nothing> {
         /** A transport or capacity problem: the same request may work later. */
         val transient: Boolean get() = code == 429 || code == 408 || code in 500..599
 
         /** The request itself is wrong. Retrying cannot fix it. */
         val configuration: Boolean get() = code == 400 || code == 401 || code == 403 || code == 404
+
+        /**
+         * Out of quota. Distinct from [transient] because it is not the
+         * capture's fault and applies to every other queued capture equally:
+         * the caller holds the whole provider rather than retrying this one.
+         */
+        val rateLimited: Boolean get() = code == 429
     }
 
     data class NetworkError(val message: String) : AiResult<Nothing>

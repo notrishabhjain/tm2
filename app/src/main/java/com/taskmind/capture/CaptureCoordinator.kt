@@ -62,6 +62,22 @@ class CaptureCoordinator(
             return Outcome.Rejected("cloud consent not given")
         }
 
+        // The package decision comes first, and silently.
+        //
+        // On the device this ran second, so every screenshot, gallery and
+        // sound-effect notification from com.miui.* wrote a "no usable text"
+        // line. The activity log keeps 500 entries; that noise was evicting the
+        // capture and extraction entries the log exists to show. A package that
+        // is not being watched should cost nothing at all, including a log line.
+        val packageVerdict = PreFilter.evaluatePackage(
+            packageName = fields.packageName,
+            isAllowListed = fields.packageName in settings.allowedPackages,
+            ownPackageName = ownPackageName,
+        )
+        if (packageVerdict is PreFilter.Verdict.Reject) {
+            return Outcome.Rejected(packageVerdict.rule)
+        }
+
         val resolved = NotificationResolver.resolve(fields)
         if (resolved == null) {
             logger.write(Stage.PREFILTER, LogLevel.DEBUG, "no usable text", fields.packageName)

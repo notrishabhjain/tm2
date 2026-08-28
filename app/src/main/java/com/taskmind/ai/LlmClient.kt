@@ -148,7 +148,7 @@ class LlmClient(
                 if (!response.isSuccessful) {
                     val message = LlmJson.errorMessage(body) ?: body.take(300).ifBlank { response.message }
                     return Attempt(
-                        AiResult.HttpError(response.code, message),
+                        AiResult.HttpError(response.code, message, response.header("Retry-After")),
                         response.code,
                         body,
                         elapsed(),

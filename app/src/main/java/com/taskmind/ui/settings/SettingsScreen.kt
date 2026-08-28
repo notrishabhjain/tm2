@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -26,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -44,6 +46,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskmind.core.AsrProvider
+import com.taskmind.core.ModelCatalog
 import com.taskmind.core.ProviderDiagnosis
 import com.taskmind.data.settings.Settings
 import com.taskmind.ui.components.KeyValueRow
@@ -60,6 +63,7 @@ fun SettingsScreen(
     onShareText: (String, String) -> Unit,
     onOpenPrompts: () -> Unit = {},
     onOpenModelCalls: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
     onOpenHowItWorks: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -101,7 +105,7 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 48.dp),
         ) {
-            TransparencySection(onOpenHowItWorks, onOpenPrompts, onOpenModelCalls)
+            TransparencySection(onOpenHowItWorks, onOpenPrompts, onOpenModelCalls, onOpenDiagnostics)
             PrivacySection(settings, viewModel)
             LlmSection(settings, ui, viewModel)
             AsrSection(settings, ui, viewModel)
@@ -147,6 +151,7 @@ private fun TransparencySection(
     onOpenHowItWorks: () -> Unit,
     onOpenPrompts: () -> Unit,
     onOpenModelCalls: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
 ) {
     SectionCard(
         title = "Look inside",
@@ -180,6 +185,17 @@ private fun TransparencySection(
         Text(
             "The last hundred requests, with the prompt, your data as it was sent, and the unedited " +
                 "reply. This is where a failing provider explains itself.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(14.dp))
+        OutlinedButton(onClick = onOpenDiagnostics, modifier = Modifier.fillMaxWidth()) {
+            Text("Test and diagnose")
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Run every stage end to end and see which one fails, or export one file with " +
+                "everything in it - settings, queue, model calls and the log.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -264,6 +280,30 @@ private fun LlmSection(settings: Settings, ui: SettingsUiState, viewModel: Setti
                 color = MaterialTheme.colorScheme.error,
             )
         }
+
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = viewModel::loadModels, enabled = !ui.loadingModels) {
+            Text(if (ui.loadingModels) "Asking the provider..." else "Show models this key can use")
+        }
+        ui.modelListError?.let { error ->
+            Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        if (ui.availableModels.isNotEmpty()) {
+            Text(
+                "Your provider says this key may use these. Tap one to select it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            for (candidate in ui.availableModels) {
+                ModelRow(
+                    candidate = candidate,
+                    selected = candidate.id == model,
+                    onSelect = { model = candidate.id },
+                )
+            }
+        }
+
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = apiKey,
@@ -614,5 +654,50 @@ private fun DataSection(
         OutlinedButton(onClick = onImport) { Text("Import a JSON export") }
         Spacer(Modifier.height(8.dp))
         KeyValueRow("Imports", "go through the same checks as everything else, so duplicates are skipped")
+    }
+}
+
+/**
+ * One model the provider offered, and whether this app can use it.
+ *
+ * A model that is listed but unusable is shown rather than hidden: the user is
+ * looking at the same name in their provider's console, so silently omitting it
+ * would read as the app failing to see it. Saying why it will not work here is
+ * the whole point.
+ */
+@Composable
+private fun ModelRow(
+    candidate: ModelCatalog.Model,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    val reason = ModelCatalog.whyUnusable(candidate.kind)
+    val usable = reason == null
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = usable, onClick = onSelect)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        RadioButton(selected = selected, onClick = onSelect, enabled = usable)
+        Column(Modifier.padding(start = 4.dp)) {
+            Text(
+                candidate.id,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (usable) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            if (reason != null) {
+                Text(
+                    reason,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }

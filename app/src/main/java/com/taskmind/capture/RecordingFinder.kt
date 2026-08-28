@@ -7,7 +7,6 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -104,15 +103,51 @@ class RecordingFinder(private val context: Context) {
      * Spec 11.3: the recorder is still flushing when the call-end trigger
      * fires. Require the size to be stable across two reads 1 s apart, or you
      * will transcribe a half-written file.
+     *
+     * Delegated to [AudioSource] because a candidate from the user's nominated
+     * folder is a `content://` URI, not a path: reading it with `File` reported
+     * "does not exist", which read as "still being written" and silently
+     * stalled every SAF-discovered recording forever.
      */
-    suspend fun isStable(candidate: Candidate): Boolean = withContext(Dispatchers.IO) {
-        val file = File(candidate.path)
-        if (!file.exists()) return@withContext false
-        val first = file.length()
-        if (first <= MIN_USABLE_BYTES) return@withContext false
-        delay(1_000)
-        val second = file.length()
-        first == second && second > MIN_USABLE_BYTES
+    suspend fun isStable(candidate: Candidate): Boolean =
+        AudioSource.isStable(context, candidate.path, MIN_USABLE_BYTES)
+
+    /**
+     * What discovery can actually see right now, for the diagnostic report.
+     *
+     * Deliberately unfiltered by time: "the folder has 40 recordings but none
+     * within the call window" and "the folder is empty or unreadable" are
+     * completely different problems that look identical from the outside.
+     */
+    suspend fun survey(userDirUri: String?): Survey = withContext(Dispatchers.IO) {
+        val user = scanUserDirectory(userDirUri)
+        val known = scanKnownPaths()
+        val media = queryMediaStore(0)
+        Survey(
+            allFilesAccess = hasAllFilesAccess(),
+            userDirConfigured = !userDirUri.isNullOrBlank(),
+            userDirReadable = userDirUri.isNullOrBlank() ||
+                runCatching { DocumentFile.fromTreeUri(context, Uri.parse(userDirUri))?.isDirectory == true }
+                    .getOrDefault(false),
+            userDirCount = user.size,
+            knownPathCount = known.size,
+            mediaStoreCount = media.size,
+            existingKnownPaths = knownPaths.filter { runCatching { File(it).isDirectory }.getOrDefault(false) },
+            newest = (user + known + media).distinctBy { it.path }.maxByOrNull { it.lastModified },
+        )
+    }
+
+    data class Survey(
+        val allFilesAccess: Boolean,
+        val userDirConfigured: Boolean,
+        val userDirReadable: Boolean,
+        val userDirCount: Int,
+        val knownPathCount: Int,
+        val mediaStoreCount: Int,
+        val existingKnownPaths: List<String>,
+        val newest: Candidate?,
+    ) {
+        val total: Int get() = userDirCount + knownPathCount + mediaStoreCount
     }
 
     // ------------------------------------------------------------- scanning

@@ -1,6 +1,8 @@
 package com.taskmind
 
 import android.content.Intent
+import androidx.core.content.FileProvider
+import java.io.File
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,6 +25,8 @@ import com.taskmind.ui.calls.CallsScreen
 import com.taskmind.ui.calls.CallsViewModel
 import com.taskmind.ui.importer.ImportTranscriptScreen
 import com.taskmind.ui.importer.ImportViewModel
+import com.taskmind.ui.diagnostics.DiagnosticsScreen
+import com.taskmind.ui.diagnostics.DiagnosticsViewModel
 import com.taskmind.ui.inspector.ModelCallsScreen
 import com.taskmind.ui.inspector.ModelCallsViewModel
 import com.taskmind.ui.log.ActivityLogScreen
@@ -72,6 +76,7 @@ class MainActivity : ComponentActivity() {
                     startOnboarding = needsOnboarding,
                     startRoute = startRoute,
                     onShareText = ::shareText,
+                    onShareFile = ::shareFile,
                 )
             }
         }
@@ -98,6 +103,28 @@ class MainActivity : ComponentActivity() {
         runCatching { startActivity(Intent.createChooser(intent, title)) }
     }
 
+    /**
+     * A diagnostic report goes out as a file, not as EXTRA_TEXT.
+     *
+     * The report runs to tens of thousands of characters and most share targets
+     * silently truncate a large text extra - which would produce a report that
+     * looks complete and is missing the end, the worst possible outcome for a
+     * diagnostic.
+     */
+    private fun shareFile(file: File) {
+        val uri = runCatching {
+            FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        }.getOrNull() ?: return
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, file.name)
+            putExtra(Intent.EXTRA_TITLE, file.name)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { startActivity(Intent.createChooser(intent, "TaskMind diagnostics")) }
+    }
+
     companion object {
         const val EXTRA_ROUTE = "com.taskmind.extra.ROUTE"
     }
@@ -116,6 +143,7 @@ object Routes {
     const val PROMPTS = "prompts"
     const val MODEL_CALLS = "model_calls"
     const val HOW_IT_WORKS = "how_it_works"
+    const val DIAGNOSTICS = "diagnostics"
 
     fun taskDetail(id: String) = "task/$id"
 }
@@ -125,6 +153,7 @@ fun TaskMindNavHost(
     startOnboarding: Boolean,
     startRoute: String?,
     onShareText: (String, String) -> Unit,
+    onShareFile: (File) -> Unit,
     navController: NavHostController = rememberNavController(),
 ) {
     val start = when {
@@ -180,6 +209,7 @@ fun TaskMindNavHost(
                 onOpenLog = { navController.navigate(Routes.LOG) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenModelCalls = { navController.navigate(Routes.MODEL_CALLS) },
+                onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
                 onShareText = onShareText,
             )
         }
@@ -193,6 +223,16 @@ fun TaskMindNavHost(
                 onOpenPrompts = { navController.navigate(Routes.PROMPTS) },
                 onOpenModelCalls = { navController.navigate(Routes.MODEL_CALLS) },
                 onOpenHowItWorks = { navController.navigate(Routes.HOW_IT_WORKS) },
+                onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
+            )
+        }
+
+        composable(Routes.DIAGNOSTICS) {
+            val vm: DiagnosticsViewModel = viewModel(factory = AppViewModels.factory)
+            DiagnosticsScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onShareFile = onShareFile,
             )
         }
 

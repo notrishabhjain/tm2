@@ -26,6 +26,20 @@ enum class CaptureState {
     PENDING_TRANSCRIPTION,
     PENDING_EXTRACTION,
     BUDGET_HELD,
+
+    /**
+     * The provider rejected the request itself - wrong model, blocked model,
+     * rejected key. Retrying cannot fix it, and retrying anyway is expensive:
+     * these captures previously parked in PENDING_EXTRACTION with no next
+     * attempt time, which the work queue reads as "due now", so every drain
+     * re-sent them. On the device that spent an entire day's request quota on a
+     * model that could never answer.
+     *
+     * Nothing here is retried until the provider settings actually change, or
+     * the user asks for a retry.
+     */
+    BLOCKED_CONFIG,
+
     DONE,
     REJECTED,
     FAILED_PERMANENT,

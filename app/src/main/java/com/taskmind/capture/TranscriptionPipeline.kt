@@ -48,9 +48,8 @@ class TranscriptionPipeline(
         if (path.isNullOrBlank()) {
             return@withContext Outcome.Parked("no recording found yet")
         }
-        val source = File(path)
-        if (!source.exists()) {
-            return@withContext Outcome.Parked("recording no longer at $path")
+        if (!AudioSource.exists(context, path)) {
+            return@withContext Outcome.Parked("recording no longer readable at $path")
         }
         if (!hasAsrKey()) {
             // Spec 8.4: nothing is discarded for lack of a key.
@@ -77,6 +76,12 @@ class TranscriptionPipeline(
 
         val workDir = File(context.cacheDir, "asr/${capture.id}").apply { mkdirs() }
         val (transcriber, provider) = transcriberProvider()
+
+        // A recording found in the user's nominated folder is a content:// URI,
+        // which the decoder cannot open as a file. Resolving it here is what
+        // makes the folder picker work at all.
+        val source = AudioSource.materialise(context, path, workDir)
+            ?: return@withContext Outcome.Parked("recording could not be read from $path")
 
         try {
             val pcm = AudioDecoder.decodeToMonoPcm(source, File(workDir, "audio.pcm"))
@@ -139,7 +144,11 @@ class TranscriptionPipeline(
             )
 
             if (settings.deleteRecordingsAfterTranscription) {
-                runCatching { source.delete() }
+                // Delete the ORIGINAL, not `source` - for a content:// URI
+                // `source` is a scratch copy in the cache, and deleting that
+                // would leave the user's recording in place while reporting
+                // that the setting had been honoured.
+                runCatching { AudioSource.delete(context, path) }
             }
             Outcome.Transcribed(transcript.length, durationSeconds)
         } catch (e: AudioDecoder.DecodeException) {

@@ -58,6 +58,7 @@ fun StatusScreen(
     onOpenLog: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenModelCalls: () -> Unit,
+    onOpenDiagnostics: () -> Unit = {},
     onShareText: (String, String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -217,6 +218,7 @@ fun StatusScreen(
                     }
                     OutlinedButton(onClick = onOpenLog) { Text("Activity log") }
                     OutlinedButton(onClick = onOpenModelCalls) { Text("Model calls") }
+                    OutlinedButton(onClick = onOpenDiagnostics) { Text("Test and diagnose") }
                 }
 
                 state.selfTestReport?.let { report ->
