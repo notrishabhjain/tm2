@@ -46,7 +46,11 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
         _ui.value = _ui.value.copy(buildingExport = true, message = null)
         viewModelScope.launch {
             val result = runCatching {
-                val text = DiagnosticReport(container.context, container).build(includeSelfTest)
+                val text = DiagnosticReport(container.context, container).build(
+                    includeSelfTest = includeSelfTest,
+                    // Reuse the run already on screen instead of repeating it.
+                    existingReport = _ui.value.report,
+                )
                 val dir = File(container.context.cacheDir, "diagnostics").apply { mkdirs() }
                 // One file per export, named by timestamp: comparing two
                 // reports from before and after a settings change is the normal

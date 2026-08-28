@@ -120,10 +120,13 @@ class RecordingFinder(private val context: Context) {
      * completely different problems that look identical from the outside.
      */
     suspend fun survey(userDirUri: String?): Survey = withContext(Dispatchers.IO) {
+        cachedSurvey?.takeIf { System.currentTimeMillis() - it.takenAt < SURVEY_CACHE_MILLIS }
+            ?.let { return@withContext it }
+
         val user = scanUserDirectory(userDirUri)
         val known = scanKnownPaths()
         val media = queryMediaStore(0)
-        Survey(
+        val survey = Survey(
             allFilesAccess = hasAllFilesAccess(),
             userDirConfigured = !userDirUri.isNullOrBlank(),
             userDirReadable = userDirUri.isNullOrBlank() ||
@@ -134,7 +137,10 @@ class RecordingFinder(private val context: Context) {
             mediaStoreCount = media.size,
             existingKnownPaths = knownPaths.filter { runCatching { File(it).isDirectory }.getOrDefault(false) },
             newest = (user + known + media).distinctBy { it.path }.maxByOrNull { it.lastModified },
+            takenAt = System.currentTimeMillis(),
         )
+        cachedSurvey = survey
+        survey
     }
 
     data class Survey(
@@ -146,6 +152,7 @@ class RecordingFinder(private val context: Context) {
         val mediaStoreCount: Int,
         val existingKnownPaths: List<String>,
         val newest: Candidate?,
+        val takenAt: Long = 0,
     ) {
         val total: Int get() = userDirCount + knownPathCount + mediaStoreCount
     }
@@ -252,7 +259,20 @@ class RecordingFinder(private val context: Context) {
         return out
     }
 
+    /**
+     * The last survey, reused briefly.
+     *
+     * A full survey walked 6463 files on the device and took 58 seconds. The
+     * diagnostics screen runs one, the report runs another, and the report's
+     * optional self-test runs a third - three minutes of apparent hang for an
+     * answer that cannot meaningfully change in between.
+     */
+    @Volatile
+    private var cachedSurvey: Survey? = null
+
     private companion object {
+        const val SURVEY_CACHE_MILLIS = 60_000L
+
         val PATH_KEYWORDS = listOf("call", "record", "phone", "voice", "dialer", "rec")
 
         /** Below this a file is a stub the recorder has only just created. */

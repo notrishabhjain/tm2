@@ -57,7 +57,10 @@ fun DiagnosticsScreen(
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    var includeSelfTest by remember { mutableStateOf(true) }
+    // Off by default: running the tests as part of the export adds a minute and
+    // two paid model calls behind a button that only says "Building...". A run
+    // already on screen is folded in automatically either way.
+    var includeSelfTest by remember { mutableStateOf(false) }
 
     LaunchedEffect(ui.message) {
         ui.message?.let {
@@ -137,17 +140,35 @@ fun DiagnosticsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                LabeledSwitch(
-                    label = "Run the tests and include their results",
-                    checked = includeSelfTest,
-                    onCheckedChange = { includeSelfTest = it },
-                )
+                if (ui.report != null) {
+                    Text(
+                        "The test results above will be included.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    LabeledSwitch(
+                        label = "Run the tests first and include them",
+                        description = "Adds about a minute and two model calls.",
+                        checked = includeSelfTest,
+                        onCheckedChange = { includeSelfTest = it },
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = { viewModel.exportReport(includeSelfTest, onShareFile) },
                     enabled = !ui.buildingExport,
                 ) {
                     Text(if (ui.buildingExport) "Building..." else "Export and share")
+                }
+                if (ui.buildingExport) {
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(
+                        "Reading the recording folders can take a while the first time.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 

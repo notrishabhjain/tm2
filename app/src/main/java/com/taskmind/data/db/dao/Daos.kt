@@ -191,6 +191,17 @@ interface FingerprintDao {
     @Query("DELETE FROM fingerprints WHERE seenAt < :before")
     suspend fun purgeOlderThan(before: Long)
 
+    /**
+     * Used by the self-test, which must be repeatable.
+     *
+     * Without this the synthetic message's fingerprint outlived the test that
+     * created it, so the second run was rejected as a duplicate before any
+     * model was called - the diagnostic reported the pipeline broken when what
+     * was broken was the diagnostic.
+     */
+    @Query("DELETE FROM fingerprints WHERE hash = :hash")
+    suspend fun deleteByHash(hash: String)
+
     @Query("DELETE FROM fingerprints")
     suspend fun deleteAll()
 }

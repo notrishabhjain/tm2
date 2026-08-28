@@ -32,6 +32,47 @@ class PreFilterTest {
         fingerprintSeen = seen,
     )
 
+    @Test
+    fun `a group summary that resolves to one message is kept`() {
+        // The device dropped "Please call Rahul tomorrow at 4 PM" three times
+        // because it only ever arrived flagged as a summary. When the summary
+        // carries a single MessagingStyle entry it names one sender and one
+        // message, and the sourceRef dedup absorbs the individual notification
+        // if it arrives too.
+        val verdict = PreFilter.evaluate(
+            input("Please call Rahul tomorrow at 4 PM", groupSummary = true)
+                .copy(hasResolvedMessage = true),
+        )
+        assertEquals(PreFilter.Verdict.Pass, verdict)
+    }
+
+    @Test
+    fun `a roll-up banner with no resolved message is still rejected`() {
+        // "3 new messages" carries no single sender or text, and taking it
+        // would produce one task per bundled message.
+        val verdict = PreFilter.evaluate(
+            input("3 new messages", groupSummary = true).copy(hasResolvedMessage = false),
+        )
+        assertEquals("group summary", rejectRule(verdict))
+    }
+
+    @Test
+    fun `resolving a message does not excuse any other rule`() {
+        // The summary exemption must not become a way past the filter: an OTP
+        // or an advert that arrives as a resolved summary is still rejected.
+        val otp = input("Your OTP is 448213, do not share it with anyone", groupSummary = true)
+            .copy(hasResolvedMessage = true)
+        assertEquals("otp/verification pattern", rejectRule(PreFilter.evaluate(otp)))
+
+        val advert = input("Biggest sale ends tonight, shop now", groupSummary = true)
+            .copy(hasResolvedMessage = true)
+        assertEquals("promotional content", rejectRule(PreFilter.evaluate(advert)))
+
+        val offList = input("bhai kal tak invoice bhej dena", groupSummary = true, allowListed = false)
+            .copy(hasResolvedMessage = true)
+        assertEquals("package not on allow-list", rejectRule(PreFilter.evaluate(offList)))
+    }
+
     private fun rejectRule(v: PreFilter.Verdict): String {
         assertTrue("expected a reject, got $v", v is PreFilter.Verdict.Reject)
         return (v as PreFilter.Verdict.Reject).rule

@@ -90,6 +90,11 @@ class CaptureCoordinator(
                 senderKey = resolved.senderKey,
                 text = resolved.messageText,
                 isGroupSummary = fields.isGroupSummary,
+                // A summary that resolved to one MessagingStyle entry names a
+                // single sender and message, so it is a real message rather
+                // than a roll-up banner.
+                hasResolvedMessage = resolved.textSource == "EXTRA_MESSAGES.last" &&
+                    resolved.senderKey.isNotBlank(),
                 isOngoing = fields.isOngoing,
                 isMediaStyle = fields.isMediaStyle,
                 isAllowListed = fields.packageName in settings.allowedPackages,
@@ -106,7 +111,12 @@ class CaptureCoordinator(
                 Stage.PREFILTER,
                 LogLevel.DEBUG,
                 "rejected: ${verdict.rule}",
-                "pkg=${fields.packageName} sender=${resolved.senderKey} text=${resolved.messageText.take(160)}",
+                // The text source is part of the rejection because it is what
+                // distinguishes a real message that happened to arrive as a
+                // summary from a genuine roll-up banner - a question the log
+                // previously could not answer.
+                "pkg=${fields.packageName} sender=${resolved.senderKey} via=${resolved.textSource} " +
+                    "text=${resolved.messageText.take(160)}",
             )
             return Outcome.Rejected(verdict.rule)
         }
