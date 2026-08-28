@@ -190,7 +190,6 @@ fun TaskMindNavHost(
                 onOpenReview = { navController.navigate(Routes.REVIEW) },
                 onOpenCalls = { navController.navigate(Routes.CALLS) },
                 onOpenImport = { navController.navigate(Routes.IMPORT) },
-                onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
             )
         }
 
@@ -290,6 +289,7 @@ fun TaskMindNavHost(
                 viewModel = vm,
                 onBack = { navController.popBackStack() },
                 onOpenImport = { navController.navigate(Routes.IMPORT) },
+                onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
             )
         }
 
