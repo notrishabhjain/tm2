@@ -38,6 +38,68 @@ class PreFilterTest {
     }
 
     @Test
+    fun `the telegram advert that reached the model is now rejected`() {
+        // Captured verbatim from the device log: this was sent to the LLM and
+        // paid for.
+        val advert = "Transform your backyard with our cozy FIRE PITS & Patio Heaters - " +
+            "discover essentials for outdoor living before this post disappears! \n\n#ad InsideAd"
+        assertEquals("promotional content", rejectRule(PreFilter.evaluate(input(advert))))
+    }
+
+    @Test
+    fun `other explicit ad markers are rejected`() {
+        for (text in listOf(
+            "Sponsored by Acme - our biggest sale ends tonight",
+            "Reply STOP to unsubscribe from these messages",
+            "Flat discount for you, T&C apply, shop now",
+        )) {
+            assertEquals(text, "promotional content", rejectRule(PreFilter.evaluate(input(text))))
+        }
+    }
+
+    @Test
+    fun `commercial words inside a genuine request are not treated as advertising`() {
+        // The filter's bias is high recall: a colleague can talk about
+        // discounts and orders without it being an advert, and rejecting these
+        // would lose real commitments.
+        for (text in listOf(
+            "unko 10% off de dena aaj hi",
+            "bhai woh order kal tak place kar dena please",
+            "client ko offer bhej dena shaam tak",
+        )) {
+            assertEquals(text, PreFilter.Verdict.Pass, PreFilter.evaluate(input(text)))
+        }
+    }
+
+    @Test
+    fun `the package-only check matches the full evaluation`() {
+        // CaptureCoordinator applies evaluatePackage first, before it does the
+        // work of pulling text out of the notification. If the two disagreed,
+        // that shortcut would change behaviour rather than just save work.
+        val cases = listOf(
+            Triple("com.whatsapp", true, null),
+            Triple("com.whatsapp", false, "package not on allow-list"),
+            Triple("com.miui.gallery", true, "system package"),
+            Triple("com.android.systemui", true, "system package"),
+            Triple("", true, "empty package"),
+            Triple("com.taskmind", true, "own package"),
+        )
+        for ((pkg, allowed, expected) in cases) {
+            val verdict = PreFilter.evaluatePackage(pkg, allowed)
+            if (expected == null) {
+                assertEquals(pkg, PreFilter.Verdict.Pass, verdict)
+            } else {
+                assertEquals(pkg, expected, rejectRule(verdict))
+            }
+            // And the full evaluation must reach the same conclusion.
+            val full = PreFilter.evaluate(
+                input("bhai kal tak invoice bhej dena", pkg = pkg, allowListed = allowed),
+            )
+            if (expected != null) assertEquals(pkg, expected, rejectRule(full))
+        }
+    }
+
+    @Test
     fun `a real hinglish request passes`() {
         val v = PreFilter.evaluate(input("beta woh 25000 ka payment kal tak kar dena"))
         assertEquals(PreFilter.Verdict.Pass, v)

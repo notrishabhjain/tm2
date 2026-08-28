@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskmind.ai.ConnectionTester
+import com.taskmind.ai.ModelLister
+import com.taskmind.core.ModelCatalog
 import com.taskmind.capture.AudioChunker
 import com.taskmind.core.AsrProvider
 import com.taskmind.data.db.entity.SeenPackageEntity
@@ -27,6 +29,11 @@ data class SettingsUiState(
     val seenPackages: List<SeenPackageEntity> = emptyList(),
     val message: String? = null,
     val busy: Boolean = false,
+
+    /** What the provider says this key may use. Empty until asked. */
+    val availableModels: List<ModelCatalog.Model> = emptyList(),
+    val loadingModels: Boolean = false,
+    val modelListError: String? = null,
 )
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
@@ -87,6 +94,40 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             val result = container.connectionTester.testLlm(container.llmConfig())
             _ui.value = _ui.value.copy(testingLlm = false, llmTestResult = result)
+        }
+    }
+
+    /**
+     * Asks the provider which models this key can use.
+     *
+     * The alternative is guessing, and guessing is what went wrong: the app
+     * shipped a suggestion list, the account had a different set enabled, and
+     * the mismatch presented as a 403 naming a model the user had never heard
+     * of. The provider is the only authority on this, so ask it.
+     */
+    fun loadModels() {
+        if (_ui.value.loadingModels) return
+        _ui.value = _ui.value.copy(loadingModels = true, modelListError = null)
+        viewModelScope.launch {
+            val settings = container.settingsRepository.current()
+            when (val result = container.modelLister.list(settings.llmBaseUrl, container.secretStore.llmApiKey)) {
+                is ModelLister.Result.Ok -> _ui.value = _ui.value.copy(
+                    loadingModels = false,
+                    availableModels = ModelCatalog.forExtraction(result.models),
+                    modelListError = null,
+                )
+                is ModelLister.Result.Failed -> _ui.value = _ui.value.copy(
+                    loadingModels = false,
+                    availableModels = emptyList(),
+                    modelListError = result.message,
+                )
+                ModelLister.Result.Unsupported -> _ui.value = _ui.value.copy(
+                    loadingModels = false,
+                    availableModels = emptyList(),
+                    modelListError = "This provider does not publish a model list. " +
+                        "Enter the model name from its console.",
+                )
+            }
         }
     }
 

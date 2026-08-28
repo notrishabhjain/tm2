@@ -34,6 +34,10 @@ class ExtractionWorker(context: Context, params: WorkerParameters) : CoroutineWo
             container.settingsRepository.rollBudgetIfNeeded(DateResolver.dayKey(now))
             releaseBudgetHoldsIfNewDay(container, now)
 
+            // Captures blocked by a bad model or key come back into the queue
+            // when - and only when - that configuration has actually changed.
+            container.extractionPipeline.releaseBlockedIfConfigChanged()
+
             val batch = dao.dueForState(CaptureState.PENDING_EXTRACTION, now, BATCH_SIZE)
             if (batch.isEmpty()) return Result.success()
 

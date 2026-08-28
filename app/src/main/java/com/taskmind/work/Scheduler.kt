@@ -109,6 +109,23 @@ object Scheduler {
         WatchdogReceiver.schedule(context)
     }
 
+    /**
+     * The periodic work that is actually registered right now.
+     *
+     * WorkManager silently drops periodic work when the OEM's battery manager
+     * decides to, and on HyperOS that is the difference between an app that
+     * drains its queue in the background and one that only works while open.
+     * The diagnostics screen reports what it finds rather than what was asked
+     * for.
+     */
+    fun scheduledWorkNames(context: Context): List<String> =
+        listOf(WORK_MAINTENANCE, WORK_RETENTION, WORK_UPDATE).filter { name ->
+            runCatching {
+                wm(context).getWorkInfosForUniqueWork(name).get()
+                    .any { !it.state.isFinished }
+            }.getOrDefault(false)
+        }.map { it.removePrefix("taskmind.") }
+
     fun cancelAll(context: Context) {
         wm(context).cancelUniqueWork(WORK_MAINTENANCE)
         wm(context).cancelUniqueWork(WORK_RETENTION)

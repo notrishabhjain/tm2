@@ -6,6 +6,7 @@ import com.taskmind.ai.AsrConfig
 import com.taskmind.ai.CloudTaskExtractor
 import com.taskmind.ai.ConnectionTester
 import com.taskmind.ai.LlmClient
+import com.taskmind.ai.ModelLister
 import com.taskmind.ai.TaskExtractor
 import com.taskmind.ai.Transcriber
 import com.taskmind.ai.TranscriberFactory
@@ -22,6 +23,7 @@ import com.taskmind.data.repo.RoomInferenceRecorder
 import com.taskmind.data.repo.RoomIntakePorts
 import com.taskmind.data.repo.TaskRepository
 import com.taskmind.data.settings.PromptStore
+import com.taskmind.data.settings.RuntimeStateStore
 import com.taskmind.data.settings.SecretStore
 import com.taskmind.data.settings.Settings
 import com.taskmind.data.settings.SettingsRepository
@@ -59,6 +61,7 @@ class AppContainer(context: Context) {
 
     /** User overrides for the system prompts (Settings -> Prompts). */
     val promptStore: PromptStore by lazy { PromptStore(appContext) }
+    val runtimeStateStore: RuntimeStateStore by lazy { RuntimeStateStore(appContext) }
 
     /**
      * A snapshot of settings readable without suspending.
@@ -171,6 +174,8 @@ class AppContainer(context: Context) {
         ) to provider
     }
 
+    val modelLister: ModelLister by lazy { ModelLister(httpClient) }
+
     val connectionTester: ConnectionTester by lazy {
         ConnectionTester(llmClient) { stage, level, message, detail ->
             logger.write(stage, level, message, detail)
@@ -194,6 +199,7 @@ class AppContainer(context: Context) {
             rawCaptureDao = database.rawCaptureDao(),
             fingerprintDao = database.fingerprintDao(),
             settingsRepository = settingsRepository,
+            runtimeStateStore = runtimeStateStore,
             extractor = taskExtractor,
             funnel = intakeFunnel,
             logger = logger,

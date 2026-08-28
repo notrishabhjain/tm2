@@ -54,17 +54,56 @@ object PreFilter {
     private val DLT_HEADER = Regex("^[A-Z]{2}-[A-Z0-9]{6}$")
     private val AUTOMATED_SENDER = Regex("noreply|no-reply|alerts?|info|update", RegexOption.IGNORE_CASE)
 
-    fun evaluate(input: Input): Verdict {
-        val pkg = input.packageName.trim()
+    /**
+     * Explicit advertising markers only.
+     *
+     * A Telegram post ("Transform your backyard with our cozy FIRE PITS ...
+     * #ad InsideAd") reached the model on the device and cost a request. The
+     * temptation is to add "buy now", "% off" and similar, but those appear in
+     * genuine work messages - "unko 10% off de dena" is a real commitment - and
+     * the filter's bias is to reject only on a rule it can name. Every pattern
+     * here is something a colleague would not write to another person.
+     */
+    private val PROMOTIONAL = Regex(
+        "#ad\\b|#sponsored|#promo\\b|#advertisement|sponsored (?:post|by)|promoted by|" +
+            "unsubscribe|t&c apply|terms (?:&|and) conditions apply|limited time offer|" +
+            "offer ends|sale ends|shop now",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /**
+     * The subset of rules that depend on nothing but the package name.
+     *
+     * Split out so the caller can apply them before it does the work of pulling
+     * text out of the notification: an app nobody asked to watch should not
+     * cost a text extraction or a log line.
+     */
+    fun evaluatePackage(
+        packageName: String,
+        isAllowListed: Boolean,
+        ownPackageName: String = "com.taskmind",
+    ): Verdict {
+        val pkg = packageName.trim()
         if (pkg.isEmpty()) return Verdict.Reject("empty package")
-        if (pkg == input.ownPackageName) return Verdict.Reject("own package")
+        if (pkg == ownPackageName) return Verdict.Reject("own package")
         if (pkg in SYSTEM_PACKAGES || pkg.startsWith("com.android.") || pkg.startsWith("com.miui.")) {
             return Verdict.Reject("system package", pkg)
         }
+        if (!isAllowListed) return Verdict.Reject("package not on allow-list", pkg)
+        return Verdict.Pass
+    }
+
+    fun evaluate(input: Input): Verdict {
+        val packageVerdict = evaluatePackage(
+            packageName = input.packageName,
+            isAllowListed = input.isAllowListed,
+            ownPackageName = input.ownPackageName,
+        )
+        if (packageVerdict is Verdict.Reject) return packageVerdict
+
         if (input.isGroupSummary) return Verdict.Reject("group summary")
         if (input.isOngoing) return Verdict.Reject("ongoing event")
         if (input.isMediaStyle) return Verdict.Reject("media notification")
-        if (!input.isAllowListed) return Verdict.Reject("package not on allow-list", pkg)
 
         val text = input.text.trim()
         if (text.isEmpty()) return Verdict.Reject("empty text")
@@ -76,6 +115,10 @@ object PreFilter {
         if (TRANSACTIONAL.containsMatchIn(text)) {
             val hit = TRANSACTIONAL.find(text)?.value
             return Verdict.Reject("transactional pattern", hit)
+        }
+        if (PROMOTIONAL.containsMatchIn(text)) {
+            val hit = PROMOTIONAL.find(text)?.value
+            return Verdict.Reject("promotional content", hit)
         }
 
         val sender = input.senderKey.trim()

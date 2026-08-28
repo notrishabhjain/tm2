@@ -1,0 +1,203 @@
+package com.taskmind.ui.diagnostics
+
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.taskmind.diagnostics.SelfTest
+import com.taskmind.ui.components.LabeledSwitch
+import com.taskmind.ui.components.SectionCard
+import java.io.File
+
+/**
+ * The screen to open when the app "isn't working".
+ *
+ * Two things live here, and they answer different questions. The test run
+ * answers "which stage is broken" on the device, in order, so the first failure
+ * is the cause rather than a symptom. The export answers "why", by putting
+ * everything - settings, queue, model calls with their replies, the log - into
+ * one file that can leave the phone and be read properly.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DiagnosticsScreen(
+    viewModel: DiagnosticsViewModel,
+    onBack: () -> Unit,
+    onShareFile: (File) -> Unit,
+) {
+    val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    var includeSelfTest by remember { mutableStateOf(true) }
+
+    LaunchedEffect(ui.message) {
+        ui.message?.let {
+            snackbar.showSnackbar(it)
+            viewModel.clearMessage()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Test and diagnose") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
+        Column(
+            Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+        ) {
+            SectionCard(title = "Run every check") {
+                Text(
+                    "Pushes a real Hinglish message and a real transcript through the production " +
+                        "pipeline, and checks permissions, storage, the queue, both providers and " +
+                        "the background workers on the way. Anything it creates is deleted afterwards.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = viewModel::runTests, enabled = !ui.running) {
+                    Text(if (ui.running) "Running..." else "Run all tests")
+                }
+                if (ui.running) {
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+            }
+
+            ui.report?.let { report ->
+                Spacer(Modifier.height(12.dp))
+                SectionCard(title = "Results - ${report.summary}") {
+                    if (report.criticalFailures.isNotEmpty()) {
+                        Text(
+                            "Start with the first failure below. The ones under it are usually " +
+                                "consequences of it rather than separate problems.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    for (step in report.steps) {
+                        StepRow(step)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            SectionCard(title = "Export a diagnostic report") {
+                Text(
+                    "One file with the settings, the capture queue, every recent model call with " +
+                        "its reply, the recording folder survey and the activity log.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "It contains your captured message text, because a capture that produced no " +
+                        "task cannot be explained without the words that failed. It never contains " +
+                        "your API keys. Read it before you send it to anyone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                LabeledSwitch(
+                    label = "Run the tests and include their results",
+                    checked = includeSelfTest,
+                    onCheckedChange = { includeSelfTest = it },
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { viewModel.exportReport(includeSelfTest, onShareFile) },
+                    enabled = !ui.buildingExport,
+                ) {
+                    Text(if (ui.buildingExport) "Building..." else "Export and share")
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            SectionCard(title = "If captures are stuck") {
+                Text(
+                    "Captures blocked by a provider error retry on their own once you change the " +
+                        "model or base URL. If you fixed something in your provider's console " +
+                        "instead - enabling a model, raising a limit - this app cannot see that, " +
+                        "so tell it to try again.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(onClick = viewModel::retryBlockedCaptures) {
+                    Text("Retry blocked captures now")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StepRow(step: SelfTest.Step) {
+    Column(Modifier.padding(vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (step.passed) "PASS" else if (step.critical) "FAIL" else "WARN",
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = FontFamily.Monospace,
+                color = when {
+                    step.passed -> MaterialTheme.colorScheme.primary
+                    step.critical -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.tertiary
+                },
+            )
+            Spacer(Modifier.height(0.dp))
+            Text(
+                "  ${step.name}",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            Text("${step.millis}ms", style = MaterialTheme.typography.labelSmall)
+        }
+        Text(
+            step.detail,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        step.hint?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
