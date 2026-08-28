@@ -49,6 +49,7 @@ fun CallsScreen(
     viewModel: CallsViewModel,
     onBack: () -> Unit,
     onOpenImport: () -> Unit,
+    onOpenRecordings: () -> Unit = {},
 ) {
     val calls by viewModel.calls.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
@@ -72,6 +73,7 @@ fun CallsScreen(
                 },
                 actions = {
                     TextButton(onClick = viewModel::sweepNow) { Text("Check now") }
+                    TextButton(onClick = onOpenRecordings) { Text("Recordings") }
                     TextButton(onClick = onOpenImport) { Text("Import") }
                 },
             )

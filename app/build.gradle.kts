@@ -11,8 +11,8 @@ plugins {
 
 // versionCode / versionName are the contract the self-updater (spec S19) checks
 // against update.json. Bump both together.
-val appVersionCode = 3
-val appVersionName = "1.2.0"
+val appVersionCode = 5
+val appVersionName = "1.4.0"
 
 /**
  * Release signing.

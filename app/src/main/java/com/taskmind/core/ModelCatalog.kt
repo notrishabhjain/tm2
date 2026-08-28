@@ -45,9 +45,24 @@ object ModelCatalog {
         val usableForTranscription: Boolean get() = kind == Kind.TRANSCRIPTION
     }
 
-    private val TRANSCRIPTION = Regex("whisper|saarika|saaras|speech|transcrib|\\basr\\b", RegexOption.IGNORE_CASE)
-    private val GUARD = Regex("guard|moderation|safety|classifier", RegexOption.IGNORE_CASE)
-    private val OTHER = Regex("embed|rerank|\\btts\\b|dall-?e|image|vision-only|stable-diffusion", RegexOption.IGNORE_CASE)
+    private val TRANSCRIPTION = Regex("whisper|saarika|saaras|transcrib|\\basr\\b|speech-to-text", RegexOption.IGNORE_CASE)
+    private val GUARD = Regex("guard|moderation|safety|safeguard|classifier", RegexOption.IGNORE_CASE)
+
+    /**
+     * Speech synthesis, embeddings and image models.
+     *
+     * `orpheus` is here by name because it reads like nothing else in the list:
+     * the account this was written for had `canopylabs/orpheus-v1-english` and
+     * `canopylabs/orpheus-arabic-saudi` enabled, and without a rule they would
+     * be offered as usable chat models. `speech` is matched here too - a
+     * text-to-speech model and a speech-to-text model both contain it, and the
+     * transcription rule above claims the recognisers by name first.
+     */
+    private val OTHER = Regex(
+        "embed|rerank|\\btts\\b|text-to-speech|orpheus|voice|audio-preview|" +
+            "dall-?e|image|vision-only|stable-diffusion|speech",
+        RegexOption.IGNORE_CASE,
+    )
 
     fun classify(id: String): Kind = when {
         TRANSCRIPTION.containsMatchIn(id) -> Kind.TRANSCRIPTION

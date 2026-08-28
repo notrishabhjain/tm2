@@ -27,6 +27,8 @@ import com.taskmind.ui.importer.ImportTranscriptScreen
 import com.taskmind.ui.importer.ImportViewModel
 import com.taskmind.ui.diagnostics.DiagnosticsScreen
 import com.taskmind.ui.diagnostics.DiagnosticsViewModel
+import com.taskmind.ui.recordings.RecordingsScreen
+import com.taskmind.ui.recordings.RecordingsViewModel
 import com.taskmind.ui.inspector.ModelCallsScreen
 import com.taskmind.ui.inspector.ModelCallsViewModel
 import com.taskmind.ui.log.ActivityLogScreen
@@ -144,6 +146,7 @@ object Routes {
     const val MODEL_CALLS = "model_calls"
     const val HOW_IT_WORKS = "how_it_works"
     const val DIAGNOSTICS = "diagnostics"
+    const val RECORDINGS = "recordings"
 
     fun taskDetail(id: String) = "task/$id"
 }
@@ -224,7 +227,13 @@ fun TaskMindNavHost(
                 onOpenModelCalls = { navController.navigate(Routes.MODEL_CALLS) },
                 onOpenHowItWorks = { navController.navigate(Routes.HOW_IT_WORKS) },
                 onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
+                onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
             )
+        }
+
+        composable(Routes.RECORDINGS) {
+            val vm: RecordingsViewModel = viewModel(factory = AppViewModels.factory)
+            RecordingsScreen(viewModel = vm, onBack = { navController.popBackStack() })
         }
 
         composable(Routes.DIAGNOSTICS) {
@@ -280,6 +289,7 @@ fun TaskMindNavHost(
                 viewModel = vm,
                 onBack = { navController.popBackStack() },
                 onOpenImport = { navController.navigate(Routes.IMPORT) },
+                onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
             )
         }
 

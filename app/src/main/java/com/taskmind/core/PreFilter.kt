@@ -21,6 +21,11 @@ object PreFilter {
         val senderKey: String,
         val text: String,
         val isGroupSummary: Boolean = false,
+        /**
+         * True when the text came from a single MessagingStyle entry with its
+         * own sender, rather than from the notification's summary fields.
+         */
+        val hasResolvedMessage: Boolean = false,
         val isOngoing: Boolean = false,
         val isMediaStyle: Boolean = false,
         val isAllowListed: Boolean = true,
@@ -101,7 +106,20 @@ object PreFilter {
         )
         if (packageVerdict is Verdict.Reject) return packageVerdict
 
-        if (input.isGroupSummary) return Verdict.Reject("group summary")
+        // A group summary is normally the rolled-up "3 new messages" banner that
+        // sits alongside the real per-conversation notifications, and taking it
+        // would create one task per bundled message.
+        //
+        // But not always. On the device a plain "Please call Rahul tomorrow at
+        // 4 PM" arrived ONLY as a summary, three times, and was thrown away
+        // three times - precisely the kind of commitment this app exists to
+        // catch. When the summary carries a single resolved MessagingStyle
+        // entry it is not a roll-up: it names one sender and one message, and
+        // it produces the same sourceRef as the individual notification would,
+        // so the existing duplicate check absorbs whichever arrives second.
+        if (input.isGroupSummary && !input.hasResolvedMessage) {
+            return Verdict.Reject("group summary")
+        }
         if (input.isOngoing) return Verdict.Reject("ongoing event")
         if (input.isMediaStyle) return Verdict.Reject("media notification")
 

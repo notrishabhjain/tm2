@@ -6,6 +6,7 @@ import com.taskmind.capture.CaptureCoordinator
 import com.taskmind.core.CaptureState
 import com.taskmind.core.ModelCatalog
 import com.taskmind.core.PromptKind
+import com.taskmind.core.SourceRef
 import com.taskmind.core.LogLevel
 import com.taskmind.core.NotificationResolver
 import com.taskmind.core.Stage
@@ -155,6 +156,21 @@ class SelfTest(private val context: Context, private val container: AppContainer
 
         val capture = container.database.rawCaptureDao().byId(captureId)
             ?: return@timedSuspend false to "the RawCapture row was not written"
+
+        // The dedup fingerprint outlives the task and the capture it came from
+        // by seven days. Leaving it in place made this test pass exactly once
+        // and then fail forever: the second run was rejected as a duplicate in
+        // a few milliseconds, before any model was called, and the diagnostic
+        // reported the pipeline broken when the only broken thing was the
+        // diagnostic. Computed from the capture row rather than rebuilt from
+        // the constants, so it cannot drift from what extraction will look up.
+        container.database.fingerprintDao().deleteByHash(
+            SourceRef.fingerprint(
+                packageName = capture.sourceApp.orEmpty(),
+                senderKey = capture.contextLabel.orEmpty(),
+                messageText = capture.rawText.orEmpty(),
+            ),
+        )
 
         container.extractionPipeline.process(capture.copy(state = CaptureState.PENDING_EXTRACTION))
 
@@ -341,6 +357,18 @@ class SelfTest(private val context: Context, private val container: AppContainer
             return@timedSuspend false to
                 "$summary. The blocked ones are waiting on a provider setting - they retry " +
                 "automatically once you change the model or base URL, and nothing is lost."
+        }
+
+        // A queue that is not draining looks identical to a broken queue. The
+        // commonest cause is the Wi-Fi-only rule on call audio: the work is
+        // scheduled with an unmetered network constraint, so on mobile data it
+        // waits indefinitely and says nothing at all.
+        val settings = container.settingsRepository.current()
+        if (awaiting > 0 && settings.wifiOnlyAsr && !NetworkState.isUnmetered(context)) {
+            return@timedSuspend false to
+                "$summary. The $awaiting waiting for transcription need Wi-Fi: \"Upload call audio " +
+                "on Wi-Fi only\" is on and this phone is on mobile data. They will transcribe as " +
+                "soon as you are on Wi-Fi, or turn that setting off in Settings -> Daily limits."
         }
         true to summary
     }

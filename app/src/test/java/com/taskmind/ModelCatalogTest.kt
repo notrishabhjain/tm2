@@ -41,6 +41,60 @@ class ModelCatalogTest {
         assertEquals(ModelCatalog.Kind.ROUTER, ModelCatalog.classify("openrouter/auto"))
     }
 
+    /** The exact list the provider offered on the affected account. */
+    private val everythingOnTheAccount = listOf(
+        "canopylabs/orpheus-arabic-saudi",
+        "canopylabs/orpheus-v1-english",
+        "groq/compound",
+        "groq/compound-mini",
+        "meta-llama/llama-prompt-guard-2-22m",
+        "meta-llama/llama-prompt-guard-2-86m",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-safeguard-20b",
+        "qwen/qwen3.6-27b",
+        "qwen/qwen3.8-27b",
+        "whisper-large-v3",
+        "whisper-large-v3-turbo",
+    )
+
+    @Test
+    fun `speech synthesis models are not offered for extraction`() {
+        assertEquals(ModelCatalog.Kind.OTHER, ModelCatalog.classify("canopylabs/orpheus-v1-english"))
+        assertEquals(ModelCatalog.Kind.OTHER, ModelCatalog.classify("canopylabs/orpheus-arabic-saudi"))
+    }
+
+    @Test
+    fun `a safeguard model is a classifier, not a chat model`() {
+        assertEquals(ModelCatalog.Kind.GUARD, ModelCatalog.classify("openai/gpt-oss-safeguard-20b"))
+    }
+
+    @Test
+    fun `the full account list resolves to exactly the usable models`() {
+        val usable = everythingOnTheAccount
+            .map { ModelCatalog.Model(it, ModelCatalog.classify(it)) }
+            .filter { it.usableForExtraction }
+            .map { it.id }
+        assertEquals(
+            listOf(
+                "openai/gpt-oss-120b",
+                "openai/gpt-oss-20b",
+                "qwen/qwen3.6-27b",
+                "qwen/qwen3.8-27b",
+            ),
+            usable.sorted(),
+        )
+    }
+
+    @Test
+    fun `the account has exactly two transcription models`() {
+        val asr = everythingOnTheAccount
+            .map { ModelCatalog.Model(it, ModelCatalog.classify(it)) }
+            .filter { it.usableForTranscription }
+            .map { it.id }
+        assertEquals(listOf("whisper-large-v3", "whisper-large-v3-turbo"), asr.sorted())
+    }
+
     @Test
     fun `ordinary instruction models are chat models`() {
         for (id in listOf("llama-3.3-70b-versatile", "gpt-4o-mini", "qwen3-32b", "gemma2-9b-it")) {

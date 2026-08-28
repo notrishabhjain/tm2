@@ -42,6 +42,7 @@ class SettingsRepository(private val context: Context) {
         val allowedPackages = stringSetPreferencesKey("allowed_packages")
         val captureNotifications = booleanPreferencesKey("capture_notifications")
         val captureCalls = booleanPreferencesKey("capture_calls")
+        val autoTranscribeCalls = booleanPreferencesKey("auto_transcribe_calls")
         val minCallDuration = longPreferencesKey("min_call_duration")
         val callRecordingDirUri = stringPreferencesKey("call_recording_dir_uri")
 
@@ -102,6 +103,7 @@ class SettingsRepository(private val context: Context) {
             allowedPackages = this[K.allowedPackages] ?: d.allowedPackages,
             captureNotifications = this[K.captureNotifications] ?: d.captureNotifications,
             captureCalls = this[K.captureCalls] ?: d.captureCalls,
+            autoTranscribeCalls = this[K.autoTranscribeCalls] ?: d.autoTranscribeCalls,
             minCallDurationSeconds = this[K.minCallDuration] ?: d.minCallDurationSeconds,
             callRecordingDirUri = this[K.callRecordingDirUri] ?: d.callRecordingDirUri,
             autoCreateThreshold = this[K.autoCreateThreshold] ?: d.autoCreateThreshold,
@@ -148,6 +150,8 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setCaptureNotifications(value: Boolean) = edit { it[K.captureNotifications] = value }
     suspend fun setCaptureCalls(value: Boolean) = edit { it[K.captureCalls] = value }
+
+    suspend fun setAutoTranscribeCalls(value: Boolean) = edit { it[K.autoTranscribeCalls] = value }
     suspend fun setMinCallDuration(seconds: Long) = edit { it[K.minCallDuration] = seconds }
     suspend fun setCallRecordingDirUri(uri: String?) = edit {
         if (uri == null) it.remove(K.callRecordingDirUri) else it[K.callRecordingDirUri] = uri

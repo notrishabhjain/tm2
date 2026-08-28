@@ -13,6 +13,7 @@ import com.taskmind.ui.inspector.ModelCallsViewModel
 import com.taskmind.ui.log.ActivityLogViewModel
 import com.taskmind.ui.onboarding.OnboardingViewModel
 import com.taskmind.ui.prompts.PromptViewModel
+import com.taskmind.ui.recordings.RecordingsViewModel
 import com.taskmind.ui.review.ReviewViewModel
 import com.taskmind.ui.settings.SettingsViewModel
 import com.taskmind.ui.status.StatusViewModel
@@ -45,5 +46,6 @@ object AppViewModels {
         initializer { ModelCallsViewModel(container()) }
         initializer { HowItWorksViewModel(container()) }
         initializer { DiagnosticsViewModel(container()) }
+        initializer { RecordingsViewModel(container()) }
     }
 }

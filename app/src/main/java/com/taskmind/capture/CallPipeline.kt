@@ -245,14 +245,21 @@ class CallPipeline(
             }
 
             // Persist first, mark second (failure mode 5).
+            //
+            // Finding the recording and deciding to upload it are two different
+            // things. With automatic transcription off the file is recorded
+            // against the call and left alone, so a phone holding thousands of
+            // recordings does not turn into an unbounded upload.
+            val nextState = if (settings.autoTranscribeCalls) {
+                CaptureState.PENDING_TRANSCRIPTION
+            } else {
+                CaptureState.AWAITING_SELECTION
+            }
             record.rawCaptureId?.let { rawId ->
                 val capture = rawCaptureDao.byId(rawId)
                 if (capture != null) {
                     rawCaptureDao.update(
-                        capture.copy(
-                            audioPath = candidate.path,
-                            state = CaptureState.PENDING_TRANSCRIPTION,
-                        ),
+                        capture.copy(audioPath = candidate.path, state = nextState),
                     )
                 }
             }

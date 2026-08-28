@@ -35,6 +35,13 @@ interface RawCaptureDao {
     @Query("SELECT * FROM raw_captures WHERE sourceType = :sourceType AND sourceRef = :sourceRef LIMIT 1")
     suspend fun bySourceRef(sourceType: String, sourceRef: String): RawCaptureEntity?
 
+    @Query("SELECT * FROM raw_captures WHERE audioPath = :audioPath LIMIT 1")
+    suspend fun byAudioPath(audioPath: String): RawCaptureEntity?
+
+    /** One query for a whole screenful, rather than one per listed file. */
+    @Query("SELECT * FROM raw_captures WHERE audioPath IN (:audioPaths)")
+    suspend fun byAudioPaths(audioPaths: List<String>): List<RawCaptureEntity>
+
     /**
      * The work queue. Oldest first, so a backlog drain after a key is finally
      * configured produces tasks in the order the commitments were made
@@ -129,6 +136,13 @@ interface ReviewItemDao {
     @Query("DELETE FROM review_items WHERE state != 'PENDING' AND createdAt < :before")
     suspend fun purgeResolved(before: Long)
 
+    @Query("SELECT * FROM review_items WHERE rawCaptureId = :rawCaptureId")
+    suspend fun byRawCapture(rawCaptureId: String): List<ReviewItemEntity>
+
+    /** The test bench must not leave its samples in the review inbox. */
+    @Query("DELETE FROM review_items WHERE rawCaptureId = :rawCaptureId")
+    suspend fun deleteByRawCapture(rawCaptureId: String)
+
     @Query("DELETE FROM review_items")
     suspend fun deleteAll()
 }
@@ -190,6 +204,17 @@ interface FingerprintDao {
 
     @Query("DELETE FROM fingerprints WHERE seenAt < :before")
     suspend fun purgeOlderThan(before: Long)
+
+    /**
+     * Used by the self-test, which must be repeatable.
+     *
+     * Without this the synthetic message's fingerprint outlived the test that
+     * created it, so the second run was rejected as a duplicate before any
+     * model was called - the diagnostic reported the pipeline broken when what
+     * was broken was the diagnostic.
+     */
+    @Query("DELETE FROM fingerprints WHERE hash = :hash")
+    suspend fun deleteByHash(hash: String)
 
     @Query("DELETE FROM fingerprints")
     suspend fun deleteAll()

@@ -35,7 +35,16 @@ import java.util.Locale
  */
 class DiagnosticReport(private val context: Context, private val container: AppContainer) {
 
-    suspend fun build(includeSelfTest: Boolean = false): String = withContext(Dispatchers.IO) {
+    /**
+     * [existingReport] is a self-test the user has already run on this screen.
+     * Including it costs nothing, where re-running one costs a minute and two
+     * paid model calls - so the export reuses a result rather than repeating
+     * the work behind a button that only says "Building...".
+     */
+    suspend fun build(
+        includeSelfTest: Boolean = false,
+        existingReport: SelfTest.Report? = null,
+    ): String = withContext(Dispatchers.IO) {
         val out = StringBuilder()
         val now = System.currentTimeMillis()
 
@@ -102,6 +111,18 @@ class DiagnosticReport(private val context: Context, private val container: AppC
         }
 
         if (settings != null) out.settingsSection(settings)
+
+        out.section("Network")
+        out.kv("Current network", NetworkState.describe(context))
+        out.kv("Call audio on Wi-Fi only", (settings?.wifiOnlyAsr ?: true).toString())
+        if (settings?.wifiOnlyAsr == true && !NetworkState.isUnmetered(context)) {
+            out.kv(
+                "NOTE",
+                "Transcription work is scheduled with an unmetered-network constraint, so " +
+                    "anything awaiting transcription waits for Wi-Fi. This is why that queue " +
+                    "may not be draining.",
+            )
+        }
 
         out.section("Background work")
         val scheduled = runCatching { Scheduler.scheduledWorkNames(context) }.getOrDefault(emptyList())
@@ -191,9 +212,10 @@ class DiagnosticReport(private val context: Context, private val container: AppC
             entry.detail?.let { out.appendLine("    $it") }
         }
 
-        if (includeSelfTest) {
+        if (includeSelfTest || existingReport != null) {
             out.section("Self-test")
-            val report = runCatching { SelfTest(context, container).run() }.getOrNull()
+            val report = existingReport
+                ?: runCatching { SelfTest(context, container).run() }.getOrNull()
             if (report == null) {
                 out.appendLine("the self-test could not be run")
             } else {
