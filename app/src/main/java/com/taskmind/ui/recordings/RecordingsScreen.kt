@@ -26,6 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import com.taskmind.core.CaptureState
 import com.taskmind.ui.components.LabeledSwitch
 import com.taskmind.ui.components.SectionCard
@@ -58,6 +60,20 @@ fun RecordingsScreen(
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
+    // While anything is queued, re-read the database every few seconds. This
+    // is a cheap query, not a disk walk, and it is the difference between
+    // "nothing happens" and watching a row go queued -> transcribed.
+    val hasWorkInFlight = ui.rows.any {
+        it.existingState == CaptureState.PENDING_TRANSCRIPTION ||
+            it.existingState == CaptureState.PENDING_EXTRACTION
+    }
+    LaunchedEffect(hasWorkInFlight) {
+        while (hasWorkInFlight) {
+            delay(3_000)
+            viewModel.refreshStates()
+        }
+    }
+
     LaunchedEffect(ui.message) {
         ui.message?.let {
             snackbar.showSnackbar(it)
@@ -72,6 +88,14 @@ fun RecordingsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    TextButton(
+                        onClick = { viewModel.refresh(forceRescan = true) },
+                        enabled = !ui.scanning,
+                    ) {
+                        Text("Rescan")
                     }
                 },
             )
@@ -120,8 +144,8 @@ fun RecordingsScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Button(onClick = viewModel::transcribeSelected) {
-                            Text("Transcribe ${ui.selected.size}")
+                        Button(onClick = viewModel::transcribeSelected, enabled = !ui.queueing) {
+                            Text(if (ui.queueing) "Queueing..." else "Transcribe ${ui.selected.size}")
                         }
                         OutlinedButton(onClick = viewModel::clearSelection) { Text("Clear") }
                     }
@@ -137,7 +161,8 @@ fun RecordingsScreen(
             if (ui.loading) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text(
-                    "  Reading the recording folders...",
+                    "Reading the recording folders. There are thousands of files on this phone, " +
+                        "so the first read takes a moment; after that it is instant for a few minutes.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(16.dp),
                 )
@@ -182,6 +207,21 @@ private fun RecordingItem(row: RecordingRow, onToggle: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // The transcript is the proof that this worked. Without it a
+            // finished recording and a stuck one look identical.
+            row.transcript?.takeIf { it.isNotBlank() }?.let { text ->
+                Text(
+                    text.take(300) + if (text.length > 300) "…" else "",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            row.lastError?.takeIf { it.isNotBlank() }?.let { error ->
+                Text(
+                    error.take(200),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }

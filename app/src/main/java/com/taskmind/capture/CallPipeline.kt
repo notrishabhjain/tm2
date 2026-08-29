@@ -266,7 +266,15 @@ class CallPipeline(
             callRecordDao.upsert(
                 record.copy(
                     recordingPath = candidate.path,
-                    state = CallState.PENDING_TRANSCRIPTION,
+                    // Must agree with the capture. Reporting the call as
+                    // "pending transcription" while its capture is waiting to
+                    // be picked made the Calls screen show fifteen calls queued
+                    // when the queue held one.
+                    state = if (settings.autoTranscribeCalls) {
+                        CallState.PENDING_TRANSCRIPTION
+                    } else {
+                        CallState.AWAITING_SELECTION
+                    },
                     discoveryAttempts = attempt + 1,
                     updatedAt = System.currentTimeMillis(),
                 ),
@@ -275,7 +283,8 @@ class CallPipeline(
                 Stage.CALL,
                 LogLevel.INFO,
                 "found recording for ${record.contactName ?: record.phoneNumber}",
-                "file=${candidate.name} attempt=${attempt + 1} bytes=${candidate.sizeBytes}",
+                "file=${candidate.name} attempt=${attempt + 1} bytes=${candidate.sizeBytes}" +
+                    if (!settings.autoTranscribeCalls) " (waiting for you to pick it under Recordings)" else "",
             )
             return@withContext true
         }

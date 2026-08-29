@@ -119,18 +119,37 @@ class RecordingFinder(private val context: Context) {
      * not, because the Recordings screen is about picking a file to transcribe
      * rather than about which call it came from.
      */
-    suspend fun listRecent(limit: Int, userDirUri: String?): List<Candidate> =
-        withContext(Dispatchers.IO) {
-            buildList {
-                addAll(scanUserDirectory(userDirUri))
-                addAll(scanKnownPaths())
-                addAll(queryMediaStore(0))
-            }
-                .distinctBy { it.path }
-                .filter { it.sizeBytes > MIN_USABLE_BYTES }
-                .sortedByDescending { it.lastModified }
-                .take(limit)
+    suspend fun listRecent(
+        limit: Int,
+        userDirUri: String?,
+        forceRescan: Boolean = false,
+    ): List<Candidate> = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        if (!forceRescan) {
+            cachedListing?.takeIf { now - it.takenAt < LISTING_CACHE_MILLIS }
+                ?.let { return@withContext it.candidates.take(limit) }
         }
+
+        val candidates = buildList {
+            addAll(scanUserDirectory(userDirUri))
+            addAll(scanKnownPaths())
+            addAll(queryMediaStore(0))
+        }
+            .distinctBy { it.path }
+            .filter { it.sizeBytes > MIN_USABLE_BYTES }
+            .sortedByDescending { it.lastModified }
+            // Cache more than one screenful so paging never re-walks the disk.
+            .take(LISTING_CACHE_SIZE)
+
+        cachedListing = Listing(candidates, now)
+        candidates.take(limit)
+    }
+
+    /** True when [listRecent] can answer without touching the disk. */
+    fun hasFreshListing(): Boolean =
+        cachedListing?.let { System.currentTimeMillis() - it.takenAt < LISTING_CACHE_MILLIS } == true
+
+    private class Listing(val candidates: List<Candidate>, val takenAt: Long)
 
     /**
      * What discovery can actually see right now, for the diagnostic report.
@@ -290,8 +309,23 @@ class RecordingFinder(private val context: Context) {
     @Volatile
     private var cachedSurvey: Survey? = null
 
+    /**
+     * The last full listing.
+     *
+     * The device this was built for holds 6465 recordings across three sources,
+     * and walking them takes the better part of a minute. Doing that on every
+     * screen open, and again on the refresh that follows queueing a file, is
+     * what made the Recordings screen look like it had hung.
+     */
+    @Volatile
+    private var cachedListing: Listing? = null
+
     private companion object {
         const val SURVEY_CACHE_MILLIS = 60_000L
+
+        /** Long enough to cover a whole visit to the screen. */
+        const val LISTING_CACHE_MILLIS = 5 * 60_000L
+        const val LISTING_CACHE_SIZE = 500
 
         val PATH_KEYWORDS = listOf("call", "record", "phone", "voice", "dialer", "rec")
 

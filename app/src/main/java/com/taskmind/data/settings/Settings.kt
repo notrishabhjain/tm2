@@ -85,15 +85,22 @@ data class Settings(
 
         val LLM_MODEL_SUGGESTIONS: Map<String, String> = mapOf(
             "https://api.openai.com/v1" to "gpt-4o-mini",
-            "https://api.groq.com/openai/v1" to "llama-3.3-70b-versatile",
+            // What actually works on a current Groq account: strong at
+            // instruction-following and at returning one JSON object.
+            "https://api.groq.com/openai/v1" to "openai/gpt-oss-120b",
             "https://openrouter.ai/api/v1" to "openai/gpt-4o-mini",
         )
 
         /** Spec 8.2. Sarvam is materially better on Hindi phone audio. */
         val ASR_PRESETS: List<Triple<String, AsrProvider, Pair<String, String>>> = listOf(
             Triple("Sarvam AI (best for Hindi)", AsrProvider.SARVAM, "https://api.sarvam.ai" to "saarika:v2.5"),
-            Triple("Groq Whisper turbo", AsrProvider.OPENAI_COMPATIBLE, "https://api.groq.com/openai/v1" to "whisper-large-v3-turbo"),
-            Triple("Groq Whisper large", AsrProvider.OPENAI_COMPATIBLE, "https://api.groq.com/openai/v1" to "whisper-large-v3"),
+            // large-v3 before turbo, deliberately. Turbo is the distilled
+            // model: roughly twice as fast and noticeably worse on non-English
+            // audio. On Hindi phone calls from the device this was debugged
+            // against it produced text garbled enough that extraction could
+            // find nothing in it - which reads as "the app does not work".
+            Triple("Groq Whisper large v3 (better on Hindi)", AsrProvider.OPENAI_COMPATIBLE, "https://api.groq.com/openai/v1" to "whisper-large-v3"),
+            Triple("Groq Whisper turbo (faster, less accurate)", AsrProvider.OPENAI_COMPATIBLE, "https://api.groq.com/openai/v1" to "whisper-large-v3-turbo"),
             Triple("OpenAI Whisper", AsrProvider.OPENAI_COMPATIBLE, "https://api.openai.com/v1" to "whisper-1"),
         )
 

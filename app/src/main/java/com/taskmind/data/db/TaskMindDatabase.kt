@@ -45,7 +45,7 @@ import java.util.Locale
         TagEntity::class,
         SeenPackageEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -117,7 +117,84 @@ abstract class TaskMindDatabase : RoomDatabase() {
             }
         }
 
-        private val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2)
+        /**
+         * Makes (sourceType, sourceRef) unique, and cleans up the duplicates
+         * that the missing constraint already let in.
+         *
+         * On the device two call-end triggers fired in the same second, both
+         * passed the "have we seen this?" check, and both inserted - so every
+         * call was captured twice and therefore transcribed, extracted and
+         * reviewed twice. The index is the fix; this migration has to deal with
+         * the rows that exist before it can be applied.
+         *
+         * Order matters. Tasks and review items are repointed at the surviving
+         * capture BEFORE the duplicates are deleted, so nothing derived from a
+         * duplicate loses its provenance. The foreign key is SET_NULL, so
+         * deleting first would silently strip the link instead of moving it.
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // The survivor of each group is the earliest captured row: it
+                // is the one whose id anything else is most likely to hold.
+                db.execSQL(
+                    """
+                    CREATE TEMP TABLE IF NOT EXISTS capture_survivors AS
+                    SELECT sourceType, sourceRef, MIN(rowid) AS keep_rowid
+                    FROM raw_captures
+                    WHERE sourceRef IS NOT NULL
+                    GROUP BY sourceType, sourceRef
+                    HAVING COUNT(*) > 1
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TEMP TABLE IF NOT EXISTS capture_remap AS
+                    SELECT d.id AS old_id, k.id AS new_id
+                    FROM raw_captures d
+                    JOIN capture_survivors s
+                      ON d.sourceType = s.sourceType AND d.sourceRef = s.sourceRef
+                    JOIN raw_captures k ON k.rowid = s.keep_rowid
+                    WHERE d.rowid != s.keep_rowid
+                    """.trimIndent(),
+                )
+
+                db.execSQL(
+                    """
+                    UPDATE tasks SET rawCaptureId =
+                        (SELECT new_id FROM capture_remap WHERE old_id = tasks.rawCaptureId)
+                    WHERE rawCaptureId IN (SELECT old_id FROM capture_remap)
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    UPDATE review_items SET rawCaptureId =
+                        (SELECT new_id FROM capture_remap WHERE old_id = review_items.rawCaptureId)
+                    WHERE rawCaptureId IN (SELECT old_id FROM capture_remap)
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    UPDATE call_records SET rawCaptureId =
+                        (SELECT new_id FROM capture_remap WHERE old_id = call_records.rawCaptureId)
+                    WHERE rawCaptureId IN (SELECT old_id FROM capture_remap)
+                    """.trimIndent(),
+                )
+
+                db.execSQL("DELETE FROM raw_captures WHERE id IN (SELECT old_id FROM capture_remap)")
+                db.execSQL("DROP TABLE IF EXISTS capture_remap")
+                db.execSQL("DROP TABLE IF EXISTS capture_survivors")
+
+                // Room names the old non-unique index identically, so it has to
+                // go before the unique one can take the name.
+                db.execSQL("DROP INDEX IF EXISTS `index_raw_captures_sourceType_sourceRef`")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_raw_captures_sourceType_sourceRef` " +
+                        "ON `raw_captures` (`sourceType`, `sourceRef`)",
+                )
+            }
+        }
+
+        private val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 
         /**
          * Copies the database file aside before any recovery attempt. Returns

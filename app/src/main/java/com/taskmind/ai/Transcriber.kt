@@ -53,6 +53,15 @@ class OpenAiCompatibleTranscriber(
                 .addFormDataPart("model", config.model)
                 .addFormDataPart("language", languageCode.ifBlank { config.language })
                 .addFormDataPart("response_format", "json")
+                // Deterministic, and no creative reconstruction of unclear
+                // audio. The default lets Whisper sample, which on noisy phone
+                // audio is how you get confident nonsense.
+                .addFormDataPart("temperature", "0")
+                // Whisper conditions on this text. On the device it returned
+                // "गुद मॉर्निंग" for "good morning" and "विप्टेण" for VPN -
+                // Hinglish office speech, where English technical words sit
+                // inside Hindi sentences, is exactly the case a prompt fixes.
+                .addFormDataPart("prompt", promptHintFor(languageCode.ifBlank { config.language }))
                 .build()
 
             val request = Request.Builder()
@@ -67,6 +76,27 @@ class OpenAiCompatibleTranscriber(
     private companion object {
         val WAV = "audio/wav".toMediaType()
     }
+}
+
+/**
+ * A vocabulary hint for the recogniser.
+ *
+ * Whisper uses the prompt as preceding context, so a sample of the register it
+ * is about to hear measurably improves it. Indian office calls are Hinglish:
+ * Hindi grammar carrying English nouns, which a Hindi-only model transliterates
+ * into nonsense and an English-only model drops entirely.
+ */
+internal fun promptHintFor(languageCode: String): String = when {
+    languageCode.startsWith("hi") ->
+        "यह एक ऑफिस कॉल है। बातचीत हिंदी और अंग्रेज़ी दोनों में है (Hinglish). " +
+            "आम शब्द: meeting, report, email, invoice, payment, deadline, follow up, " +
+            "confirm, update, share, send, call back, VPN, IP, server, firewall, portal, " +
+            "ticket, request, approval, team, sir, ji, kal, aaj, subah, shaam, please."
+    else ->
+        "This is an office phone call. Speakers mix English with Hindi words. " +
+            "Common terms: meeting, report, email, invoice, payment, deadline, follow up, " +
+            "confirm, update, share, send, call back, VPN, IP, server, firewall, portal, " +
+            "ticket, request, approval."
 }
 
 /**

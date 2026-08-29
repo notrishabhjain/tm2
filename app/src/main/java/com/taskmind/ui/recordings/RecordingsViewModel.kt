@@ -22,6 +22,9 @@ data class RecordingRow(
     /** Already queued, transcribed or failed - anything the app knows about. */
     val existingState: CaptureState?,
     val selected: Boolean = false,
+    /** What the recogniser produced, once it has. */
+    val transcript: String? = null,
+    val lastError: String? = null,
 ) {
     /** Roughly, at the ~16 kB/s a phone dialer records at. */
     val approximateMinutes: Int get() = (sizeBytes / (16_000L * 60)).toInt().coerceAtLeast(1)
@@ -34,6 +37,9 @@ data class RecordingRow(
 
 data class RecordingsUiState(
     val loading: Boolean = true,
+    /** A disk walk is in progress, as opposed to a quick database read. */
+    val scanning: Boolean = false,
+    val queueing: Boolean = false,
     val rows: List<RecordingRow> = emptyList(),
     val autoTranscribe: Boolean = true,
     val queuedCount: Int = 0,
@@ -62,14 +68,23 @@ class RecordingsViewModel(private val container: AppContainer) : ViewModel() {
         refresh()
     }
 
-    fun refresh() {
-        _ui.value = _ui.value.copy(loading = true)
+    fun refresh(forceRescan: Boolean = false) {
+        // Only claim to be loading when the disk is actually about to be
+        // walked. Re-reading capture states after queueing is a single query,
+        // and showing a spinner for it is what made a finished action look
+        // like a hang.
+        val willScan = forceRescan || !container.recordingFinder.hasFreshListing()
+        _ui.value = _ui.value.copy(loading = willScan, scanning = willScan)
         viewModelScope.launch {
             val settings = container.settingsRepository.current()
             val dao = container.database.rawCaptureDao()
 
             val found = runCatching {
-                container.recordingFinder.listRecent(LIST_LIMIT, settings.callRecordingDirUri)
+                container.recordingFinder.listRecent(
+                    limit = LIST_LIMIT,
+                    userDirUri = settings.callRecordingDirUri,
+                    forceRescan = forceRescan,
+                )
             }.getOrDefault(emptyList())
 
             // One lookup for everything the app already knows, rather than a
@@ -77,23 +92,61 @@ class RecordingsViewModel(private val container: AppContainer) : ViewModel() {
             // between a list that opens and one that stalls.
             val known = runCatching { dao.byAudioPaths(found.map { it.path }) }
                 .getOrDefault(emptyList())
-                .associate { it.audioPath to it.state }
+                .associateBy { it.audioPath }
 
             _ui.value = RecordingsUiState(
                 loading = false,
+                scanning = false,
                 rows = found.map { candidate ->
+                    val capture = known[candidate.path]
                     RecordingRow(
                         path = candidate.path,
                         name = candidate.name,
                         lastModified = candidate.lastModified,
                         sizeBytes = candidate.sizeBytes,
-                        existingState = known[candidate.path],
+                        existingState = capture?.state,
+                        transcript = capture?.rawText,
+                        lastError = capture?.lastError,
                     )
                 },
                 autoTranscribe = settings.autoTranscribeCalls,
                 queuedCount = runCatching { dao.countByState(CaptureState.PENDING_TRANSCRIPTION) }.getOrDefault(0),
                 awaitingSelectionCount = runCatching { dao.countByState(CaptureState.AWAITING_SELECTION) }
                     .getOrDefault(0),
+            )
+        }
+    }
+
+    /**
+     * Re-reads only what the database knows, never the disk.
+     *
+     * The screen polls this while a transcription is in flight. Sharing
+     * refresh() would have meant that once the five-minute listing cache
+     * expired, a poll would silently start walking 6000 files and put the
+     * spinner back up under the user - the exact behaviour being fixed.
+     */
+    fun refreshStates() {
+        viewModelScope.launch {
+            val rows = _ui.value.rows
+            if (rows.isEmpty()) return@launch
+            val known = runCatching {
+                container.database.rawCaptureDao().byAudioPaths(rows.map { it.path })
+            }.getOrDefault(emptyList()).associateBy { it.audioPath }
+
+            val dao = container.database.rawCaptureDao()
+            _ui.value = _ui.value.copy(
+                rows = rows.map { row ->
+                    val capture = known[row.path]
+                    row.copy(
+                        existingState = capture?.state,
+                        transcript = capture?.rawText,
+                        lastError = capture?.lastError,
+                    )
+                },
+                queuedCount = runCatching { dao.countByState(CaptureState.PENDING_TRANSCRIPTION) }
+                    .getOrDefault(_ui.value.queuedCount),
+                awaitingSelectionCount = runCatching { dao.countByState(CaptureState.AWAITING_SELECTION) }
+                    .getOrDefault(_ui.value.awaitingSelectionCount),
             )
         }
     }
@@ -125,7 +178,8 @@ class RecordingsViewModel(private val container: AppContainer) : ViewModel() {
     /** Queues exactly the selected files, through the normal capture path. */
     fun transcribeSelected() {
         val chosen = _ui.value.selected
-        if (chosen.isEmpty()) return
+        if (chosen.isEmpty() || _ui.value.queueing) return
+        _ui.value = _ui.value.copy(queueing = true)
         viewModelScope.launch {
             val dao = container.database.rawCaptureDao()
             var queued = 0
@@ -162,8 +216,14 @@ class RecordingsViewModel(private val container: AppContainer) : ViewModel() {
             // meant to stop unattended background uploads.
             Scheduler.enqueueTranscription(container.context, wifiOnly = false)
             clearSelection()
-            _ui.value = _ui.value.copy(message = "Queued $queued recording(s).")
-            refresh()
+            _ui.value = _ui.value.copy(
+                queueing = false,
+                message = "Queued $queued. Transcribing starts now - watch the state on each row.",
+            )
+            // Deliberately NOT a rescan: the files on disk did not change, only
+            // their state in the database did, and re-walking 6000 files here
+            // is what made this button look like it did nothing.
+            refreshStates()
         }
     }
 
@@ -186,7 +246,7 @@ class RecordingsViewModel(private val container: AppContainer) : ViewModel() {
                 "Nothing was deleted - they are still listed under Recordings.",
             )
             _ui.value = _ui.value.copy(message = "Cleared $count from the queue. Nothing was deleted.")
-            refresh()
+            refreshStates()
         }
     }
 
