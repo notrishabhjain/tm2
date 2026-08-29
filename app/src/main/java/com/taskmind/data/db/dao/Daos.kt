@@ -23,8 +23,18 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface RawCaptureDao {
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(capture: RawCaptureEntity)
+    /**
+     * IGNORE, not REPLACE.
+     *
+     * The unique index on (sourceType, sourceRef) is what actually stops two
+     * simultaneous call-end triggers from double-capturing a call, and REPLACE
+     * would defeat it: it deletes the existing row and inserts a new one with a
+     * different id, orphaning every task and review item that pointed at it.
+     * IGNORE returns -1 for the loser of the race, which the caller reads as
+     * "someone else got there first" and resolves by re-reading.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(capture: RawCaptureEntity): Long
 
     @Update
     suspend fun update(capture: RawCaptureEntity)

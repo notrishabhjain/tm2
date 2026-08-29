@@ -26,11 +26,18 @@ class ConnectionTester(
             return fail("No API key set for the LLM provider.", 0)
         }
         val started = System.currentTimeMillis()
+        // Not "ping".
+        //
+        // A one-word prompt under JSON mode made openai/gpt-oss-120b return an
+        // empty generation, which Groq rejects with a 400 json_validate_failed -
+        // so the test reported the provider broken while real extraction on the
+        // same model was succeeding. Giving the model something to actually
+        // answer exercises the same path the app uses.
         val result = llm.complete(
             config = config,
-            systemPrompt = "Reply with only this JSON and nothing else: {\"ok\":true}",
-            userPrompt = "ping",
-            maxTokens = 32,
+            systemPrompt = "You extract structured data. Reply with a single JSON object and nothing else.",
+            userPrompt = "Return this exact JSON object: {\"ok\": true, \"echo\": \"taskmind\"}",
+            maxTokens = 64,
             trace = TraceContext(kind = RecordedCall.KIND_TEST),
         )
         val elapsed = System.currentTimeMillis() - started

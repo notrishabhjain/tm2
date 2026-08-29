@@ -59,7 +59,22 @@ enum class ReviewState { PENDING, ACCEPTED, DISMISSED }
 
 enum class CallDirection { INCOMING, OUTGOING, MISSED, REJECTED, UNKNOWN }
 
-enum class CallState { PENDING_RECORDING, PENDING_TRANSCRIPTION, TRANSCRIBED, NO_RECORDING, FAILED, DONE }
+enum class CallState {
+    PENDING_RECORDING,
+    PENDING_TRANSCRIPTION,
+
+    /**
+     * The recording was found, but automatic transcription is off so nobody
+     * has asked for it yet. Distinct from PENDING_TRANSCRIPTION so the Calls
+     * screen stops reporting fifteen calls queued when the queue holds one.
+     */
+    AWAITING_SELECTION,
+
+    TRANSCRIBED,
+    NO_RECORDING,
+    FAILED,
+    DONE,
+}
 
 enum class LogLevel { DEBUG, INFO, WARN, ERROR }
 

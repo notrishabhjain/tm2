@@ -161,6 +161,7 @@ fun CallsScreen(
 private fun stateLabel(state: CallState): String = when (state) {
     CallState.PENDING_RECORDING -> "Looking for recording"
     CallState.PENDING_TRANSCRIPTION -> "Waiting to transcribe"
+    CallState.AWAITING_SELECTION -> "Recording found - pick it under Recordings"
     CallState.TRANSCRIBED -> "Transcribed"
     CallState.NO_RECORDING -> "No recording"
     CallState.FAILED -> "Failed"

@@ -85,7 +85,17 @@ data class TaskEntity(
     tableName = "raw_captures",
     indices = [
         Index(value = ["state", "nextAttemptAt"]),
-        Index(value = ["sourceType", "sourceRef"]),
+        // UNIQUE, and it has to be.
+        //
+        // Three independent triggers notice a call ending, and on the device
+        // two of them fired in the same second: both read bySourceRef, both
+        // saw nothing, and both inserted. Check-then-act across coroutines is
+        // not a lock. The result was two captures per call, so every call was
+        // transcribed twice, extracted twice, and produced two identical
+        // review items - paying twice for a duplicate the user then had to
+        // dismiss twice. The database is the only thing that can actually
+        // serialise this.
+        Index(value = ["sourceType", "sourceRef"], unique = true),
         Index(value = ["capturedAt"]),
     ],
 )

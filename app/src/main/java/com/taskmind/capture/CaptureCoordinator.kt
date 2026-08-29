@@ -141,7 +141,7 @@ class CaptureCoordinator(
             append(" - ").append(appLabel ?: fields.packageName)
         }
 
-        rawCaptureDao.insert(
+        val inserted = rawCaptureDao.insert(
             RawCaptureEntity(
                 id = id,
                 sourceType = SourceType.NOTIFICATION,
@@ -155,6 +155,14 @@ class CaptureCoordinator(
                 contextLabel = contextLabel(resolved),
             ),
         )
+
+        if (inserted == -1L) {
+            // The unique index rejected it: another thread captured the same
+            // thing between our lookup above and this insert. Whoever won owns
+            // it; report theirs rather than creating a second.
+            val winner = rawCaptureDao.bySourceRef(SourceType.NOTIFICATION.name, sourceRef)
+            return if (winner != null) Outcome.Duplicate(winner.id) else Outcome.Rejected("insert conflict")
+        }
 
         logger.write(
             Stage.CAPTURE,
@@ -217,7 +225,7 @@ class CaptureCoordinator(
             return Outcome.Duplicate(it.id)
         }
         val id = UUID.randomUUID().toString()
-        rawCaptureDao.insert(
+        val inserted = rawCaptureDao.insert(
             RawCaptureEntity(
                 id = id,
                 sourceType = SourceType.CALL,
@@ -232,6 +240,18 @@ class CaptureCoordinator(
                 contextLabel = label,
             ),
         )
+        if (inserted == -1L) {
+            // Three triggers race to notice a call ending, and on the device two
+            // of them landed in the same second. Without this the app captured
+            // the call twice and paid to transcribe and extract it twice.
+            val winner = rawCaptureDao.bySourceRef(SourceType.CALL.name, sourceRef)
+            return if (winner != null) {
+                Outcome.Duplicate(winner.id)
+            } else {
+                Outcome.Rejected("insert conflict")
+            }
+        }
+
         logger.write(Stage.CALL, LogLevel.INFO, "captured call", "ref=$sourceRef label=$label")
         return Outcome.Captured(id, sourceRef)
     }
