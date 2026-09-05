@@ -238,6 +238,20 @@ fun DiagnosticsScreen(
             }
 
             Spacer(Modifier.height(12.dp))
+            SectionCard(title = "Notifications") {
+                Text(
+                    "TaskMind notifies you when a task is created and when something needs a " +
+                        "quick look. If those are not arriving, this posts one right now and tells " +
+                        "you what the system did with it.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(onClick = viewModel::testNotification) {
+                    Text("Send a test notification")
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
             SectionCard(title = "If captures are stuck") {
                 Text(
                     "Captures blocked by a provider error retry on their own once you change the " +

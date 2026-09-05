@@ -36,12 +36,23 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
     @Volatile private var lastTaskSummaryAt = 0L
     @Volatile private var tasksSinceSummary = 0
 
+    /**
+     * Reset when the review screen is opened, so the count reflects what is
+     * actually waiting rather than everything ever proposed.
+     */
+    private val pendingReviewNotices = AtomicInteger(0)
+
     fun ensureChannels() {
         val system = context.getSystemService(NotificationManager::class.java) ?: return
 
         system.createNotificationChannel(
             NotificationChannel(CHANNEL_TASKS, "Tasks captured", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "A commitment was found in a message or a call and added to your list."
+            },
+        )
+        system.createNotificationChannel(
+            NotificationChannel(CHANNEL_REVIEW, "Needs review", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Something was found that is not certain enough to add without you seeing it."
             },
         )
         system.createNotificationChannel(
@@ -68,6 +79,79 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
     private fun canPost(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Why notifications are or are not reaching the phone.
+     *
+     * "I get no notifications" has at least four causes that look identical
+     * from inside the app: the runtime permission, the app-level toggle, a
+     * per-channel block, and a channel the OEM launcher silenced. HyperOS in
+     * particular lets a channel be switched off in a screen the app never sees.
+     * Guessing between them wasted a round trip, so the app now reads all four.
+     */
+    data class Diagnosis(
+        val permissionGranted: Boolean,
+        val notificationsEnabled: Boolean,
+        val channelImportance: Map<String, Int>,
+        val blockedChannels: List<String>,
+    ) {
+        val healthy: Boolean
+            get() = permissionGranted && notificationsEnabled && blockedChannels.isEmpty()
+
+        fun explain(): String = when {
+            !permissionGranted ->
+                "The notification permission is not granted. Grant it in Android settings."
+            !notificationsEnabled ->
+                "Notifications are switched off for TaskMind as a whole, in Android settings."
+            blockedChannels.isNotEmpty() ->
+                "These notification categories are switched off: ${blockedChannels.joinToString()}. " +
+                    "On Xiaomi/HyperOS this is a per-category switch inside the app's notification " +
+                    "settings, separate from the main toggle."
+            else -> "Notifications are enabled and no category is blocked."
+        }
+    }
+
+    fun diagnose(): Diagnosis {
+        val system = context.getSystemService(NotificationManager::class.java)
+        val importance = mutableMapOf<String, Int>()
+        val blocked = mutableListOf<String>()
+        for (id in listOf(CHANNEL_TASKS, CHANNEL_REVIEW, CHANNEL_REMINDERS)) {
+            val channel = runCatching { system?.getNotificationChannel(id) }.getOrNull()
+            val value = channel?.importance ?: NotificationManager.IMPORTANCE_UNSPECIFIED
+            importance[id] = value
+            if (channel != null && value == NotificationManager.IMPORTANCE_NONE) blocked += id
+        }
+        return Diagnosis(
+            permissionGranted = canPost(),
+            notificationsEnabled = runCatching { manager.areNotificationsEnabled() }.getOrDefault(false),
+            channelImportance = importance,
+            blockedChannels = blocked,
+        )
+    }
+
+    /** Called when the review inbox is opened: the backlog has been seen. */
+    fun clearReviewNotice() {
+        pendingReviewNotices.set(0)
+        runCatching { manager.cancel(ID_REVIEW_SUMMARY) }
+    }
+
+    /** Posts one notification on demand, and says whether the system took it. */
+    fun postTest(): String {
+        val diagnosis = diagnose()
+        if (!diagnosis.healthy) return diagnosis.explain()
+        val notification = NotificationCompat.Builder(context, CHANNEL_TASKS)
+            .setSmallIcon(R.drawable.ic_stat_taskmind)
+            .setContentTitle("TaskMind test notification")
+            .setContentText("If you can see this, task notifications will reach you.")
+            .setContentIntent(contentIntent(ROUTE_TASKS))
+            .setAutoCancel(true)
+            .build()
+        return runCatching {
+            manager.notify(ID_TEST, notification)
+            "Posted. If nothing appeared, the block is outside the app - check TaskMind's " +
+                "notification categories in Android settings."
+        }.getOrElse { "The system refused it: ${it.message ?: it.toString()}" }
+    }
 
     private fun contentIntent(route: String?): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
@@ -120,6 +204,29 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         postSafely(ID_TASK_SUMMARY, notification)
     }
 
+    /**
+     * Something was found but is not certain enough to assert.
+     *
+     * Without this the review inbox was invisible: an item landed there and the
+     * only way to discover it was to open the app and look, which defeats the
+     * point of an app that is supposed to notice things for you.
+     */
+    override suspend fun onReviewProposed(reviewId: String, title: String) {
+        if (!canPost()) return
+        val count = pendingReviewNotices.incrementAndGet()
+        val notification = NotificationCompat.Builder(context, CHANNEL_REVIEW)
+            .setSmallIcon(R.drawable.ic_stat_taskmind)
+            .setContentTitle(
+                if (count > 1) "$count items need a quick look" else "Something needs a quick look",
+            )
+            .setContentText(title)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(title))
+            .setContentIntent(contentIntent(ROUTE_REVIEW))
+            .setAutoCancel(true)
+            .build()
+        postSafely(ID_REVIEW_SUMMARY, notification)
+    }
+
     fun postReminder(taskId: String, title: String, notes: String?) {
         if (!canPost()) return
         val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
@@ -169,11 +276,14 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
 
     companion object {
         const val CHANNEL_TASKS = "tasks"
+        const val CHANNEL_REVIEW = "review"
         const val CHANNEL_REMINDERS = "reminders"
         const val CHANNEL_SERVICE = "service"
         const val CHANNEL_UPDATES = "updates"
 
         const val ID_TASK_SUMMARY = 1001
+        const val ID_REVIEW_SUMMARY = 1003
+        const val ID_TEST = 1004
         const val ID_UPDATE = 1002
         const val ID_FOREGROUND_WORKER = 1101
         const val ID_FOREGROUND_RESIDENCY = 1102

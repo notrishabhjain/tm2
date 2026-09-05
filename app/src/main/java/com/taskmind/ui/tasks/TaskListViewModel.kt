@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class TaskListUiState(
-    val view: TaskView = TaskView.TODAY,
+    val view: TaskView = TaskView.AGENDA,
     val sort: SortMode = SortMode.DUE_DATE,
     val group: GroupMode = GroupMode.NONE,
     val query: String = "",

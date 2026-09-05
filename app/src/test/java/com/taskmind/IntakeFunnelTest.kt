@@ -68,8 +68,13 @@ class IntakeFunnelTest {
 
     private class FakeNotifier : TaskCreatedNotifier {
         val notified = mutableListOf<String>()
+        val reviewNotified = mutableListOf<String>()
         override suspend fun onTaskCreated(taskId: String, title: String) {
             notified.add(title)
+        }
+
+        override suspend fun onReviewProposed(reviewId: String, title: String) {
+            reviewNotified.add(title)
         }
     }
 
@@ -152,22 +157,42 @@ class IntakeFunnelTest {
     }
 
     @Test
-    fun `evidence that is not in the source is dropped`() = runTest {
+    fun `evidence that is not in the source never becomes a task`() = runTest {
+        // The guarantee that matters: an unverifiable quote can NEVER create a
+        // task, however confident the model claims to be. This candidate comes
+        // in at 0.95, well above the auto-create threshold.
         val h = Harness()
         val r = h.funnel.submit(
             notificationCandidate(evidence = "transfer 90000 to the vendor before Diwali"),
         )
-        assertTrue("$r", r is IntakeResult.Discarded)
-        assertEquals(0, h.sink.tasks.size)
-        assertEquals(0, h.review.proposals.size)
+        assertTrue("$r", r is IntakeResult.SentToReview)
+        assertEquals("must not create a task from an unverifiable quote", 0, h.sink.tasks.size)
         assertTrue(h.log.lines.any { it.second == LogLevel.WARN })
     }
 
     @Test
-    fun `null evidence from an automated source is dropped`() = runTest {
+    fun `an unverifiable candidate reaches the user instead of vanishing`() = runTest {
+        // It used to be discarded outright, which meant a real commitment could
+        // disappear with nothing the user would ever see. It now goes to the
+        // review inbox, labelled with why, and notifies.
+        val h = Harness()
+        h.funnel.submit(notificationCandidate(evidence = "transfer 90000 to the vendor before Diwali"))
+
+        assertEquals(1, h.review.proposals.size)
+        val proposal = h.review.proposals.single()
+        assertTrue(
+            "the reviewer must be told the quote could not be verified: ${proposal.reasoning}",
+            proposal.reasoning.orEmpty().contains("could not find", ignoreCase = true),
+        )
+        assertEquals(listOf(proposal.title), h.notifier.reviewNotified)
+    }
+
+    @Test
+    fun `null evidence from an automated source never becomes a task`() = runTest {
         val h = Harness()
         val r = h.funnel.submit(notificationCandidate(evidence = null))
-        assertTrue("$r", r is IntakeResult.Discarded)
+        assertTrue("$r", r is IntakeResult.SentToReview)
+        assertEquals(0, h.sink.tasks.size)
     }
 
     @Test

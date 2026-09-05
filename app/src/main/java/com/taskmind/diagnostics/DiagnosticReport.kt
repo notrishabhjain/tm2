@@ -112,6 +112,19 @@ class DiagnosticReport(private val context: Context, private val container: AppC
 
         if (settings != null) out.settingsSection(settings)
 
+        out.section("Notifications")
+        val notifications = runCatching { container.notifier.diagnose() }.getOrNull()
+        if (notifications == null) {
+            out.appendLine("could not be checked")
+        } else {
+            out.kv("Permission granted", notifications.permissionGranted.toString())
+            out.kv("Notifications enabled", notifications.notificationsEnabled.toString())
+            for ((channel, importance) in notifications.channelImportance) {
+                out.kv("Channel '$channel' importance", importanceLabel(importance))
+            }
+            out.kv("Verdict", notifications.explain())
+        }
+
         out.section("Network")
         out.kv("Current network", NetworkState.describe(context))
         out.kv("Call audio on Wi-Fi only", (settings?.wifiOnlyAsr ?: true).toString())
@@ -264,6 +277,17 @@ class DiagnosticReport(private val context: Context, private val container: AppC
         kv("Retention", "${s.retentionDays} days")
         kv("Delete recordings after ASR", s.deleteRecordingsAfterTranscription.toString())
         kv("Update manifest URL", s.updateManifestUrl.ifBlank { "not set" })
+    }
+
+    /** IMPORTANCE_NONE is the one that matters: the category is switched off. */
+    private fun importanceLabel(value: Int): String = when (value) {
+        android.app.NotificationManager.IMPORTANCE_NONE -> "NONE - blocked"
+        android.app.NotificationManager.IMPORTANCE_MIN -> "min"
+        android.app.NotificationManager.IMPORTANCE_LOW -> "low"
+        android.app.NotificationManager.IMPORTANCE_DEFAULT -> "default"
+        android.app.NotificationManager.IMPORTANCE_HIGH -> "high"
+        android.app.NotificationManager.IMPORTANCE_UNSPECIFIED -> "channel not created yet"
+        else -> value.toString()
     }
 
     private fun StringBuilder.section(title: String) {

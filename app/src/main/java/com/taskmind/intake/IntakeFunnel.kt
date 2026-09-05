@@ -58,6 +58,9 @@ class IntakeFunnel(
     }
 
     private suspend fun runFunnel(candidate: TaskCandidate, config: FunnelConfig): IntakeResult {
+        // Set when the quote could not be located. Such a candidate may reach
+        // the review inbox but must never be auto-created.
+        var unverifiedEvidence = false
         // ---- 1. Validate -------------------------------------------------
         val rawTitle = candidate.title.trim()
         if (rawTitle.isBlank()) {
@@ -82,16 +85,22 @@ class IntakeFunnel(
             val tolerance = config.toleranceFor(candidate.sourceType)
             val match = EvidenceMatcher.match(candidate.evidence, candidate.sourceText, tolerance)
             if (!match.matched) {
-                // Drop, log at WARN with the evidence and the source, and never
-                // surface it to the user. This is the diagnostic you will need
-                // most, so it carries the score it achieved.
                 log.log(
                     stage = Stage.FUNNEL,
                     level = LogLevel.WARN,
                     message = "evidence check failed (${match.reason})",
                     detail = "title=$rawTitle\nevidence=${candidate.evidence}\nsource=${candidate.sourceText.take(600)}",
                 )
-                return IntakeResult.Discarded("evidence not found in source: ${match.reason}")
+                // Review, not silent deletion.
+                //
+                // The grounding rule exists so the app cannot invent a task
+                // behind your back, and it still holds: an unverified quote
+                // NEVER auto-creates. But dropping it outright meant a real
+                // commitment could vanish with no trace the user would ever
+                // see, which is the complaint that prompted this. A quote the
+                // matcher could not place is exactly the case a human decides
+                // in two seconds, so it goes to them, labelled.
+                unverifiedEvidence = true
             }
         }
 
@@ -109,13 +118,19 @@ class IntakeFunnel(
             // A missing or unparseable confidence is uncertain, never certain.
             val effective = confidence
             when {
-                effective == null -> return toReview(candidate, title, notes, resolved.dueAt, null, now)
+                effective == null -> return toReview(candidate, title, notes, resolved.dueAt, null, now, unverifiedEvidence)
                 effective < config.reviewThreshold ->
                     return IntakeResult.Discarded(
                         "confidence $effective below review threshold ${config.reviewThreshold}",
                     )
                 effective < config.autoCreateThreshold ->
-                    return toReview(candidate, title, notes, resolved.dueAt, effective, now)
+                    return toReview(candidate, title, notes, resolved.dueAt, effective, now, unverifiedEvidence)
+            }
+            // Confident enough to create, but the quote could not be placed in
+            // the source. Confidence is the model's opinion of itself; the
+            // evidence check is the only independent one, so it wins.
+            if (unverifiedEvidence) {
+                return toReview(candidate, title, notes, resolved.dueAt, effective, now, unverified = true)
             }
         }
 
@@ -168,6 +183,7 @@ class IntakeFunnel(
         dueAt: Long?,
         confidence: Double?,
         now: Long,
+        unverified: Boolean = false,
     ): IntakeResult {
         val proposal = ReviewProposal(
             id = ids.newId(),
@@ -177,7 +193,17 @@ class IntakeFunnel(
             priority = candidate.priority,
             evidence = candidate.evidence,
             confidence = confidence,
-            reasoning = candidate.reasoning,
+            reasoning = if (unverified) {
+                // The reviewer needs to know the app could not find these words
+                // in the original, because that is the one thing they can check
+                // and the app cannot.
+                listOfNotNull(
+                    "The app could not find the quoted words in the original, so this needs your eyes.",
+                    candidate.reasoning,
+                ).joinToString(" ")
+            } else {
+                candidate.reasoning
+            },
             sourceText = candidate.sourceText,
             sourceType = candidate.sourceType,
             sourceRef = candidate.sourceRef,
@@ -190,6 +216,7 @@ class IntakeFunnel(
         )
         reviewSink.propose(proposal)
         markCapture(candidate)
+        notifier.onReviewProposed(proposal.id, title)
         return IntakeResult.SentToReview(proposal.id, confidence)
     }
 

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
@@ -234,19 +235,44 @@ fun TaskListScreen(
                     contentPadding = PaddingValues(bottom = 96.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    items(state.tasks, key = { it.id }) { task ->
-                        TaskRow(
-                            task = task,
-                            selected = task.id in state.selection,
-                            selectionMode = state.selectionMode,
-                            onClick = {
-                                if (state.selectionMode) viewModel.toggleSelection(task.id) else onOpenTask(task.id)
-                            },
-                            onLongClick = { viewModel.toggleSelection(task.id) },
-                            onToggleComplete = {
-                                if (task.status == TaskStatus.COMPLETED) viewModel.reopen(task) else viewModel.complete(task)
-                            },
-                        )
+                    // One row-builder, used flat or under section headers, so
+                    // the two paths cannot drift apart.
+                    fun LazyListScope.taskRows(rows: List<TaskEntity>) {
+                        items(rows, key = { it.id }) { task ->
+                            TaskRow(
+                                task = task,
+                                selected = task.id in state.selection,
+                                selectionMode = state.selectionMode,
+                                onClick = {
+                                    if (state.selectionMode) {
+                                        viewModel.toggleSelection(task.id)
+                                    } else {
+                                        onOpenTask(task.id)
+                                    }
+                                },
+                                onLongClick = { viewModel.toggleSelection(task.id) },
+                                onToggleComplete = {
+                                    if (task.status == TaskStatus.COMPLETED) {
+                                        viewModel.reopen(task)
+                                    } else {
+                                        viewModel.complete(task)
+                                    }
+                                },
+                            )
+                        }
+                    }
+
+                    if (state.view == TaskView.AGENDA) {
+                        // Overdue first: that is what someone opens the app to
+                        // find out, and it is the thing a flat list buries.
+                        for ((section, rows) in TaskFilters.agenda(state.tasks, System.currentTimeMillis())) {
+                            item(key = "section-${section.name}") {
+                                AgendaHeader(label = section.label, count = rows.size)
+                            }
+                            taskRows(rows)
+                        }
+                    } else {
+                        taskRows(state.tasks)
                     }
                 }
             }
@@ -429,5 +455,37 @@ fun TaskListActionsHint(onOpenStatus: () -> Unit) {
         TextButton(onClick = onOpenStatus, modifier = Modifier.align(Alignment.CenterEnd)) {
             Text("Fix")
         }
+    }
+}
+
+/**
+ * A section divider on the agenda.
+ *
+ * The count is on the header because "Overdue 7" is the number that changes
+ * behaviour, and reading it should not require counting rows.
+ */
+@Composable
+private fun AgendaHeader(label: String, count: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, top = 16.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.titleSmall,
+            color = if (label == "Overdue") {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            count.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

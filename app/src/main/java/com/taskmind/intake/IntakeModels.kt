@@ -165,6 +165,15 @@ interface FunnelLog {
 interface TaskCreatedNotifier {
     /** Spec 17.3: the only automatic notification with sound. */
     suspend fun onTaskCreated(taskId: String, title: String)
+
+    /**
+     * Something landed in the review inbox.
+     *
+     * Previously silent, which made the inbox useless: an item arrived and the
+     * only way to find out was to open the app and look, in an app whose whole
+     * purpose is to notice things so you do not have to.
+     */
+    suspend fun onReviewProposed(reviewId: String, title: String)
 }
 
 interface IdGenerator {
