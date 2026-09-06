@@ -102,6 +102,50 @@ interface RawCaptureDao {
     @Query("UPDATE raw_captures SET state = :to, nextAttemptAt = NULL WHERE state = :from")
     suspend fun releaseState(from: CaptureState, to: CaptureState)
 
+    /**
+     * Puts failed recordings back in the queue with a clean slate.
+     *
+     * Two things separate this from [releaseState]. It clears attemptCount and
+     * lastError, because a row that exhausted its five attempts would otherwise
+     * fail again on the first pass and never actually retry - the button would
+     * do nothing visible. And it touches only rows that have audio, so a
+     * notification whose extraction failed is not moved into the transcription
+     * queue where it can only fail differently.
+     */
+    @Query(
+        """
+        UPDATE raw_captures
+        SET state = :to, nextAttemptAt = NULL, attemptCount = 0, lastError = NULL
+        WHERE state = :from AND audioPath IS NOT NULL
+        """,
+    )
+    suspend fun requeueRecordings(from: CaptureState, to: CaptureState)
+
+    @Query("SELECT COUNT(*) FROM raw_captures WHERE state = :state AND audioPath IS NOT NULL")
+    suspend fun countRecordingsInState(state: CaptureState): Int
+
+    /**
+     * Retires call captures from before the app drew its line.
+     *
+     * An upgrade inherits whatever the old build left queued, which on this
+     * device was a backlog of thousands. Those rows already have an audioPath,
+     * so without this they would be transcribed on the first run of the new
+     * build - the exact bill the cutoff exists to prevent. REJECTED rather than
+     * FAILED_PERMANENT: nothing went wrong, they are simply not this app's
+     * business, and a failure count the user cannot act on is just noise.
+     */
+    @Query(
+        """
+        UPDATE raw_captures
+        SET state = 'REJECTED', nextAttemptAt = NULL,
+            lastError = 'recorded before TaskMind started watching'
+        WHERE sourceType = 'CALL'
+          AND occurredAt < :cutoffMillis
+          AND state IN ('PENDING_TRANSCRIPTION', 'AWAITING_SELECTION', 'BUDGET_HELD', 'FAILED_PERMANENT')
+        """,
+    )
+    suspend fun retireCallCapturesBefore(cutoffMillis: Long): Int
+
     @Query("SELECT COUNT(*) FROM raw_captures WHERE state = :state")
     suspend fun countByState(state: CaptureState): Int
 

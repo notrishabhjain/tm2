@@ -29,15 +29,21 @@ data class Settings(
     val captureCalls: Boolean = true,
     val minCallDurationSeconds: Long = 15,
 
-    /**
-     * Whether a discovered recording is transcribed without being asked for.
-     *
-     * On a phone with thousands of recordings this is the difference between a
-     * useful feature and an unbounded upload bill, so it can be turned off and
-     * recordings picked by hand instead.
-     */
-    val autoTranscribeCalls: Boolean = true,
     val callRecordingDirUri: String? = null,
+
+    /**
+     * Recordings older than this instant do not exist as far as the app is
+     * concerned: not listed, not discovered, not queued, not charged for.
+     *
+     * A dialer set to record every call leaves thousands of files behind - this
+     * device had 6465 - and treating them as a work queue was never right.
+     * Nobody wants last March's calls turned into tasks. The line is drawn once,
+     * when this version first runs, and everything after it is handled
+     * automatically without being asked for.
+     *
+     * Zero means "not yet set"; the first launch stamps it with the clock.
+     */
+    val recordingCutoffMillis: Long = 0L,
 
     // -- extraction quality (spec 13, 14.2) --------------------------------
     val autoCreateThreshold: Double = 0.75,
@@ -61,7 +67,15 @@ data class Settings(
     val maxLlmCallsPerDay: Int = 300,
     val maxAsrMinutesPerDay: Int = 60,
     val maxLlmCallsPerPackagePerDay: Int = 60,
-    val wifiOnlyAsr: Boolean = true,
+
+    /**
+     * Defaults to false: a call worth transcribing is worth a few hundred KB.
+     *
+     * As a default this silently did nothing on mobile data - captures sat in
+     * the queue with no error, because a WorkManager constraint that is not met
+     * is not a failure, it is just a job that never starts.
+     */
+    val wifiOnlyAsr: Boolean = false,
 
     // -- retention (spec 6.3) ----------------------------------------------
     val retentionDays: Int = 30,

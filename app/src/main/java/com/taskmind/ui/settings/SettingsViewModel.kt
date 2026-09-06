@@ -8,6 +8,9 @@ import com.taskmind.ai.ModelLister
 import com.taskmind.core.ModelCatalog
 import com.taskmind.capture.AudioChunker
 import com.taskmind.core.AsrProvider
+import com.taskmind.core.CaptureState
+import com.taskmind.core.LogLevel
+import com.taskmind.core.Stage
 import com.taskmind.data.db.entity.SeenPackageEntity
 import com.taskmind.data.settings.Settings
 import com.taskmind.di.AppContainer
@@ -77,6 +80,28 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             container.settingsRepository.setAsr(provider, baseUrl, model, language)
             if (!apiKey.isNullOrBlank()) container.secretStore.asrApiKey = apiKey
             refreshKeys()
+
+            // Spec 8.4: nothing is lost for want of a key. Transcription parks a
+            // recording when there is no key or the provider rejects the model,
+            // and a parked row is not in the queue any more - so fixing the
+            // setting has to put it back, or the fix does nothing visible and
+            // the recordings stay stuck.
+            val requeued = runCatching {
+                val dao = container.database.rawCaptureDao()
+                val count = dao.countRecordingsInState(CaptureState.FAILED_PERMANENT)
+                if (count > 0) {
+                    dao.requeueRecordings(CaptureState.FAILED_PERMANENT, CaptureState.PENDING_TRANSCRIPTION)
+                }
+                count
+            }.getOrDefault(0)
+            if (requeued > 0) {
+                container.logger.write(
+                    Stage.CALL,
+                    LogLevel.INFO,
+                    "retrying $requeued recording(s) after the transcription settings changed",
+                )
+            }
+
             com.taskmind.work.Scheduler.enqueueTranscription(container.context)
         }
     }
@@ -162,6 +187,36 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setMinCallDuration(seconds: Long) {
         viewModelScope.launch { container.settingsRepository.setMinCallDuration(seconds) }
+    }
+
+    /**
+     * Re-draws the line: from now on, and nothing before it.
+     *
+     * The escape hatch for a queue that has somehow filled with old recordings.
+     * Retiring the backlog here rather than waiting for the next worker pass
+     * means the button visibly does something the moment it is pressed.
+     */
+    fun startFreshFromNow() {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            container.settingsRepository.setRecordingCutoff(now)
+            val retired = runCatching {
+                container.database.rawCaptureDao().retireCallCapturesBefore(now)
+            }.getOrDefault(0)
+            container.logger.write(
+                Stage.CALL,
+                LogLevel.INFO,
+                "ignoring everything recorded before now at your request",
+                "$retired queued recording(s) retired. New calls are unaffected.",
+            )
+            _ui.value = _ui.value.copy(
+                message = if (retired > 0) {
+                    "Ignoring everything recorded so far - $retired removed from the queue."
+                } else {
+                    "Ignoring everything recorded so far. The queue was already clear."
+                },
+            )
+        }
     }
 
     fun setCallRecordingDir(uri: Uri?) {

@@ -37,6 +37,21 @@ class TranscriptionPipeline(
 
     sealed interface Outcome {
         data class Transcribed(val chars: Int, val seconds: Int) : Outcome
+
+        /**
+         * The recording has not been found yet - come back later.
+         *
+         * Distinct from [Parked] because it is the normal state of every call
+         * for the first half-minute of its life: the capture is created the
+         * moment the call ends, with no audioPath, and discovery fills that in
+         * over the next 20 seconds. Treating it as a failure would mark every
+         * single call permanently failed before its recording existed.
+         *
+         * The five-minute give-up lives in CallPipeline.discoverRecording,
+         * which owns the search; this must simply leave the row alone.
+         */
+        object Waiting : Outcome
+
         data class Parked(val reason: String) : Outcome
         data class BudgetHeld(val reason: String) : Outcome
         data class Retry(val reason: String, val at: Long?) : Outcome
@@ -46,14 +61,25 @@ class TranscriptionPipeline(
     suspend fun transcribe(capture: RawCaptureEntity): Outcome = withContext(Dispatchers.IO) {
         val path = capture.audioPath
         if (path.isNullOrBlank()) {
-            return@withContext Outcome.Parked("no recording found yet")
+            // Not a failure: discovery has not filled this in yet.
+            return@withContext Outcome.Waiting
         }
         if (!AudioSource.exists(context, path)) {
-            return@withContext Outcome.Parked("recording no longer readable at $path")
+            return@withContext park(
+                capture,
+                "the recording could not be opened",
+                "TaskMind can see this file listed but cannot read it: $path. That is " +
+                    "normally All Files Access having been revoked, or the dialer having " +
+                    "moved or deleted the file.",
+            )
         }
         if (!hasAsrKey()) {
             // Spec 8.4: nothing is discarded for lack of a key.
-            return@withContext Outcome.Parked("no ASR API key configured")
+            return@withContext park(
+                capture,
+                "no transcription API key is set",
+                "Settings -> Providers -> add a key for the transcription provider.",
+            )
         }
 
         val settings = settingsRepository.current()
@@ -81,7 +107,12 @@ class TranscriptionPipeline(
         // which the decoder cannot open as a file. Resolving it here is what
         // makes the folder picker work at all.
         val source = AudioSource.materialise(context, path, workDir)
-            ?: return@withContext Outcome.Parked("recording could not be read from $path")
+            ?: return@withContext park(
+                capture,
+                "the recording could not be read",
+                "Opening $path produced no bytes. If this is a folder you picked in " +
+                    "Settings, that permission may have lapsed - pick the folder again.",
+            )
 
         try {
             val pcm = AudioDecoder.decodeToMonoPcm(source, File(workDir, "audio.pcm"))
@@ -161,6 +192,41 @@ class TranscriptionPipeline(
             runCatching { workDir.listFiles()?.forEach { if (it.name != "audio.pcm") it.delete() } }
             runCatching { File(workDir, "audio.pcm").delete() }
         }
+    }
+
+    /**
+     * Stops work on a capture in a way the user can actually see.
+     *
+     * Every one of these cases used to be a bare `return Outcome.Parked(...)`:
+     * no log line, no change to the row. The capture stayed PENDING_TRANSCRIPTION
+     * with a null nextAttemptAt, which the queue reads as "due now", so each
+     * pass picked it up, hit the same silent return and put it back. On screen
+     * that is a recording that says "queued" forever while the log stays empty -
+     * the exact "it keeps loading and nothing happens" this app kept producing.
+     *
+     * Parking writes the reason to the row and to the log, and leaves the state
+     * FAILED_PERMANENT so nothing spins. Retry from Recordings once the cause is
+     * fixed; the audio is never deleted.
+     */
+    private suspend fun park(
+        capture: RawCaptureEntity,
+        reason: String,
+        detail: String? = null,
+    ): Outcome {
+        rawCaptureDao.setRetry(
+            capture.id,
+            CaptureState.FAILED_PERMANENT,
+            capture.attemptCount,
+            listOfNotNull(reason, detail).joinToString(" - "),
+            null,
+        )
+        logger.write(
+            Stage.TRANSCRIBE,
+            LogLevel.WARN,
+            "cannot transcribe ${capture.sourceLabel}: $reason",
+            detail,
+        )
+        return Outcome.Parked(reason)
     }
 
     private suspend fun fail(

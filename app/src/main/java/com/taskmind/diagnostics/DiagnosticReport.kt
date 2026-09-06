@@ -127,7 +127,7 @@ class DiagnosticReport(private val context: Context, private val container: AppC
 
         out.section("Network")
         out.kv("Current network", NetworkState.describe(context))
-        out.kv("Call audio on Wi-Fi only", (settings?.wifiOnlyAsr ?: true).toString())
+        out.kv("Call audio on Wi-Fi only", (settings?.wifiOnlyAsr ?: false).toString())
         if (settings?.wifiOnlyAsr == true && !NetworkState.isUnmetered(context)) {
             out.kv(
                 "NOTE",
@@ -274,6 +274,14 @@ class DiagnosticReport(private val context: Context, private val container: AppC
         kv("Max calls per app/day", s.maxLlmCallsPerPackagePerDay.toString())
         kv("Max ASR minutes/day", s.maxAsrMinutesPerDay.toString())
         kv("Wi-Fi only for audio", s.wifiOnlyAsr.toString())
+        kv(
+            "Ignoring recordings before",
+            if (s.recordingCutoffMillis > 0) {
+                stamp(s.recordingCutoffMillis)
+            } else {
+                "not set yet"
+            },
+        )
         kv("Retention", "${s.retentionDays} days")
         kv("Delete recordings after ASR", s.deleteRecordingsAfterTranscription.toString())
         kv("Update manifest URL", s.updateManifestUrl.ifBlank { "not set" })

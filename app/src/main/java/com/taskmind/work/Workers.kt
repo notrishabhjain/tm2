@@ -79,22 +79,91 @@ class TranscriptionWorker(context: Context, params: WorkerParameters) : Coroutin
         val container = AppContainer.get(applicationContext)
         return try {
             val now = System.currentTimeMillis()
-            val batch = container.database.rawCaptureDao()
-                .dueForState(CaptureState.PENDING_TRANSCRIPTION, now, BATCH_SIZE)
+            val dao = container.database.rawCaptureDao()
+
+            // Order matters. Retire the backlog first, then release what is
+            // left: doing it the other way round would queue thousands of old
+            // recordings for a moment, and a moment is enough for the batch
+            // below to start uploading them.
+            reconcileAgainstCutoff(container)
+
+            val batch = dao.dueForState(CaptureState.PENDING_TRANSCRIPTION, now, BATCH_SIZE)
             if (batch.isEmpty()) return Result.success()
 
             var retryNeeded = false
+            var progressed = 0
             for (capture in batch) {
                 when (container.transcriptionPipeline.transcribe(capture)) {
-                    is TranscriptionPipeline.Outcome.Transcribed -> Scheduler.enqueueExtraction(applicationContext)
-                    is TranscriptionPipeline.Outcome.Retry -> retryNeeded = true
-                    else -> Unit
+                    is TranscriptionPipeline.Outcome.Transcribed -> {
+                        progressed++
+                        Scheduler.enqueueExtraction(applicationContext)
+                    }
+                    is TranscriptionPipeline.Outcome.Retry -> {
+                        progressed++
+                        retryNeeded = true
+                    }
+                    // Waiting: discovery has not found the recording yet. Left
+                    // untouched on purpose, and deliberately NOT counted as
+                    // progress - a batch of nothing but waiting rows that
+                    // re-enqueued itself would spin the worker in a tight loop.
+                    TranscriptionPipeline.Outcome.Waiting -> Unit
+                    else -> progressed++
                 }
             }
+
+            // A full batch of real work means there is more behind it. Without
+            // this the queue drained three recordings per maintenance tick,
+            // which on a busy day is slower than the calls arrive.
+            if (progressed > 0 && batch.size == BATCH_SIZE) {
+                Scheduler.enqueueTranscription(applicationContext)
+            }
+
             if (retryNeeded) Result.retry() else Result.success()
         } catch (t: Throwable) {
             container.logger.write(Stage.WORKER, LogLevel.ERROR, "transcription worker failed", t.toString())
             Result.retry()
+        }
+    }
+
+    /**
+     * Brings the queue into line with the cutoff, in that order.
+     *
+     * Two separate corrections, and they pull in opposite directions:
+     *
+     * Old call captures are retired. An upgrade inherits everything the
+     * previous build had queued or parked, all of it pointing at recordings
+     * made before the app drew its line, and none of it wanted.
+     *
+     * What survives that, and is still waiting to be hand-picked, is released.
+     * Transcription is automatic now, so AWAITING_SELECTION has no way out -
+     * no screen asks for the tap any more - and a recording stuck there would
+     * be invisible forever.
+     */
+    private suspend fun reconcileAgainstCutoff(container: AppContainer) {
+        val dao = container.database.rawCaptureDao()
+        val cutoff = container.settingsRepository.current().recordingCutoffMillis
+
+        if (cutoff > 0) {
+            val retired = runCatching { dao.retireCallCapturesBefore(cutoff) }.getOrDefault(0)
+            if (retired > 0) {
+                container.logger.write(
+                    Stage.CALL,
+                    LogLevel.INFO,
+                    "retired $retired old recording(s) from the queue",
+                    "They were recorded before TaskMind started watching, so they are not " +
+                        "transcribed. New calls are handled automatically.",
+                )
+            }
+        }
+
+        if (dao.byState(CaptureState.AWAITING_SELECTION, 1).isNotEmpty()) {
+            dao.requeueRecordings(CaptureState.AWAITING_SELECTION, CaptureState.PENDING_TRANSCRIPTION)
+            container.logger.write(
+                Stage.CALL,
+                LogLevel.INFO,
+                "queued recordings that were waiting to be picked",
+                "Transcription is automatic now, so nothing waits for a tap.",
+            )
         }
     }
 

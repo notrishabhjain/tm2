@@ -38,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import com.taskmind.core.CaptureState
-import com.taskmind.ui.components.LabeledSwitch
 import com.taskmind.ui.components.SectionCard
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -108,28 +107,37 @@ fun RecordingsScreen(
                 .fillMaxSize(),
         ) {
             Column(Modifier.padding(16.dp)) {
-                SectionCard(title = "How calls get transcribed") {
-                    LabeledSwitch(
-                        label = "Transcribe every call automatically",
-                        description = "Turn this off if your dialer records everything. " +
-                            "New calls then wait in this list until you pick them.",
-                        checked = ui.autoTranscribe,
-                        onCheckedChange = viewModel::setAutoTranscribe,
+                SectionCard(title = "New calls transcribe themselves") {
+                    Text(
+                        "Every call your dialer records from now on is transcribed and read " +
+                            "for tasks automatically. You do not need to pick anything.",
+                        style = MaterialTheme.typography.bodyMedium,
                     )
+                    if (ui.cutoffMillis > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Recordings made before ${STAMP.format(Date(ui.cutoffMillis))} are ignored, " +
+                                "so an old backlog is never uploaded.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "${ui.queuedCount} queued for transcription, ${ui.awaitingSelectionCount} waiting " +
-                            "for you to choose.",
+                        buildString {
+                            append("${ui.queuedCount} in the queue")
+                            if (ui.failedCount > 0) append(", ${ui.failedCount} failed")
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (ui.queuedCount > 0) {
+                    if (ui.failedCount > 0) {
                         Spacer(Modifier.height(8.dp))
-                        OutlinedButton(onClick = viewModel::clearQueue) {
-                            Text("Empty the queue")
+                        OutlinedButton(onClick = viewModel::retryFailed) {
+                            Text("Retry ${ui.failedCount} failed")
                         }
                         Text(
-                            "Nothing is deleted - they stay in this list.",
+                            "Each failed row below says why. Fix the cause, then retry.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -145,7 +153,7 @@ fun RecordingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Button(onClick = viewModel::transcribeSelected, enabled = !ui.queueing) {
-                            Text(if (ui.queueing) "Queueing..." else "Transcribe ${ui.selected.size}")
+                            Text(if (ui.queueing) "Queueing..." else "Transcribe ${ui.selected.size} now")
                         }
                         OutlinedButton(onClick = viewModel::clearSelection) { Text("Clear") }
                     }
@@ -161,16 +169,18 @@ fun RecordingsScreen(
             if (ui.loading) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text(
-                    "Reading the recording folders. There are thousands of files on this phone, " +
-                        "so the first read takes a moment; after that it is instant for a few minutes.",
+                    "Reading the recording folders. Only recordings made since TaskMind was set " +
+                        "up are listed, so this should be quick.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(16.dp),
                 )
             } else if (ui.rows.isEmpty()) {
                 Text(
-                    "No recordings found. TaskMind cannot record calls itself - this list is what " +
-                        "your dialer has written. Check that call recording is on in your phone app, " +
-                        "and that TaskMind has All Files Access or a folder chosen in Settings.",
+                    "Nothing recorded yet since TaskMind was set up. New calls appear here on " +
+                        "their own.\n\nTaskMind cannot record calls itself - this list is what your " +
+                        "dialer has written. If a call you expected is missing, check that call " +
+                        "recording is on in your phone app, and that TaskMind has All Files Access " +
+                        "or a folder chosen in Settings.",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(16.dp),
                 )
@@ -230,7 +240,9 @@ private fun describe(state: CaptureState): String = when (state) {
     CaptureState.DONE -> "transcribed"
     CaptureState.PENDING_TRANSCRIPTION -> "queued"
     CaptureState.PENDING_EXTRACTION -> "reading for tasks"
-    CaptureState.AWAITING_SELECTION -> "waiting for you"
+    // Only reachable for rows recorded before transcription became automatic;
+    // the transcription worker moves them back into the queue on its next pass.
+    CaptureState.AWAITING_SELECTION -> "about to be queued"
     CaptureState.BUDGET_HELD -> "held for the daily limit"
     CaptureState.BLOCKED_CONFIG -> "blocked by a provider setting"
     CaptureState.FAILED_PERMANENT -> "failed"

@@ -32,10 +32,25 @@ class TaskMindApp : Application() {
         // cachedSettings is still at its defaults this early - the collector
         // that fills it has not run yet - so read the store directly.
         container.applicationScope.launch {
+            // Draw the line between the recordings that already existed and the
+            // calls this app is responsible for, before anything can scan. Once
+            // set it never moves on its own.
+            val cutoff = container.settingsRepository.ensureRecordingCutoff(System.currentTimeMillis())
+
             val settings = container.settingsRepository.current()
             if (settings.cloudConsent && settings.captureCalls) {
                 ResidencyService.start(this@TaskMindApp)
             }
+            container.logger.write(
+                Stage.CALL,
+                LogLevel.INFO,
+                "watching for new call recordings",
+                "Anything recorded before " +
+                    java.text.SimpleDateFormat("d MMM yyyy HH:mm", java.util.Locale.US)
+                        .apply { timeZone = java.util.TimeZone.getTimeZone("Asia/Kolkata") }
+                        .format(java.util.Date(cutoff)) +
+                    " is ignored; everything after it is transcribed automatically.",
+            )
         }
     }
 }
