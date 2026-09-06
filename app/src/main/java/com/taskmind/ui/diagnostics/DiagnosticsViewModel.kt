@@ -172,6 +172,18 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /**
+     * Posts one notification now and reports what the system did with it.
+     *
+     * Turns "I get no notifications" from a guess into an observation: either
+     * one appears, or this says which switch is off.
+     */
+    fun testNotification() {
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(message = container.notifier.postTest())
+        }
+    }
+
     fun clearMessage() {
         _ui.value = _ui.value.copy(message = null)
     }

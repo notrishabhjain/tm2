@@ -18,6 +18,13 @@ import kotlinx.coroutines.launch
  */
 class ReviewViewModel(private val container: AppContainer) : ViewModel() {
 
+    init {
+        // The badge means "there is something you have not seen". Opening the
+        // screen is seeing it, so the count resets here rather than growing
+        // forever across sessions.
+        container.notifier.clearReviewNotice()
+    }
+
     val items: StateFlow<List<ReviewItemEntity>> = container.taskRepository.observePendingReview()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

@@ -62,6 +62,7 @@ class SelfTest(private val context: Context, private val container: AppContainer
         // new, and reading the list top-down should lead to the real problem.
         steps += permissionStep()
         steps += listenerStep()
+        steps += notificationStep()
         steps += databaseStep()
         steps += promptStep()
         steps += backgroundWorkStep()
@@ -240,6 +241,18 @@ class SelfTest(private val context: Context, private val container: AppContainer
             return@timed false to "not granted - no message will ever be captured"
         }
         true to "granted and bound"
+    }
+
+    /**
+     * Can the app actually reach the phone?
+     *
+     * "I get no notifications" has several causes that are indistinguishable
+     * from inside the app, and on HyperOS a per-category switch the app never
+     * sees can silence it while the main toggle still reads as on.
+     */
+    private fun notificationStep(): Step = timed("Notifications") {
+        val diagnosis = container.notifier.diagnose()
+        diagnosis.healthy to diagnosis.explain()
     }
 
     /** A write and a read back. Storage full or a failed migration both land here. */

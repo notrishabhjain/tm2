@@ -41,7 +41,17 @@ data class Settings(
 
     // -- extraction quality (spec 13, 14.2) --------------------------------
     val autoCreateThreshold: Double = 0.75,
-    val reviewThreshold: Double = 0.40,
+
+    /**
+     * Below this a candidate is discarded outright.
+     *
+     * Lowered from 0.40 because the review inbox is cheap - one tap to accept
+     * or dismiss - and a silent discard is not: it is a commitment the user
+     * never learns about. The prompts now spend the 0.4-0.6 band on genuinely
+     * borderline items, so a floor of 0.40 was throwing away exactly the
+     * material this band was created to surface.
+     */
+    val reviewThreshold: Double = 0.30,
     val notificationTolerance: Double = 0.90,
     val clipboardTolerance: Double = 0.85,
     val callTolerance: Double = 0.75,
