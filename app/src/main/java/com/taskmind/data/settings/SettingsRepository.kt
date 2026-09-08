@@ -42,9 +42,9 @@ class SettingsRepository(private val context: Context) {
         val allowedPackages = stringSetPreferencesKey("allowed_packages")
         val captureNotifications = booleanPreferencesKey("capture_notifications")
         val captureCalls = booleanPreferencesKey("capture_calls")
-        val autoTranscribeCalls = booleanPreferencesKey("auto_transcribe_calls")
         val minCallDuration = longPreferencesKey("min_call_duration")
         val callRecordingDirUri = stringPreferencesKey("call_recording_dir_uri")
+        val recordingCutoff = longPreferencesKey("recording_cutoff_millis")
 
         val autoCreateThreshold = doublePreferencesKey("auto_create_threshold")
         val reviewThreshold = doublePreferencesKey("review_threshold")
@@ -103,9 +103,9 @@ class SettingsRepository(private val context: Context) {
             allowedPackages = this[K.allowedPackages] ?: d.allowedPackages,
             captureNotifications = this[K.captureNotifications] ?: d.captureNotifications,
             captureCalls = this[K.captureCalls] ?: d.captureCalls,
-            autoTranscribeCalls = this[K.autoTranscribeCalls] ?: d.autoTranscribeCalls,
             minCallDurationSeconds = this[K.minCallDuration] ?: d.minCallDurationSeconds,
             callRecordingDirUri = this[K.callRecordingDirUri] ?: d.callRecordingDirUri,
+            recordingCutoffMillis = this[K.recordingCutoff] ?: d.recordingCutoffMillis,
             autoCreateThreshold = this[K.autoCreateThreshold] ?: d.autoCreateThreshold,
             reviewThreshold = this[K.reviewThreshold] ?: d.reviewThreshold,
             notificationTolerance = this[K.notificationTolerance] ?: d.notificationTolerance,
@@ -151,11 +151,28 @@ class SettingsRepository(private val context: Context) {
     suspend fun setCaptureNotifications(value: Boolean) = edit { it[K.captureNotifications] = value }
     suspend fun setCaptureCalls(value: Boolean) = edit { it[K.captureCalls] = value }
 
-    suspend fun setAutoTranscribeCalls(value: Boolean) = edit { it[K.autoTranscribeCalls] = value }
     suspend fun setMinCallDuration(seconds: Long) = edit { it[K.minCallDuration] = seconds }
     suspend fun setCallRecordingDirUri(uri: String?) = edit {
         if (uri == null) it.remove(K.callRecordingDirUri) else it[K.callRecordingDirUri] = uri
     }
+
+    /**
+     * Draws the line between the backlog and the calls that matter, once.
+     *
+     * Returns the cutoff in force afterwards. Called on every start and
+     * deliberately idempotent: stamping it again on each launch would keep
+     * moving the line forward and silently swallow calls that arrived while
+     * the app was not running.
+     */
+    suspend fun ensureRecordingCutoff(now: Long): Long {
+        val existing = current().recordingCutoffMillis
+        if (existing > 0L) return existing
+        edit { it[K.recordingCutoff] = now }
+        return now
+    }
+
+    /** Lets the user re-draw the line - "start fresh from now". */
+    suspend fun setRecordingCutoff(millis: Long) = edit { it[K.recordingCutoff] = millis }
 
     suspend fun setThresholds(autoCreate: Double, review: Double) = edit {
         it[K.autoCreateThreshold] = autoCreate

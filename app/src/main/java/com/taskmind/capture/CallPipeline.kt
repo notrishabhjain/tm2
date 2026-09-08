@@ -52,14 +52,47 @@ class CallPipeline(
      */
     suspend fun sweepCallLog(reason: String): Int = withContext(Dispatchers.IO) {
         val settings = settingsRepository.current()
-        if (!settings.captureCalls) return@withContext 0
-        if (!settings.cloudConsent) return@withContext 0
+
+        // These two used to `return 0` in total silence, which is the worst
+        // possible failure for a pipeline whose only debugging surface is the
+        // log: every trigger fires, the sweep runs, and not one line is
+        // written. "I checked the logs and nothing comes up at all" is what a
+        // silent early return looks like from the outside.
+        if (!settings.captureCalls) {
+            logger.write(
+                Stage.CALL,
+                LogLevel.WARN,
+                "call capture is switched off - no call will become a task",
+                "Settings -> What to watch -> turn on call capture. (trigger=$reason)",
+            )
+            return@withContext 0
+        }
+        if (!settings.cloudConsent) {
+            logger.write(
+                Stage.CALL,
+                LogLevel.WARN,
+                "cloud processing not consented - no call will become a task",
+                "Settings -> Privacy -> allow sending text to the model. (trigger=$reason)",
+            )
+            return@withContext 0
+        }
         if (!hasCallLogPermission()) {
             logger.write(Stage.CALL, LogLevel.WARN, "call sweep skipped - READ_CALL_LOG not granted", reason)
             return@withContext 0
         }
 
-        val since = (callRecordDao.latestStartTime() ?: (System.currentTimeMillis() - LOOKBACK_MILLIS))
+        // Look back over a fixed window rather than from the newest call we
+        // registered. The watermark lost calls: a row whose duration still
+        // reads 0 because the dialer is mid-write is skipped without being
+        // registered, so it never advances the mark - but the NEXT call does,
+        // and the query moves past the skipped one forever. That call is gone
+        // even though its real duration was well over the threshold.
+        //
+        // A window plus the callLogId check below is idempotent and cannot
+        // strand anything: a call skipped as too short is simply re-read on the
+        // next sweep, by which time the duration is filled in.
+        val cutoff = settingsRepository.ensureRecordingCutoff(System.currentTimeMillis())
+        val since = maxOf(System.currentTimeMillis() - LOOKBACK_MILLIS, cutoff)
         val projection = arrayOf(
             CallLog.Calls._ID,
             CallLog.Calls.NUMBER,
@@ -70,6 +103,7 @@ class CallPipeline(
         )
 
         var registered = 0
+        var tooShort = 0
         val cursor = runCatching {
             context.contentResolver.query(
                 CallLog.Calls.CONTENT_URI,
@@ -118,12 +152,10 @@ class CallPipeline(
                 // Spec 11.2 / failure mode 4: a NULL duration must NOT exclude
                 // the call. Unknown means "we do not know yet", not "too short".
                 if (duration != null && duration < settings.minCallDurationSeconds) {
-                    logger.write(
-                        Stage.CALL,
-                        LogLevel.DEBUG,
-                        "call too short (${duration}s)",
-                        "min=${settings.minCallDurationSeconds}s",
-                    )
+                    // Counted, not logged per call. The sweep re-reads a window
+                    // now, so logging each skip wrote the same "call too short
+                    // (0s)" line on every pass and buried everything else.
+                    tooShort++
                     continue
                 }
 
@@ -135,7 +167,13 @@ class CallPipeline(
         }
 
         if (registered > 0) {
-            logger.write(Stage.CALL, LogLevel.INFO, "registered $registered call(s)", "trigger=$reason")
+            logger.write(
+                Stage.CALL,
+                LogLevel.INFO,
+                "registered $registered call(s) for transcription",
+                "trigger=$reason" +
+                    if (tooShort > 0) "; skipped $tooShort under ${settings.minCallDurationSeconds}s" else "",
+            )
         }
         registered
     }
@@ -234,6 +272,7 @@ class CallPipeline(
                 callEndMillis = callEnd,
                 phoneNumber = record.phoneNumber,
                 userDirUri = settings.callRecordingDirUri,
+                cutoffMillis = settings.recordingCutoffMillis,
             )
             if (candidate == null) continue
 
@@ -246,15 +285,10 @@ class CallPipeline(
 
             // Persist first, mark second (failure mode 5).
             //
-            // Finding the recording and deciding to upload it are two different
-            // things. With automatic transcription off the file is recorded
-            // against the call and left alone, so a phone holding thousands of
-            // recordings does not turn into an unbounded upload.
-            val nextState = if (settings.autoTranscribeCalls) {
-                CaptureState.PENDING_TRANSCRIPTION
-            } else {
-                CaptureState.AWAITING_SELECTION
-            }
+            // Straight into the queue. The backlog this used to guard against
+            // is handled by the cutoff instead, so there is no longer a reason
+            // to make the user tick a box before their own call is read.
+            val nextState = CaptureState.PENDING_TRANSCRIPTION
             record.rawCaptureId?.let { rawId ->
                 val capture = rawCaptureDao.byId(rawId)
                 if (capture != null) {
@@ -266,15 +300,9 @@ class CallPipeline(
             callRecordDao.upsert(
                 record.copy(
                     recordingPath = candidate.path,
-                    // Must agree with the capture. Reporting the call as
-                    // "pending transcription" while its capture is waiting to
-                    // be picked made the Calls screen show fifteen calls queued
-                    // when the queue held one.
-                    state = if (settings.autoTranscribeCalls) {
-                        CallState.PENDING_TRANSCRIPTION
-                    } else {
-                        CallState.AWAITING_SELECTION
-                    },
+                    // Must agree with the capture, or the Calls screen reports
+                    // a different number of queued calls than the queue holds.
+                    state = CallState.PENDING_TRANSCRIPTION,
                     discoveryAttempts = attempt + 1,
                     updatedAt = System.currentTimeMillis(),
                 ),
@@ -283,8 +311,7 @@ class CallPipeline(
                 Stage.CALL,
                 LogLevel.INFO,
                 "found recording for ${record.contactName ?: record.phoneNumber}",
-                "file=${candidate.name} attempt=${attempt + 1} bytes=${candidate.sizeBytes}" +
-                    if (!settings.autoTranscribeCalls) " (waiting for you to pick it under Recordings)" else "",
+                "file=${candidate.name} attempt=${attempt + 1} bytes=${candidate.sizeBytes} - queued for transcription",
             )
             return@withContext true
         }
@@ -346,6 +373,13 @@ class CallPipeline(
         val DISCOVERY_DELAYS = listOf(3_000L, 3_000L, 4_000L, 10_000L)
 
         const val PENDING_MARKER_MILLIS = 5 * 60 * 1000L
-        const val LOOKBACK_MILLIS = 6 * 60 * 60 * 1000L
+        /**
+         * How far back each sweep re-reads the call log.
+         *
+         * Generous on purpose: the sweep is idempotent, so the only cost of a
+         * wide window is a cursor read, and the cost of a narrow one is a call
+         * that was never seen because the phone was off when it ended.
+         */
+        const val LOOKBACK_MILLIS = 48 * 60 * 60 * 1000L
     }
 }

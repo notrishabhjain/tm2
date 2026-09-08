@@ -78,9 +78,11 @@ class RecordingFinder(private val context: Context) {
         callEndMillis: Long,
         phoneNumber: String?,
         userDirUri: String?,
+        cutoffMillis: Long = 0L,
     ): Candidate? = withContext(Dispatchers.IO) {
-        val from = callStartMillis - 60_000
+        val from = maxOf(callStartMillis - 60_000, cutoffMillis)
         val to = callEndMillis + 180_000
+        if (from > to) return@withContext null
 
         val candidates = buildList {
             addAll(scanUserDirectory(userDirUri))
@@ -123,25 +125,30 @@ class RecordingFinder(private val context: Context) {
         limit: Int,
         userDirUri: String?,
         forceRescan: Boolean = false,
+        cutoffMillis: Long = 0L,
     ): List<Candidate> = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         if (!forceRescan) {
-            cachedListing?.takeIf { now - it.takenAt < LISTING_CACHE_MILLIS }
+            cachedListing?.takeIf { now - it.takenAt < LISTING_CACHE_MILLIS && it.cutoff == cutoffMillis }
                 ?.let { return@withContext it.candidates.take(limit) }
         }
 
         val candidates = buildList {
             addAll(scanUserDirectory(userDirUri))
             addAll(scanKnownPaths())
-            addAll(queryMediaStore(0))
+            addAll(queryMediaStore(cutoffMillis))
         }
             .distinctBy { it.path }
             .filter { it.sizeBytes > MIN_USABLE_BYTES }
+            // Anything the dialer wrote before the app drew its line is not
+            // part of the queue and never will be. Filtering here rather than
+            // in the UI means the 6465 old files cost nothing anywhere else.
+            .filter { it.lastModified > cutoffMillis }
             .sortedByDescending { it.lastModified }
             // Cache more than one screenful so paging never re-walks the disk.
             .take(LISTING_CACHE_SIZE)
 
-        cachedListing = Listing(candidates, now)
+        cachedListing = Listing(candidates, now, cutoffMillis)
         candidates.take(limit)
     }
 
@@ -149,7 +156,7 @@ class RecordingFinder(private val context: Context) {
     fun hasFreshListing(): Boolean =
         cachedListing?.let { System.currentTimeMillis() - it.takenAt < LISTING_CACHE_MILLIS } == true
 
-    private class Listing(val candidates: List<Candidate>, val takenAt: Long)
+    private class Listing(val candidates: List<Candidate>, val takenAt: Long, val cutoff: Long)
 
     /**
      * What discovery can actually see right now, for the diagnostic report.

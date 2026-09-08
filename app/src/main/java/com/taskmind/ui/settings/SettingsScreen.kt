@@ -490,8 +490,31 @@ private fun CaptureSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+
+        Spacer(Modifier.height(16.dp))
+        Text(
+            if (settings.recordingCutoffMillis > 0) {
+                "Recordings made before " +
+                    CUTOFF_STAMP.format(java.util.Date(settings.recordingCutoffMillis)) +
+                    " are ignored. Every call after it is transcribed automatically."
+            } else {
+                "Every new call is transcribed automatically."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = viewModel::startFreshFromNow) { Text("Ignore everything recorded so far") }
+        Text(
+            "Moves that line to right now. Use it if an old backlog has found its way into the queue.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
+
+private val CUTOFF_STAMP =
+    java.text.SimpleDateFormat("d MMM yyyy, HH:mm", java.util.Locale.US)
 
 @Composable
 private fun QualitySection(settings: Settings, viewModel: SettingsViewModel) {

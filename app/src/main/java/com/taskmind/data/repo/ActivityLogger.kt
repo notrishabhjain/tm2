@@ -87,7 +87,16 @@ class ActivityLogger(
 
     companion object {
         private const val TAG = "TaskMind"
-        const val KEEP = 500
+        /**
+         * Deliberately generous.
+         *
+         * At 500 the log held about half an hour of this device's traffic: a
+         * busy WhatsApp group alone writes dozens of lines a minute, and the
+         * call events being hunted for were evicted long before anyone opened
+         * the screen to look. A log that has already thrown away the evidence
+         * is worse than no log, because it reads as "nothing happened".
+         */
+        const val KEEP = 2000
         private const val TRIM_EVERY = 25
     }
 }

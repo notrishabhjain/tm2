@@ -41,9 +41,11 @@ data class RecordingsUiState(
     val scanning: Boolean = false,
     val queueing: Boolean = false,
     val rows: List<RecordingRow> = emptyList(),
-    val autoTranscribe: Boolean = true,
+    /** Recordings older than this are not the app's business - see Settings. */
+    val cutoffMillis: Long = 0L,
     val queuedCount: Int = 0,
     val awaitingSelectionCount: Int = 0,
+    val failedCount: Int = 0,
     val message: String? = null,
 ) {
     val selected: List<RecordingRow> get() = rows.filter { it.selected }
@@ -84,6 +86,7 @@ class RecordingsViewModel(private val container: AppContainer) : ViewModel() {
                     limit = LIST_LIMIT,
                     userDirUri = settings.callRecordingDirUri,
                     forceRescan = forceRescan,
+                    cutoffMillis = settings.recordingCutoffMillis,
                 )
             }.getOrDefault(emptyList())
 
@@ -109,9 +112,11 @@ class RecordingsViewModel(private val container: AppContainer) : ViewModel() {
                         lastError = capture?.lastError,
                     )
                 },
-                autoTranscribe = settings.autoTranscribeCalls,
+                cutoffMillis = settings.recordingCutoffMillis,
                 queuedCount = runCatching { dao.countByState(CaptureState.PENDING_TRANSCRIPTION) }.getOrDefault(0),
                 awaitingSelectionCount = runCatching { dao.countByState(CaptureState.AWAITING_SELECTION) }
+                    .getOrDefault(0),
+                failedCount = runCatching { dao.countRecordingsInState(CaptureState.FAILED_PERMANENT) }
                     .getOrDefault(0),
             )
         }
@@ -147,6 +152,8 @@ class RecordingsViewModel(private val container: AppContainer) : ViewModel() {
                     .getOrDefault(_ui.value.queuedCount),
                 awaitingSelectionCount = runCatching { dao.countByState(CaptureState.AWAITING_SELECTION) }
                     .getOrDefault(_ui.value.awaitingSelectionCount),
+                failedCount = runCatching { dao.countRecordingsInState(CaptureState.FAILED_PERMANENT) }
+                    .getOrDefault(_ui.value.failedCount),
             )
         }
     }
@@ -159,20 +166,6 @@ class RecordingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun clearSelection() {
         _ui.value = _ui.value.copy(rows = _ui.value.rows.map { it.copy(selected = false) })
-    }
-
-    fun setAutoTranscribe(enabled: Boolean) {
-        viewModelScope.launch {
-            container.settingsRepository.setAutoTranscribeCalls(enabled)
-            _ui.value = _ui.value.copy(
-                autoTranscribe = enabled,
-                message = if (enabled) {
-                    "New calls will be transcribed automatically."
-                } else {
-                    "New calls will wait here until you pick them."
-                },
-            )
-        }
     }
 
     /** Queues exactly the selected files, through the normal capture path. */
@@ -228,24 +221,30 @@ class RecordingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /**
-     * Empties the transcription queue without deleting anything.
+     * Puts everything that failed back in the queue.
      *
-     * The backlog that builds up before someone realises their dialer records
-     * every call is the reason this exists; the captures move to
-     * AWAITING_SELECTION and stay pickable.
+     * Transcription parks a recording it cannot read - a revoked permission, a
+     * missing key, a moved file - rather than retrying it forever. That is the
+     * right behaviour, but it needs a way back once the cause is fixed, or the
+     * recording is stuck for good with no way to say "try again now".
      */
-    fun clearQueue() {
+    fun retryFailed() {
         viewModelScope.launch {
             val dao = container.database.rawCaptureDao()
-            val count = runCatching { dao.countByState(CaptureState.PENDING_TRANSCRIPTION) }.getOrDefault(0)
-            dao.releaseState(CaptureState.PENDING_TRANSCRIPTION, CaptureState.AWAITING_SELECTION)
+            val count = runCatching { dao.countRecordingsInState(CaptureState.FAILED_PERMANENT) }
+                .getOrDefault(0)
+            if (count == 0) {
+                _ui.value = _ui.value.copy(message = "Nothing has failed.")
+                return@launch
+            }
+            dao.requeueRecordings(CaptureState.FAILED_PERMANENT, CaptureState.PENDING_TRANSCRIPTION)
             container.logger.write(
                 Stage.CALL,
                 LogLevel.INFO,
-                "cleared $count queued transcription(s) at your request",
-                "Nothing was deleted - they are still listed under Recordings.",
+                "retrying $count failed transcription(s) at your request",
             )
-            _ui.value = _ui.value.copy(message = "Cleared $count from the queue. Nothing was deleted.")
+            Scheduler.enqueueTranscription(container.context, wifiOnly = false)
+            _ui.value = _ui.value.copy(message = "Retrying $count recording(s).")
             refreshStates()
         }
     }
