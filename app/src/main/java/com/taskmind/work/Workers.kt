@@ -9,6 +9,7 @@ import com.taskmind.core.CaptureState
 import com.taskmind.core.DateResolver
 import com.taskmind.core.LogLevel
 import com.taskmind.core.Stage
+import com.taskmind.data.repo.ActivityLogger
 import com.taskmind.data.repo.RoomInferenceRecorder
 import com.taskmind.di.AppContainer
 import java.io.File
@@ -255,7 +256,10 @@ class RetentionWorker(context: Context, params: WorkerParameters) : CoroutineWor
 
             container.database.fingerprintDao().purgeOlderThan(System.currentTimeMillis() - SEVEN_DAYS)
             container.database.reviewItemDao().purgeResolved(cutoff)
-            container.database.activityLogDao().trimTo(500)
+            // One source of truth for the cap: the logger's own constant. These
+            // two drifting apart is how the log ends up shorter than the code
+            // that writes it thinks it is.
+            container.database.activityLogDao().trimTo(ActivityLogger.KEEP)
             container.database.inferenceCallDao().trimTo(RoomInferenceRecorder.KEEP)
             Result.success()
         } catch (t: Throwable) {

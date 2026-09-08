@@ -52,8 +52,30 @@ class CallPipeline(
      */
     suspend fun sweepCallLog(reason: String): Int = withContext(Dispatchers.IO) {
         val settings = settingsRepository.current()
-        if (!settings.captureCalls) return@withContext 0
-        if (!settings.cloudConsent) return@withContext 0
+
+        // These two used to `return 0` in total silence, which is the worst
+        // possible failure for a pipeline whose only debugging surface is the
+        // log: every trigger fires, the sweep runs, and not one line is
+        // written. "I checked the logs and nothing comes up at all" is what a
+        // silent early return looks like from the outside.
+        if (!settings.captureCalls) {
+            logger.write(
+                Stage.CALL,
+                LogLevel.WARN,
+                "call capture is switched off - no call will become a task",
+                "Settings -> What to watch -> turn on call capture. (trigger=$reason)",
+            )
+            return@withContext 0
+        }
+        if (!settings.cloudConsent) {
+            logger.write(
+                Stage.CALL,
+                LogLevel.WARN,
+                "cloud processing not consented - no call will become a task",
+                "Settings -> Privacy -> allow sending text to the model. (trigger=$reason)",
+            )
+            return@withContext 0
+        }
         if (!hasCallLogPermission()) {
             logger.write(Stage.CALL, LogLevel.WARN, "call sweep skipped - READ_CALL_LOG not granted", reason)
             return@withContext 0

@@ -1,7 +1,11 @@
 package com.taskmind.diagnostics
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.CallLog
+import androidx.core.content.ContextCompat
 import com.taskmind.BuildConfig
 import com.taskmind.core.CaptureState
 import com.taskmind.core.ModelCatalog
@@ -179,6 +183,8 @@ class DiagnosticReport(private val context: Context, private val container: AppC
             )
         }
 
+        callPipelineSection(out, settings)
+
         out.section("Prompts")
         val prompts = runCatching { container.promptStore.current() }.getOrNull()
         if (prompts == null) {
@@ -305,6 +311,123 @@ class DiagnosticReport(private val context: Context, private val container: AppC
         appendLine("=".repeat(72))
     }
 
+    /**
+     * Android's call log, next to what TaskMind did with each row.
+     *
+     * The question "why did that call not become a task?" has never been
+     * answerable from inside the app. The activity log is capped and gets
+     * evicted by message traffic; the app's own call table only contains calls
+     * it decided to keep, so a call it skipped leaves no trace anywhere. This
+     * reads the source of truth - the platform's call log - and says, per call,
+     * whether TaskMind registered it and where it got to. A blank column here
+     * is the answer.
+     */
+    private suspend fun callPipelineSection(out: StringBuilder, settings: Settings?) {
+        out.section("Call pipeline (what the phone reported vs what TaskMind did)")
+
+        val minDuration: Long = settings?.minCallDurationSeconds ?: 15L
+        out.kv("Call capture enabled", (settings?.captureCalls ?: false).toString())
+        out.kv("Cloud consent", (settings?.cloudConsent ?: false).toString())
+        out.kv("Ignoring calls shorter than", "${minDuration}s")
+
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) ==
+            PackageManager.PERMISSION_GRANTED
+        out.kv("READ_CALL_LOG granted", granted.toString())
+        if (!granted) {
+            out.appendLine("Without this permission the app cannot see that a call happened at all.")
+            return
+        }
+        val capturing = settings != null && settings.captureCalls && settings.cloudConsent
+        if (!capturing) {
+            out.appendLine(
+                "One of the switches above is off, so the call sweep returns immediately and " +
+                    "no call can become a task, whatever the rows below say.",
+            )
+        }
+
+        val rows = readCallLog(CALL_LOG_ROWS)
+        if (rows.isEmpty()) {
+            out.appendLine("The phone's call log reported no calls. Nothing has been missed - there is nothing there.")
+            return
+        }
+
+        out.appendLine("time                 dir       dur   TaskMind")
+        for (row in rows) {
+            val record = runCatching { container.database.callRecordDao().byCallLogId(row.id) }.getOrNull()
+            val verdict = when {
+                record != null -> {
+                    val capture = record.rawCaptureId?.let { id ->
+                        runCatching { container.database.rawCaptureDao().byId(id) }.getOrNull()
+                    }
+                    buildString {
+                        append("registered, ").append(record.state)
+                        capture?.let { append(" / capture ").append(it.state) }
+                        record.recordingPath?.let { append(" / recording found") }
+                        record.lastError?.let { append(" / ").append(it) }
+                        capture?.lastError?.let { append(" / ").append(it) }
+                    }
+                }
+                row.direction != CallLog.Calls.INCOMING_TYPE && row.direction != CallLog.Calls.OUTGOING_TYPE ->
+                    "skipped - not a connected call"
+                row.duration != null && row.duration < minDuration ->
+                    "skipped - shorter than ${minDuration}s"
+                else ->
+                    "NOT REGISTERED - this one should have been picked up"
+            }
+            out.appendLine(
+                stamp(row.date).padEnd(21) +
+                    directionLabel(row.direction).padEnd(10) +
+                    (row.duration?.let { "${it}s" } ?: "?").padEnd(6) +
+                    verdict,
+            )
+        }
+    }
+
+    private data class CallLogRow(val id: Long, val date: Long, val duration: Long?, val direction: Int)
+
+    private fun readCallLog(limit: Int): List<CallLogRow> {
+        val out = mutableListOf<CallLogRow>()
+        val cursor = runCatching {
+            context.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                arrayOf(CallLog.Calls._ID, CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.TYPE),
+                null,
+                null,
+                "${CallLog.Calls.DATE} DESC",
+            )
+        }.getOrNull() ?: return emptyList()
+
+        cursor.use { c ->
+            val idIdx = c.getColumnIndex(CallLog.Calls._ID)
+            val dateIdx = c.getColumnIndex(CallLog.Calls.DATE)
+            val durationIdx = c.getColumnIndex(CallLog.Calls.DURATION)
+            val typeIdx = c.getColumnIndex(CallLog.Calls.TYPE)
+            while (c.moveToNext() && out.size < limit) {
+                if (idIdx < 0 || dateIdx < 0) continue
+                out.add(
+                    CallLogRow(
+                        id = c.getLong(idIdx),
+                        date = c.getLong(dateIdx),
+                        // Read as nullable on purpose - failure mode 4. A row
+                        // still being written reports no duration, and treating
+                        // that as zero is what made real calls look too short.
+                        duration = if (durationIdx >= 0 && !c.isNull(durationIdx)) c.getLong(durationIdx) else null,
+                        direction = if (typeIdx >= 0) c.getInt(typeIdx) else 0,
+                    ),
+                )
+            }
+        }
+        return out
+    }
+
+    private fun directionLabel(type: Int): String = when (type) {
+        CallLog.Calls.INCOMING_TYPE -> "incoming"
+        CallLog.Calls.OUTGOING_TYPE -> "outgoing"
+        CallLog.Calls.MISSED_TYPE -> "missed"
+        CallLog.Calls.REJECTED_TYPE -> "rejected"
+        else -> "other"
+    }
+
     private fun StringBuilder.kv(key: String, value: String) {
         appendLine("$key: $value")
     }
@@ -313,6 +436,9 @@ class DiagnosticReport(private val context: Context, private val container: AppC
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(millis))
 
     companion object {
+        /** Enough to cover a normal day of calls without bloating the report. */
+        private const val CALL_LOG_ROWS = 25
+
         fun fileName(): String =
             "taskmind-diagnostics-" +
                 SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) +
