@@ -15,11 +15,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.taskmind.di.AppContainer
+import com.taskmind.widget.TasksWidget
+import com.taskmind.ui.shell.MainShell
+import com.taskmind.ui.shell.MainTab
 import com.taskmind.ui.AppViewModels
 import com.taskmind.ui.calls.CallsScreen
 import com.taskmind.ui.calls.CallsViewModel
@@ -94,6 +99,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Redraw the widget when leaving the app.
+     *
+     * Covers everything the user just did - completing, editing, approving a
+     * review item. Tasks created in the background are picked up by the
+     * widget's own 30-minute update instead: making those instant would mean
+     * a call into the widget from the intake funnel, and the funnel is not
+     * mine to touch.
+     */
+    override fun onStop() {
+        super.onStop()
+        TasksWidget.refresh(this)
+    }
+
     /** Log and data exports leave through the share sheet, not a file path. */
     private fun shareText(title: String, content: String) {
         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -151,6 +170,41 @@ object Routes {
     fun taskDetail(id: String) = "task/$id"
 }
 
+/**
+ * A top-level destination: content plus the navigation bar.
+ *
+ * The badge is read straight from the review table rather than threaded down
+ * from a screen's view model, so it is correct on every tab including the ones
+ * that know nothing about reviews.
+ */
+@Composable
+private fun TopLevel(
+    tab: MainTab,
+    navController: NavHostController,
+    content: @Composable () -> Unit,
+) {
+    val container = AppContainer.get(LocalContext.current)
+    val pending by container.database.reviewItemDao()
+        .observePendingCount()
+        .collectAsStateWithLifecycle(initialValue = 0)
+
+    MainShell(
+        current = tab,
+        reviewBadge = pending,
+        onSelect = { target ->
+            navController.navigate(target.route) {
+                // Tabs are siblings, not a stack: switching between them
+                // should not build a back stack four screens deep.
+                popUpTo(Routes.TASKS) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        },
+    ) {
+        content()
+    }
+}
+
 @Composable
 fun TaskMindNavHost(
     startOnboarding: Boolean,
@@ -163,6 +217,9 @@ fun TaskMindNavHost(
         startOnboarding -> Routes.ONBOARDING
         startRoute == "status" -> Routes.STATUS
         startRoute == "review" -> Routes.REVIEW
+        // The widget opens a specific task. Matched by prefix rather than
+        // listed, because the id is part of the route.
+        startRoute != null && startRoute.startsWith("task/") -> startRoute
         else -> Routes.TASKS
     }
 
@@ -182,15 +239,17 @@ fun TaskMindNavHost(
 
         composable(Routes.TASKS) {
             val vm: TaskListViewModel = viewModel(factory = AppViewModels.factory)
-            TaskListScreen(
-                viewModel = vm,
-                onOpenTask = { id -> navController.navigate(Routes.taskDetail(id)) },
-                onOpenStatus = { navController.navigate(Routes.STATUS) },
-                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                onOpenReview = { navController.navigate(Routes.REVIEW) },
-                onOpenCalls = { navController.navigate(Routes.CALLS) },
-                onOpenImport = { navController.navigate(Routes.IMPORT) },
-            )
+            TopLevel(MainTab.TASKS, navController) {
+                TaskListScreen(
+                    viewModel = vm,
+                    onOpenTask = { id -> navController.navigate(Routes.taskDetail(id)) },
+                    onOpenStatus = { navController.navigate(Routes.STATUS) },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    onOpenReview = { navController.navigate(Routes.REVIEW) },
+                    onOpenCalls = { navController.navigate(Routes.CALLS) },
+                    onOpenImport = { navController.navigate(Routes.IMPORT) },
+                )
+            }
         }
 
         composable(Routes.TASK_DETAIL) { backStackEntry ->
@@ -201,7 +260,9 @@ fun TaskMindNavHost(
 
         composable(Routes.REVIEW) {
             val vm: ReviewViewModel = viewModel(factory = AppViewModels.factory)
-            ReviewScreen(viewModel = vm, onBack = { navController.popBackStack() })
+            TopLevel(MainTab.REVIEW, navController) {
+                ReviewScreen(viewModel = vm, onBack = { navController.popBackStack() })
+            }
         }
 
         composable(Routes.STATUS) {
@@ -219,6 +280,7 @@ fun TaskMindNavHost(
 
         composable(Routes.SETTINGS) {
             val vm: SettingsViewModel = viewModel(factory = AppViewModels.factory)
+            TopLevel(MainTab.SETTINGS, navController) {
             SettingsScreen(
                 viewModel = vm,
                 onBack = { navController.popBackStack() },
@@ -229,6 +291,7 @@ fun TaskMindNavHost(
                 onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
                 onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
             )
+            }
         }
 
         composable(Routes.RECORDINGS) {
@@ -285,12 +348,14 @@ fun TaskMindNavHost(
 
         composable(Routes.CALLS) {
             val vm: CallsViewModel = viewModel(factory = AppViewModels.factory)
-            CallsScreen(
-                viewModel = vm,
-                onBack = { navController.popBackStack() },
-                onOpenImport = { navController.navigate(Routes.IMPORT) },
-                onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
-            )
+            TopLevel(MainTab.CALLS, navController) {
+                CallsScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenImport = { navController.navigate(Routes.IMPORT) },
+                    onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
+                )
+            }
         }
 
         composable(Routes.IMPORT) {

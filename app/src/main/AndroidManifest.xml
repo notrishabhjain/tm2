@@ -112,6 +112,26 @@
             </intent-filter>
         </receiver>
 
+        <!--
+          The home-screen widget. exported="true" is required for the launcher
+          to bind it; the provider only reads and only ever opens this app.
+        -->
+        <receiver
+            android:name=".widget.TasksWidget"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_tasks_info" />
+        </receiver>
+
+        <service
+            android:name=".widget.TasksWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
         <receiver
             android:name=".capture.WatchdogReceiver"
             android:exported="false">
