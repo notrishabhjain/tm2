@@ -127,11 +127,6 @@
                 android:resource="@xml/widget_tasks_info" />
         </receiver>
 
-        <service
-            android:name=".widget.TasksWidgetService"
-            android:permission="android.permission.BIND_REMOTEVIEWS"
-            android:exported="false" />
-
         <receiver
             android:name=".capture.WatchdogReceiver"
             android:exported="false">

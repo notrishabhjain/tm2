@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskmind.core.CallState
+import com.taskmind.core.CaptureState
 import com.taskmind.ui.components.DateFormats
 import com.taskmind.ui.components.EmptyState
 import com.taskmind.ui.components.StatusPill
@@ -98,7 +99,8 @@ fun CallsScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(calls, key = { it.id }) { call ->
+            items(calls, key = { it.record.id }) { row ->
+                val call = row.record
                 Card(
                     Modifier
                         .fillMaxWidth()
@@ -121,8 +123,8 @@ fun CallsScreen(
                                 )
                             }
                             StatusPill(
-                                text = stateLabel(call.state),
-                                ok = call.state == CallState.TRANSCRIBED || call.state == CallState.DONE,
+                                text = statusLabel(row),
+                                ok = row.isSettled,
                             )
                         }
 
@@ -131,7 +133,7 @@ fun CallsScreen(
                             Text(it, style = MaterialTheme.typography.bodyMedium)
                         }
 
-                        call.transcript?.let { transcript ->
+                        row.transcript?.takeIf { it.isNotBlank() }?.let { transcript ->
                             Spacer(Modifier.height(8.dp))
                             Text(
                                 transcript.take(400),
@@ -140,7 +142,7 @@ fun CallsScreen(
                             )
                         }
 
-                        call.lastError?.let { error ->
+                        row.error?.takeIf { it.isNotBlank() }?.let { error ->
                             Spacer(Modifier.height(8.dp))
                             Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         }
@@ -158,12 +160,37 @@ fun CallsScreen(
     }
 }
 
-private fun stateLabel(state: CallState): String = when (state) {
-    CallState.PENDING_RECORDING -> "Looking for recording"
-    CallState.PENDING_TRANSCRIPTION -> "Waiting to transcribe"
-    CallState.AWAITING_SELECTION -> "Recording found - queueing"
-    CallState.TRANSCRIBED -> "Transcribed"
-    CallState.NO_RECORDING -> "No recording"
-    CallState.FAILED -> "Failed"
-    CallState.DONE -> "Done"
+/**
+ * What actually happened to this call.
+ *
+ * The capture wins wherever it has an opinion: it is the row the transcription
+ * and extraction pipelines write to, while `call_records.state` stops being
+ * updated after discovery. Falling back to the call record covers the window
+ * before a capture exists, and manually imported transcripts, which only ever
+ * touch the call record.
+ */
+private fun statusLabel(row: CallRow): String = when (row.captureState) {
+    CaptureState.DONE -> "Task created"
+    CaptureState.PENDING_EXTRACTION -> "Transcribed - reading for tasks"
+    CaptureState.PENDING_TRANSCRIPTION -> "Transcribing"
+    CaptureState.AWAITING_SELECTION -> "Queueing"
+    CaptureState.BUDGET_HELD -> "Held for the daily limit"
+    CaptureState.BLOCKED_CONFIG -> "Blocked by a provider setting"
+    CaptureState.FAILED_PERMANENT -> "Failed"
+    CaptureState.REJECTED -> if (row.transcript.isNullOrBlank()) "No recording" else "No task found"
+    null -> when (row.record.state) {
+        CallState.PENDING_RECORDING -> "Looking for recording"
+        CallState.PENDING_TRANSCRIPTION -> "Waiting to transcribe"
+        CallState.AWAITING_SELECTION -> "Recording found - queueing"
+        CallState.TRANSCRIBED -> "Transcribed"
+        CallState.NO_RECORDING -> "No recording"
+        CallState.FAILED -> "Failed"
+        CallState.DONE -> "Done"
+    }
 }
+
+/** True once nothing further is going to happen on its own. */
+private val CallRow.isSettled: Boolean
+    get() = captureState == CaptureState.DONE ||
+        captureState == CaptureState.PENDING_EXTRACTION ||
+        (captureState == null && (record.state == CallState.TRANSCRIBED || record.state == CallState.DONE))
