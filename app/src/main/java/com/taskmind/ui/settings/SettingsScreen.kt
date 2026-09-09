@@ -34,6 +34,19 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.taskmind.ui.design.Grouped
+import com.taskmind.ui.design.NavRow
+import com.taskmind.ui.design.RowDivider
+import com.taskmind.ui.design.Space
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -86,13 +99,19 @@ fun SettingsScreen(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri -> viewModel.setCallRecordingDir(uri) }
 
+    // Which sub-page is open, or null for the hub. Held here rather than in
+    // the navigation graph because these pages are leaves of one screen, not
+    // destinations anyone links to.
+    var page by remember { mutableStateOf<SettingsPage?>(null) }
+    BackHandler(enabled = page != null) { page = null }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text(page?.title ?: "Settings") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { if (page != null) page = null else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -106,16 +125,39 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 48.dp),
         ) {
-            TransparencySection(onOpenHowItWorks, onOpenPrompts, onOpenModelCalls, onOpenDiagnostics, onOpenRecordings)
-            PrivacySection(settings, viewModel)
-            LlmSection(settings, ui, viewModel)
-            AsrSection(settings, ui, viewModel)
-            CaptureSection(settings, ui, viewModel) { dirLauncher.launch(null) }
-            QualitySection(settings, viewModel)
-            BudgetSection(settings, viewModel)
-            RetentionSection(settings, viewModel) { confirmErase = true }
-            UpdateSection(settings, viewModel)
-            DataSection(viewModel, onShareText) { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }
+            when (page) {
+                null -> SettingsHub(onOpen = { page = it })
+
+                SettingsPage.CAPTURE ->
+                    CaptureSection(settings, ui, viewModel) { dirLauncher.launch(null) }
+
+                SettingsPage.PROVIDERS -> {
+                    LlmSection(settings, ui, viewModel)
+                    AsrSection(settings, ui, viewModel)
+                }
+
+                SettingsPage.ACCURACY -> QualitySection(settings, viewModel)
+
+                SettingsPage.BUDGET -> BudgetSection(settings, viewModel)
+
+                SettingsPage.PRIVACY -> {
+                    PrivacySection(settings, viewModel)
+                    RetentionSection(settings, viewModel) { confirmErase = true }
+                    DataSection(viewModel, onShareText) {
+                        importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                    }
+                }
+
+                SettingsPage.TRANSPARENCY -> TransparencySection(
+                    onOpenHowItWorks,
+                    onOpenPrompts,
+                    onOpenModelCalls,
+                    onOpenDiagnostics,
+                    onOpenRecordings,
+                )
+
+                SettingsPage.ABOUT -> UpdateSection(settings, viewModel)
+            }
         }
     }
 
@@ -139,6 +181,69 @@ fun SettingsScreen(
             },
             dismissButton = { TextButton(onClick = { confirmErase = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/**
+ * The six places settings can take you.
+ *
+ * Ten sections on one scroll meant the only way to change a threshold was to
+ * scroll past the model pickers, the budget sliders and the privacy controls
+ * and hope to recognise it. A page per concern costs one tap and removes the
+ * scrolling entirely.
+ */
+enum class SettingsPage(val title: String, val summary: String, val icon: ImageVector) {
+    CAPTURE(
+        "What to watch",
+        "Apps, calls, minimum call length, recordings folder",
+        Icons.Outlined.Visibility,
+    ),
+    PROVIDERS(
+        "AI providers",
+        "Keys, models and connection tests for text and speech",
+        Icons.Outlined.Cloud,
+    ),
+    ACCURACY(
+        "Accuracy",
+        "How sure the app must be before it creates a task",
+        Icons.Outlined.Tune,
+    ),
+    BUDGET(
+        "Limits",
+        "Daily caps on model calls and audio, and the network rule",
+        Icons.Outlined.Speed,
+    ),
+    PRIVACY(
+        "Privacy and data",
+        "Consent, how long content is kept, export and erase",
+        Icons.Outlined.Lock,
+    ),
+    TRANSPARENCY(
+        "How it works",
+        "Prompts, model calls, recordings and the diagnostic report",
+        Icons.Outlined.Science,
+    ),
+    ABOUT(
+        "Updates",
+        "Version and automatic update checks",
+        Icons.Outlined.Info,
+    ),
+}
+
+@Composable
+private fun SettingsHub(onOpen: (SettingsPage) -> Unit) {
+    Column(Modifier.padding(vertical = Space.snug)) {
+        Grouped {
+            SettingsPage.entries.forEachIndexed { index, entry ->
+                NavRow(
+                    title = entry.title,
+                    supporting = entry.summary,
+                    icon = entry.icon,
+                    onClick = { onOpen(entry) },
+                )
+                if (index != SettingsPage.entries.lastIndex) RowDivider()
+            }
+        }
     }
 }
 

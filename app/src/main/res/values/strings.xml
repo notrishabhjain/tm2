@@ -2,4 +2,7 @@
 <resources>
     <string name="app_name">TaskMind</string>
     <string name="notification_listener_label">TaskMind message capture</string>
+    <string name="widget_title">Pending</string>
+    <string name="widget_empty">Nothing pending. New tasks appear here on their own.</string>
+    <string name="widget_description">Your pending tasks, with anything waiting for approval.</string>
 </resources>

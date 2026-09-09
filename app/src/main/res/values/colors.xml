@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#1D5D4B</color>
+
+    <!--
+      The widget draws on the launcher, not inside the app, so it cannot use
+      the Material theme. These mirror the light scheme in Theme.kt; the
+      night-qualified copy mirrors the dark one.
+    -->
+    <color name="widget_surface">#FBFDF9</color>
+    <color name="widget_on_surface">#191C1B</color>
+    <color name="widget_on_surface_variant">#3F4945</color>
+    <color name="widget_accent">#1D5D4B</color>
+    <color name="widget_overdue">#BA1A1A</color>
+    <color name="widget_on_accent">#FFFFFF</color>
 </resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors DarkColors in Theme.kt, so the widget matches the app. -->
+    <color name="widget_surface">#111412</color>
+    <color name="widget_on_surface">#E1E3E0</color>
+    <color name="widget_on_surface_variant">#BFC9C4</color>
+    <color name="widget_accent">#8BD6BB</color>
+    <color name="widget_overdue">#FFB4AB</color>
+    <color name="widget_on_accent">#003825</color>
+</resources>
