@@ -1,0 +1,177 @@
+/*
+  One stylesheet, no framework.
+  Adding Tailwind would mean a PostCSS config, a content glob and a build step
+  that can fail on Vercel in ways that are hard to see from a phone. This is a
+  handful of screens.
+*/
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #fbfaf8;
+  --surface: #ffffff;
+  --surface-2: #f2f1ee;
+  --text: #1b1b19;
+  --text-dim: #6b6a66;
+  --line: #e3e1dc;
+  --accent: #1d5d4b;
+  --danger: #b3261e;
+  --warn: #b25e00;
+
+  --p-urgent: #b3261e;
+  --p-high: #b25e00;
+  --p-medium: #1d5d4b;
+  --p-low: #5f6b67;
+
+  --radius: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131312;
+    --surface: #1d1d1b;
+    --surface-2: #262624;
+    --text: #eceae5;
+    --text-dim: #9d9a93;
+    --line: #333331;
+    --accent: #8bd6bb;
+    --danger: #ff8a80;
+    --warn: #ffcc80;
+
+    --p-urgent: #ff8a80;
+    --p-high: #ffcc80;
+    --p-medium: #8bd6bb;
+    --p-low: #b0bec5;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.shell { max-width: 860px; margin: 0 auto; padding: 24px 20px 80px; }
+
+/* -- header ------------------------------------------------------------- */
+
+header.top {
+  display: flex; align-items: center; gap: 16px;
+  padding-bottom: 20px; border-bottom: 1px solid var(--line); margin-bottom: 8px;
+}
+header.top h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
+header.top .spacer { flex: 1; }
+
+.tabs { display: flex; gap: 4px; margin: 20px 0 8px; }
+.tab {
+  border: 0; background: transparent; color: var(--text-dim);
+  font: inherit; font-weight: 500; cursor: pointer;
+  padding: 7px 13px; border-radius: 999px;
+}
+.tab:hover { background: var(--surface-2); color: var(--text); }
+.tab[aria-selected="true"] { background: var(--text); color: var(--bg); }
+
+.count {
+  display: inline-block; margin-left: 7px; padding: 1px 7px;
+  border-radius: 999px; background: rgba(127,127,127,0.2);
+  font-size: 12px; font-weight: 600;
+}
+
+/* -- sections and rows -------------------------------------------------- */
+
+.group-head {
+  display: flex; align-items: center; gap: 9px;
+  margin: 28px 0 8px; font-size: 12px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim);
+}
+.group-head.alert { color: var(--danger); }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+}
+
+.row {
+  display: flex; gap: 12px; padding: 13px 15px;
+  border-top: 1px solid var(--line); cursor: pointer;
+  background: none; border-left: 0; border-right: 0; border-bottom: 0;
+  width: 100%; text-align: left; font: inherit; color: inherit;
+}
+.row:first-child { border-top: 0; }
+.row:hover { background: var(--surface-2); }
+
+/* A bar, not a dot - the same cue the phone uses, so a task looks like
+   itself on both. */
+.bar { width: 3px; border-radius: 2px; flex: 0 0 3px; align-self: stretch; }
+.bar.URGENT { background: var(--p-urgent); }
+.bar.HIGH   { background: var(--p-high); }
+.bar.MEDIUM { background: var(--p-medium); }
+.bar.LOW    { background: var(--p-low); }
+
+.row .body { flex: 1; min-width: 0; }
+.row .title { font-weight: 450; }
+.row .title.done { color: var(--text-dim); text-decoration: line-through; }
+
+.meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip {
+  font-size: 11.5px; padding: 1.5px 8px; border-radius: 8px;
+  background: var(--surface-2); color: var(--text-dim); white-space: nowrap;
+}
+.chip.due-over { background: rgba(179,38,30,0.12); color: var(--danger); }
+.chip.strong { background: rgba(127,127,127,0.18); color: var(--text); }
+
+/* -- detail ------------------------------------------------------------- */
+
+.detail { padding: 4px 15px 16px 30px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.quote {
+  margin: 12px 0; padding: 12px 14px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--line);
+  font-style: italic;
+}
+.quote .note { font-style: normal; font-size: 11.5px; color: var(--text-dim); margin-top: 7px; }
+
+.facts { margin-top: 10px; }
+.fact { display: flex; gap: 12px; padding: 3px 0; font-size: 13px; }
+.fact dt { width: 104px; flex: 0 0 104px; color: var(--text-dim); margin: 0; }
+.fact dd { margin: 0; }
+
+/* -- empty, login, misc ------------------------------------------------- */
+
+.empty { padding: 48px 24px; text-align: center; color: var(--text-dim); }
+.empty strong { display: block; color: var(--text); margin-bottom: 6px; font-weight: 550; }
+
+.login { max-width: 360px; margin: 14vh auto; padding: 0 20px; }
+.login h1 { font-size: 21px; margin: 0 0 6px; }
+.login p.sub { color: var(--text-dim); margin: 0 0 24px; font-size: 14px; }
+
+label.field { display: block; margin-bottom: 14px; }
+label.field span { display: block; font-size: 12.5px; color: var(--text-dim); margin-bottom: 5px; }
+
+input {
+  width: 100%; padding: 10px 12px; font: inherit;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: 9px;
+}
+input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+button.primary {
+  width: 100%; padding: 11px; font: inherit; font-weight: 550; cursor: pointer;
+  background: var(--text); color: var(--bg); border: 0; border-radius: 9px;
+}
+button.primary:disabled { opacity: 0.5; cursor: default; }
+
+button.link {
+  background: none; border: 0; color: var(--text-dim);
+  font: inherit; font-size: 13px; cursor: pointer; padding: 0;
+}
+button.link:hover { color: var(--text); text-decoration: underline; }
+
+.error {
+  margin-top: 14px; padding: 10px 12px; border-radius: 9px; font-size: 13.5px;
+  background: rgba(179,38,30,0.12); color: var(--danger);
+}
+.foot { margin-top: 32px; font-size: 12px; color: var(--text-dim); text-align: center; }

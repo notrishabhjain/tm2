@@ -16,6 +16,7 @@ import androidx.work.WorkManager
 import com.taskmind.capture.ReminderReceiver
 import com.taskmind.capture.WatchdogReceiver
 import com.taskmind.di.AppContainer
+import com.taskmind.sync.SyncWorker
 import java.util.concurrent.TimeUnit
 
 /**
@@ -34,6 +35,7 @@ object Scheduler {
     private const val WORK_MAINTENANCE = "taskmind.maintenance"
     private const val WORK_RETENTION = "taskmind.retention"
     private const val WORK_UPDATE = "taskmind.update_check"
+    private const val WORK_SYNC = "taskmind.web_sync"
 
     private fun wm(context: Context): WorkManager = WorkManager.getInstance(context.applicationContext)
 
@@ -103,6 +105,34 @@ object Scheduler {
                 .setConstraints(unmetered)
                 .build(),
         )
+        // The web mirror. Hourly is the safety net; the push that actually
+        // matters is the one enqueued when the app goes to the background,
+        // which is when a change has just been made.
+        wm(context).enqueueUniquePeriodicWork(
+            WORK_SYNC,
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<SyncWorker>(1, TimeUnit.HOURS)
+                .setConstraints(connected)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 5, TimeUnit.MINUTES)
+                .build(),
+        )
+    }
+
+    /**
+     * Pushes to the web mirror now.
+     *
+     * REPLACE rather than KEEP: if a push is already queued and unstarted, the
+     * newer one has strictly fresher data, so there is nothing to preserve.
+     */
+    fun enqueueSync(context: Context) {
+        wm(context).enqueueUniqueWork(
+            WORK_SYNC + ".now",
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<SyncWorker>()
+                .setConstraints(connected)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
+                .build(),
+        )
     }
 
     fun ensureWatchdog(context: Context) {
@@ -119,7 +149,7 @@ object Scheduler {
      * for.
      */
     fun scheduledWorkNames(context: Context): List<String> =
-        listOf(WORK_MAINTENANCE, WORK_RETENTION, WORK_UPDATE).filter { name ->
+        listOf(WORK_MAINTENANCE, WORK_RETENTION, WORK_UPDATE, WORK_SYNC).filter { name ->
             runCatching {
                 wm(context).getWorkInfosForUniqueWork(name).get()
                     .any { !it.state.isFinished }
@@ -130,6 +160,7 @@ object Scheduler {
         wm(context).cancelUniqueWork(WORK_MAINTENANCE)
         wm(context).cancelUniqueWork(WORK_RETENTION)
         wm(context).cancelUniqueWork(WORK_UPDATE)
+        wm(context).cancelUniqueWork(WORK_SYNC)
         WatchdogReceiver.cancel(context)
     }
 
