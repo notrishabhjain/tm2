@@ -71,6 +71,15 @@ object AutoTagger {
         val parsed = parseLabel(sourceType, sourceLabel)
         val out = mutableListOf<Tag>()
 
+        // A note you dictated has no sender, so the label is not a name and
+        // must not become a person tag. It gets its own source tag instead,
+        // which is also what makes "voice" a useful thing to search for.
+        if (sourceLabel == VOICE_LABEL) {
+            out += Tag(Kind.SOURCE, "voice")
+            out += topics(title, evidence).map { Tag(Kind.TOPIC, it) }
+            return out.distinctBy { it.key }
+        }
+
         parsed.person?.let { out += Tag(Kind.PERSON, it) }
         parsed.group?.let { out += Tag(Kind.GROUP, it) }
 
@@ -197,6 +206,9 @@ object AutoTagger {
             .map { it.first }
             .take(2)
     }
+
+    /** Must match `VoiceNoteCapture.LABEL`. */
+    const val VOICE_LABEL = "Voice note"
 
     private const val CALL_PREFIX = "Call with "
     private const val GROUP_JOINER = " in "

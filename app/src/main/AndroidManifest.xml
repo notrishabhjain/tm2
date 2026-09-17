@@ -10,6 +10,11 @@
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- Voice notes only. Requested the first time the mic button is
+         pressed, never at launch, and the app records nothing on its
+         own - the button has to be held. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Finding the recordings the dialer wrote (spec 11.3). Granted from a

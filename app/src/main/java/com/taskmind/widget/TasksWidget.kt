@@ -11,34 +11,46 @@ import android.widget.RemoteViews
 import com.taskmind.MainActivity
 import com.taskmind.R
 import com.taskmind.Routes
+import com.taskmind.core.LogLevel
+import com.taskmind.core.Stage
 import com.taskmind.data.db.entity.TaskEntity
+import com.taskmind.di.AppContainer
+import kotlinx.coroutines.launch
 
 /**
  * The home-screen widget: what is pending, without opening anything.
  *
- * Built on RemoteViews rather than Glance deliberately. Glance is less code,
- * but it pulls in a new dependency whose Compose-compiler compatibility can
- * only be discovered in CI, and a widget that fails to inflate shows an empty
- * grey box with no error anywhere. RemoteViews has been stable since API 3.
+ * THIRD ATTEMPT, AND DELIBERATELY THE DULLEST ONE
  *
- * The rows are built here and added straight into the frame. The earlier
- * version used a ListView fed by a RemoteViewsService, which the launcher has
- * to bind to across processes; when any link in that chain fails the launcher
- * draws "Couldn't add widget." in every row and records the reason nowhere.
- * Static rows have no service, no binder and no adapter, so that whole failure
- * class is gone. The cost is a fixed row count with no scrolling, which is the
- * right trade for something meant to be glanced at.
+ * The first version used a ListView fed by a RemoteViewsService and the
+ * launcher drew "Couldn't add widget." in every row. The second built rows
+ * with RemoteViews.addView and the launcher rejected the whole thing with
+ * "Can't load widget". Both were guesses at which link in a chain had broken,
+ * and both were wrong.
+ *
+ * So this one has no chain. Every row is declared in `widget_tasks.xml`, and
+ * the only calls made here are setTextViewText, setViewVisibility,
+ * setTextColor, setInt and setOnClickPendingIntent against ids from that file.
+ * No service, no adapter, no nested RemoteViews, no addView. The cost is a
+ * fixed ceiling of [SLOTS] rows; the benefit is that there is no longer any
+ * mechanism left to fail.
+ *
+ * It also renders twice on purpose - see [onReceive].
  *
  * It reads through the same DAO flows the app uses and writes nothing.
  */
 class TasksWidget : AppWidgetProvider() {
 
     /**
-     * Both the system's update and our own refresh are handled here rather
-     * than in `onUpdate`, because rendering has to read the database and a
-     * broadcast receiver's `onReceive` runs on the main thread. `goAsync`
-     * holds the broadcast open while a background thread does the read, so
-     * the launcher is never waiting on disk to draw a home screen.
+     * Renders a valid frame synchronously, then fills it in from a background
+     * thread.
+     *
+     * The synchronous pass is the important one. Reading the database takes a
+     * moment and must not happen on this thread, but a widget whose provider
+     * returns without ever calling `updateAppWidget` is exactly what makes a
+     * launcher give up and show its own error. Handing it a complete, valid
+     * RemoteViews first means the worst case is a widget that says "Loading"
+     * for a moment, rather than one that says nothing can be loaded at all.
      */
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ACTION_REFRESH &&
@@ -47,14 +59,39 @@ class TasksWidget : AppWidgetProvider() {
             super.onReceive(context, intent)
             return
         }
+
         val app = context.applicationContext
+        val manager = AppWidgetManager.getInstance(app)
+        val ids = runCatching {
+            manager.getAppWidgetIds(ComponentName(app, TasksWidget::class.java))
+        }.getOrDefault(IntArray(0))
+        if (ids.isEmpty()) return
+
+        for (id in ids) {
+            runCatching { manager.updateAppWidget(id, placeholder(app)) }
+        }
+
         val pending = goAsync()
         Thread {
             try {
-                renderAll(app)
+                val snapshot = WidgetData.snapshot(app)
+                val views = render(app, snapshot)
+                for (id in ids) manager.updateAppWidget(id, views)
             } catch (t: Throwable) {
-                // A widget that throws here is removed by the launcher and the
-                // user has to place it again. Better a stale widget than none.
+                // The placeholder is already on screen, so this degrades to a
+                // widget showing its header and nothing else - visible, and
+                // explained in the log rather than nowhere.
+                runCatching {
+                    val container = AppContainer.get(app)
+                    container.applicationScope.launch {
+                        container.logger.write(
+                            Stage.SYSTEM,
+                            LogLevel.WARN,
+                            "widget could not read tasks",
+                            t.toString(),
+                        )
+                    }
+                }
             } finally {
                 pending.finish()
             }
@@ -62,47 +99,53 @@ class TasksWidget : AppWidgetProvider() {
     }
 
     /**
-     * `onUpdate` is unreachable while `onReceive` above intercepts the update
-     * broadcast; it stays as the correct behaviour for any direct caller.
+     * Unreachable while [onReceive] intercepts the update broadcast; kept as
+     * the correct behaviour for any direct caller.
      */
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        for (id in ids) render(context, manager, id)
+        val views = render(context, WidgetData.snapshot(context))
+        for (id in ids) manager.updateAppWidget(id, views)
     }
 
-    private fun renderAll(context: Context) {
-        val manager = AppWidgetManager.getInstance(context)
-        val ids = manager.getAppWidgetIds(ComponentName(context, TasksWidget::class.java))
-        for (id in ids) render(context, manager, id)
-    }
+    /** A complete, valid frame that touches nothing but strings. */
+    private fun placeholder(context: Context): RemoteViews =
+        RemoteViews(context.packageName, R.layout.widget_tasks).apply {
+            setTextViewText(R.id.widget_summary, "Loading…")
+            setViewVisibility(R.id.widget_empty, View.GONE)
+            setViewVisibility(R.id.widget_more, View.GONE)
+            setViewVisibility(R.id.widget_review_badge, View.GONE)
+            for (slot in 0 until SLOTS) setViewVisibility(ROWS[slot], View.GONE)
+            setOnClickPendingIntent(R.id.widget_title, openApp(context, Routes.TASKS))
+        }
 
-    private fun render(context: Context, manager: AppWidgetManager, widgetId: Int) {
+    private fun render(context: Context, snapshot: WidgetData.Snapshot): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_tasks)
-
-        val snapshot = WidgetData.snapshot(context)
         val counts = snapshot.counts
+        val tasks = snapshot.tasks
+        val now = System.currentTimeMillis()
+
         views.setTextViewText(R.id.widget_summary, counts.summary)
 
         if (counts.awaitingApproval > 0) {
             views.setTextViewText(R.id.widget_review_badge, "${counts.awaitingApproval} to approve")
             views.setViewVisibility(R.id.widget_review_badge, View.VISIBLE)
+            views.setOnClickPendingIntent(R.id.widget_review_badge, openApp(context, Routes.REVIEW))
         } else {
             views.setViewVisibility(R.id.widget_review_badge, View.GONE)
         }
 
-        val tasks = snapshot.tasks
-        val shown = tasks.take(VISIBLE_ROWS)
-        val now = System.currentTimeMillis()
-
-        // Freshly inflated each render, so the container starts empty; clearing
-        // it first is still cheap insurance against a launcher that recycles.
-        views.removeAllViews(R.id.widget_rows)
-        for (task in shown) {
-            views.addView(R.id.widget_rows, row(context, task, now))
+        for (slot in 0 until SLOTS) {
+            val task = tasks.getOrNull(slot)
+            if (task == null) {
+                views.setViewVisibility(ROWS[slot], View.GONE)
+            } else {
+                fillRow(context, views, slot, task, now)
+            }
         }
 
         views.setViewVisibility(R.id.widget_empty, if (tasks.isEmpty()) View.VISIBLE else View.GONE)
 
-        val hidden = tasks.size - shown.size
+        val hidden = tasks.size - minOf(tasks.size, SLOTS)
         if (hidden > 0) {
             views.setTextViewText(R.id.widget_more, "and $hidden more")
             views.setViewVisibility(R.id.widget_more, View.VISIBLE)
@@ -114,23 +157,24 @@ class TasksWidget : AppWidgetProvider() {
         views.setOnClickPendingIntent(R.id.widget_summary, openApp(context, Routes.TASKS))
         views.setOnClickPendingIntent(R.id.widget_empty, openApp(context, Routes.TASKS))
         views.setOnClickPendingIntent(R.id.widget_more, openApp(context, Routes.TASKS))
-        views.setOnClickPendingIntent(R.id.widget_review_badge, openApp(context, Routes.REVIEW))
 
-        manager.updateAppWidget(widgetId, views)
+        return views
     }
 
-    /** One task row, with its own pending intent - no template to fill in. */
-    private fun row(context: Context, task: TaskEntity, now: Long): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.widget_task_item)
+    private fun fillRow(
+        context: Context,
+        views: RemoteViews,
+        slot: Int,
+        task: TaskEntity,
+        now: Long,
+    ) {
         val due = task.dueAt
         val overdue = due != null && due < now
+        val accent = context.getColor(if (overdue) R.color.widget_overdue else R.color.widget_accent)
 
-        views.setTextViewText(R.id.item_title, task.title)
-        views.setInt(
-            R.id.item_accent,
-            "setBackgroundColor",
-            context.getColor(if (overdue) R.color.widget_overdue else R.color.widget_accent),
-        )
+        views.setViewVisibility(ROWS[slot], View.VISIBLE)
+        views.setTextViewText(TITLES[slot], task.title)
+        views.setInt(BARS[slot], "setBackgroundColor", accent)
 
         val meta = buildList {
             due?.let { add(shortDate(it, now)) }
@@ -138,29 +182,25 @@ class TasksWidget : AppWidgetProvider() {
         }.joinToString("  ·  ")
 
         if (meta.isBlank()) {
-            views.setViewVisibility(R.id.item_meta, View.GONE)
+            views.setViewVisibility(METAS[slot], View.GONE)
         } else {
-            views.setTextViewText(R.id.item_meta, meta)
-            views.setViewVisibility(R.id.item_meta, View.VISIBLE)
+            views.setTextViewText(METAS[slot], meta)
+            views.setViewVisibility(METAS[slot], View.VISIBLE)
             views.setTextColor(
-                R.id.item_meta,
+                METAS[slot],
                 context.getColor(
                     if (overdue) R.color.widget_overdue else R.color.widget_on_surface_variant,
                 ),
             )
         }
 
-        views.setOnClickPendingIntent(R.id.item_root, openApp(context, Routes.taskDetail(task.id)))
-        return views
+        views.setOnClickPendingIntent(ROWS[slot], openApp(context, Routes.taskDetail(task.id)))
     }
 
     /**
-     * Every pending intent here is IMMUTABLE. Nothing outside this app can
-     * alter where one points, and with per-row intents there is no template
-     * left that would have needed to be mutable.
-     *
-     * The request code has to differ per route or the system hands back the
-     * first intent for every row.
+     * Every pending intent here is IMMUTABLE - nothing outside this app can
+     * alter where one points. The request code has to differ per route or the
+     * system hands back the first intent for every row.
      */
     private fun openApp(context: Context, route: String): PendingIntent {
         val intent = Intent(context, MainActivity::class.java)
@@ -178,11 +218,25 @@ class TasksWidget : AppWidgetProvider() {
     companion object {
         const val ACTION_REFRESH = "com.taskmind.action.WIDGET_REFRESH"
 
-        /**
-         * How many rows are drawn. Without a scrolling list this is bounded by
-         * what fits a tall home-screen widget; the rest is summarised.
-         */
-        private const val VISIBLE_ROWS = 6
+        /** Must match the number of row blocks in `widget_tasks.xml`. */
+        const val SLOTS = 8
+
+        private val ROWS = intArrayOf(
+            R.id.row0, R.id.row1, R.id.row2, R.id.row3,
+            R.id.row4, R.id.row5, R.id.row6, R.id.row7,
+        )
+        private val BARS = intArrayOf(
+            R.id.row0_bar, R.id.row1_bar, R.id.row2_bar, R.id.row3_bar,
+            R.id.row4_bar, R.id.row5_bar, R.id.row6_bar, R.id.row7_bar,
+        )
+        private val TITLES = intArrayOf(
+            R.id.row0_title, R.id.row1_title, R.id.row2_title, R.id.row3_title,
+            R.id.row4_title, R.id.row5_title, R.id.row6_title, R.id.row7_title,
+        )
+        private val METAS = intArrayOf(
+            R.id.row0_meta, R.id.row1_meta, R.id.row2_meta, R.id.row3_meta,
+            R.id.row4_meta, R.id.row5_meta, R.id.row6_meta, R.id.row7_meta,
+        )
 
         /** Nudges every placed widget to re-read. Safe to call when none exist. */
         fun refresh(context: Context) {
