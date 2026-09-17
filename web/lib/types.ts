@@ -28,6 +28,12 @@ export interface Task {
   /** Set by this app on every edit, never by the phone. How the phone knows
    *  a change came from here rather than seeing its own push echoed back. */
   web_updated_at: string | null;
+  /**
+   * Tags the phone worked out: who said it, which app, whether it was a call,
+   * and roughly what sort of thing it is. Derived on the phone and re-sent on
+   * every push, so the rules exist in one place rather than two.
+   */
+  auto_tags: string[];
 }
 
 export interface ReviewItem {

@@ -123,6 +123,8 @@ function Dashboard({ email }: { email: string }) {
   const [loading, setLoading] = useState(true);
   const [showDone, setShowDone] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [search, setSearch] = useState("");
+  const [tag, setTag] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [t, r, q] = await Promise.all([
@@ -171,8 +173,53 @@ function Dashboard({ email }: { email: string }) {
     [load],
   );
 
-  const active = useMemo(() => tasks.filter((t) => t.status === "ACTIVE"), [tasks]);
-  const done = useMemo(() => tasks.filter((t) => t.status === "COMPLETED"), [tasks]);
+  /**
+   * Search covers everything a task can be recognised by, not just the title:
+   * the notes, the evidence quote - which is the sentence somebody actually
+   * said - the source label, and both kinds of tag.
+   */
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return tasks.filter((t) => {
+      // `?? []` throughout: if the page is deployed before schema_v3.sql has
+      // been run, the column does not exist and every row comes back without
+      // it. Reaching into undefined would white-screen the whole app over a
+      // migration step that has not happened yet.
+      const auto = t.auto_tags ?? [];
+      if (tag && !auto.some((x) => x.toLowerCase() === tag.toLowerCase()) &&
+          !t.tags.some((x) => x.toLowerCase() === tag.toLowerCase())) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        t.title.toLowerCase().includes(q) ||
+        (t.notes ?? "").toLowerCase().includes(q) ||
+        (t.evidence ?? "").toLowerCase().includes(q) ||
+        (t.source_label ?? "").toLowerCase().includes(q) ||
+        auto.some((x) => x.toLowerCase().includes(q)) ||
+        t.tags.some((x) => x.toLowerCase().includes(q))
+      );
+    });
+  }, [tasks, search, tag]);
+
+  const active = useMemo(() => visible.filter((t) => t.status === "ACTIVE"), [visible]);
+  const done = useMemo(() => visible.filter((t) => t.status === "COMPLETED"), [visible]);
+
+  /**
+   * The tag filter row, commonest first, built from every task rather than the
+   * filtered ones - a row that drops the tag you were about to want, because
+   * the current filter already excluded it, is worse than no row.
+   */
+  const tagCloud = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of tasks) {
+      for (const x of t.auto_tags ?? []) counts.set(x, (counts.get(x) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 14)
+      .map(([value]) => value);
+  }, [tasks]);
 
   const groups = useMemo(() => {
     const overdue = active.filter((t) => isOverdue(t.due_at));
@@ -216,6 +263,32 @@ function Dashboard({ email }: { email: string }) {
           </button>
         )}
       </div>
+
+      {tab === "tasks" && (
+        <>
+          <input
+            className="search"
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search titles, notes, quotes, people, tags…"
+            aria-label="Search tasks"
+          />
+          {tagCloud.length > 0 && (
+            <div className="tagrow">
+              {tagCloud.map((t) => (
+                <button
+                  key={t}
+                  className={tag?.toLowerCase() === t.toLowerCase() ? "tagchip on" : "tagchip"}
+                  onClick={() => setTag(tag?.toLowerCase() === t.toLowerCase() ? null : t)}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       {error && <div className="error">{error}</div>}
 
@@ -261,10 +334,17 @@ function Dashboard({ email }: { email: string }) {
           )}
 
           {active.length === 0 && done.length === 0 && queued.length === 0 ? (
-            <Empty
-              title="Nothing here yet"
-              body="If your phone is paired and has tasks, open the app once and leave it — that is when it pushes."
-            />
+            search.trim() || tag ? (
+              <Empty
+                title="Nothing matches"
+                body="No task matches that search or tag. Clearing either one brings the list back."
+              />
+            ) : (
+              <Empty
+                title="Nothing here yet"
+                body="If your phone is paired and has tasks, open the app once and leave it — that is when it pushes."
+              />
+            )
           ) : (
             <>
               <Group title="Overdue" alert items={groups.overdue} mutate={mutate} />
@@ -391,7 +471,11 @@ function TaskRow({ task, mutate }: { task: Task; mutate: Mutate }) {
           <span className="meta">
             <span className={overdue ? "chip due-over" : "chip"}>{due(task.due_at)}</span>
             <span className="chip">{priorityLabel(task.priority)}</span>
-            {task.source_label && <span className="chip">{task.source_label}</span>}
+            {(task.auto_tags ?? []).slice(0, 3).map((t) => (
+              <span className="chip auto" key={t}>
+                {t}
+              </span>
+            ))}
             {task.tags.map((tag) => (
               <span className="chip" key={tag}>
                 #{tag}

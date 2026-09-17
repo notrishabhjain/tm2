@@ -5,6 +5,7 @@ import com.taskmind.core.Stage
 import com.taskmind.data.db.entity.ReviewItemEntity
 import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.di.AppContainer
+import com.taskmind.tagging.AutoTagger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -74,6 +75,17 @@ class SyncEngine(
     }
 
     suspend fun run(force: Boolean = false): Result = withContext(Dispatchers.IO) {
+        // Before anything else: if this build sends a column the last one did
+        // not, re-send everything once so older tasks are not left behind with
+        // it empty.
+        val migrated = store.migratePushSchemaIfNeeded()
+        if (migrated) {
+            container.logger.write(
+                Stage.SYSTEM,
+                LogLevel.INFO,
+                "Web sync: re-sending everything once, the push now carries tags",
+            )
+        }
         val state = store.current()
 
         if (!state.enabled && !force) return@withContext Result.Skipped
@@ -199,6 +211,18 @@ class SyncEngine(
             "priority" to JsonPrimitive(task.priority.name),
             "status" to JsonPrimitive(task.status.name),
             "tags" to JsonArray(task.tags.map { JsonPrimitive(it) }),
+            // Derived here rather than in the browser so the rules live in one
+            // place. Recomputed on every push, so changing a rule re-tags
+            // everything the next time a task moves.
+            "auto_tags" to JsonArray(
+                AutoTagger.keys(
+                    sourceType = task.sourceType,
+                    sourceApp = task.sourceApp,
+                    sourceLabel = task.sourceLabel,
+                    title = task.title,
+                    evidence = task.evidence,
+                ).map { JsonPrimitive(it) },
+            ),
             "recurrence_rule" to str(task.recurrenceRule),
             "parent_task_id" to str(task.parentTaskId),
             "source_type" to JsonPrimitive(task.sourceType.name),

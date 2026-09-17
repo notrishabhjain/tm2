@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -58,6 +59,16 @@ class SyncStore(private val context: Context) {
          */
         val pulledThrough = stringPreferencesKey("pulled_through")
 
+        /**
+         * What the phone last sent, as a shape rather than a time.
+         *
+         * The push only sends tasks that changed since the watermark, so a
+         * release that adds a column would leave every existing task without
+         * it until something happened to touch that task - which, for a task
+         * finished last month, is never. Bumping this forces one full re-send.
+         */
+        val pushSchema = intPreferencesKey("push_schema")
+
         val lastAttemptAt = longPreferencesKey("last_attempt_at")
         val lastSuccessAt = longPreferencesKey("last_success_at")
         val lastResult = stringPreferencesKey("last_result")
@@ -72,6 +83,7 @@ class SyncStore(private val context: Context) {
         /** ISO-8601, or empty for "never pulled". Compared as a string, which
          *  is safe because every value comes from Postgres in UTC. */
         val pulledThrough: String = "",
+        val pushSchema: Int = 0,
         val lastAttemptAt: Long = 0L,
         val lastSuccessAt: Long = 0L,
         val lastResult: String = "",
@@ -89,6 +101,7 @@ class SyncStore(private val context: Context) {
                 email = p[K.email].orEmpty(),
                 pushedThrough = p[K.pushedThrough] ?: 0L,
                 pulledThrough = p[K.pulledThrough].orEmpty(),
+                pushSchema = p[K.pushSchema] ?: 0,
                 lastAttemptAt = p[K.lastAttemptAt] ?: 0L,
                 lastSuccessAt = p[K.lastSuccessAt] ?: 0L,
                 lastResult = p[K.lastResult].orEmpty(),
@@ -112,6 +125,23 @@ class SyncStore(private val context: Context) {
 
     suspend fun recordAttempt(at: Long) {
         context.syncDataStore.edit { it[K.lastAttemptAt] = at }
+    }
+
+    /**
+     * Re-sends everything once when the shape of a push has changed.
+     *
+     * Returns true when it did, so the caller can re-read the state it had
+     * already loaded. Cheap on a quiet install and correct on a busy one -
+     * the alternative is a column that is silently empty for older tasks and
+     * a user wondering why half their tasks have no tags.
+     */
+    suspend fun migratePushSchemaIfNeeded(): Boolean {
+        if (current().pushSchema >= PUSH_SCHEMA) return false
+        context.syncDataStore.edit {
+            it[K.pushedThrough] = 0L
+            it[K.pushSchema] = PUSH_SCHEMA
+        }
+        return true
     }
 
     /** Advanced only after every pulled row has been applied. */
@@ -156,5 +186,10 @@ class SyncStore(private val context: Context) {
 
     suspend fun clear() {
         context.syncDataStore.edit { it.clear() }
+    }
+
+    companion object {
+        /** Bump when a push starts sending a new column. 2 added `auto_tags`. */
+        const val PUSH_SCHEMA = 2
     }
 }

@@ -35,16 +35,18 @@ column for them in the database, so this cannot start happening by accident.
 1. In the project, open **SQL Editor** in the left sidebar.
 2. Open `supabase/schema.sql` from this repository, copy the whole file.
 3. Paste it into the editor and press **Run**.
-4. Do the same with `supabase/schema_v2.sql` — that one adds the columns that
-   let you edit from the browser.
+4. Do the same with `supabase/schema_v2.sql` — the columns that let you edit
+   from the browser.
+5. And `supabase/schema_v3.sql` — the column that carries the automatic tags.
 
-You should see "Success. No rows returned" both times. If you get an error, fix
-it and run the whole file again — every statement in both files is safe to run
-twice.
+You should see "Success. No rows returned" each time. If you get an error, fix
+it and run the whole file again — every statement in all three files is safe to
+run twice.
 
-> **Already set this up before editing existed?** You only need
-> `schema_v2.sql`. Run it on your existing project; it adds to what is there
-> and changes nothing you already have.
+> **Already set this up?** Run only the files you have not run yet, in order.
+> Each one adds to what is there and changes nothing you already have. Run them
+> **before** deploying the matching web build: the page copes with a column
+> that is not there yet, but it cannot show you tags that do not exist.
 
 ## 3. Create your login
 
@@ -105,6 +107,36 @@ It signs in and immediately pushes everything, then tells you how many tasks it
 sent. Refresh the web page and they should be there.
 
 ---
+
+## Finding things
+
+Both the app and the web page search across the **title, the notes, the
+evidence quote, who it came from, and the tags** — so looking for "Sharma" or
+"whatsapp" or "invoice" finds the task even when none of those words are in its
+title.
+
+### The tags nobody has to type
+
+Every task gets tags worked out from where it came from:
+
+| Tag | What it is |
+|---|---|
+| `Sharma Ji` | who sent the message, or who the call was with |
+| `Project Alpha` | the group chat, when it was one |
+| `WhatsApp` | the app it arrived through |
+| `call` / `message` / `manual` | how it arrived |
+| `payment`, `meeting`, `document`, `send`, `follow-up`, `call-back` | roughly what sort of thing it is |
+
+The last row is worked out from the words in the task and the quote behind it,
+in English, Hindi and Hinglish — "paise bhej dena" and "भुगतान करना है" both
+come out as `payment`.
+
+These are **worked out, not stored**, which means they apply to every task you
+already have, not only new ones. It also means they are only as good as the
+rules: if something is tagged oddly, or a category you want is missing, say so
+and the rules change — and every existing task re-tags itself.
+
+Tap a tag under the view chips to filter by it; tap it again to clear.
 
 ## What you can do from the browser
 

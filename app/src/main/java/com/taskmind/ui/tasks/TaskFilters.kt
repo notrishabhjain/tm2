@@ -4,6 +4,7 @@ import com.taskmind.core.DateResolver
 import com.taskmind.core.Priority
 import com.taskmind.core.TaskStatus
 import com.taskmind.data.db.entity.TaskEntity
+import com.taskmind.tagging.AutoTagger
 
 /** Spec 16 - the views. Every one of them has an empty state. */
 enum class TaskView(val label: String, val emptyTitle: String, val emptyBody: String) {
@@ -98,18 +99,21 @@ object TaskFilters {
         }
 
         val byProject = if (projectId == null) byView else byView.filter { it.projectId == projectId }
-        val byTag = if (tag == null) byProject else byProject.filter { tag in it.tags }
 
-        val trimmed = query.trim()
-        val bySearch = if (trimmed.isEmpty()) {
-            byTag
+        // A tag filter matches tags you typed AND tags the app worked out, so
+        // tapping "whatsapp" or "Sharma Ji" on a task filters by it without
+        // anyone having had to tag anything by hand.
+        val byTag = if (tag == null) {
+            byProject
         } else {
-            byTag.filter { task ->
-                task.title.contains(trimmed, ignoreCase = true) ||
-                    task.notes?.contains(trimmed, ignoreCase = true) == true ||
-                    task.sourceLabel?.contains(trimmed, ignoreCase = true) == true
+            val wanted = tag.lowercase()
+            byProject.filter { task ->
+                task.tags.any { it.equals(tag, ignoreCase = true) } || wanted in autoKeys(task)
             }
         }
+
+        val trimmed = query.trim()
+        val bySearch = if (trimmed.isEmpty()) byTag else byTag.filter { matches(it, trimmed) }
 
         // Sub-tasks are shown under their parent, not as top-level rows.
         val topLevel = bySearch.filter { it.parentTaskId == null }
@@ -127,6 +131,60 @@ object TaskFilters {
             }
         }
     }
+
+    /**
+     * Everything one task can be found by.
+     *
+     * The old version searched the title, the notes and the source label. That
+     * missed the two things most worth searching for: the evidence quote,
+     * which is the actual sentence somebody said, and the tags - so looking
+     * for "whatsapp" or a person's name found nothing unless their name
+     * happened to be in the title.
+     */
+    fun matches(task: TaskEntity, query: String): Boolean {
+        val q = query.trim()
+        if (q.isEmpty()) return true
+        return task.title.contains(q, ignoreCase = true) ||
+            task.notes?.contains(q, ignoreCase = true) == true ||
+            task.sourceLabel?.contains(q, ignoreCase = true) == true ||
+            task.evidence?.contains(q, ignoreCase = true) == true ||
+            task.tags.any { it.contains(q, ignoreCase = true) } ||
+            autoKeys(task).any { it.contains(q.lowercase()) }
+    }
+
+    /** The derived tags for a task, as lower-case strings. */
+    fun autoKeys(task: TaskEntity): List<String> = AutoTagger.keys(
+        sourceType = task.sourceType,
+        sourceApp = task.sourceApp,
+        sourceLabel = task.sourceLabel,
+        title = task.title,
+        evidence = task.evidence,
+    )
+
+    /** The derived tags for a task, with their kinds, for display. */
+    fun autoTags(task: TaskEntity): List<AutoTagger.Tag> = AutoTagger.tags(
+        sourceType = task.sourceType,
+        sourceApp = task.sourceApp,
+        sourceLabel = task.sourceLabel,
+        title = task.title,
+        evidence = task.evidence,
+    )
+
+    /**
+     * The tags across a set of tasks, most common first.
+     *
+     * What the filter row offers. Ordering by frequency means the people and
+     * apps you actually deal with are the ones in reach, rather than whatever
+     * sorts first alphabetically.
+     */
+    fun tagCloud(tasks: List<TaskEntity>, limit: Int = 12): List<AutoTagger.Tag> =
+        tasks.flatMap { autoTags(it) }
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedWith(compareByDescending<Map.Entry<AutoTagger.Tag, Int>> { it.value }.thenBy { it.key.value })
+            .map { it.key }
+            .take(limit)
 
     /**
      * Where a task sits on the agenda.

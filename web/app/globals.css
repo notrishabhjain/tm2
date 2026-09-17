@@ -191,6 +191,30 @@ textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset:
 .tab.add { color: var(--accent); font-size: 13.5px; }
 .tab.add:hover { background: var(--surface-2); }
 
+/* -- search and tags ---------------------------------------------------- */
+
+.search {
+  width: 100%; margin: 6px 0 10px;
+  padding: 10px 13px; font: inherit;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: 10px;
+}
+.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.tagrow { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+
+.tagchip {
+  font: inherit; font-size: 12.5px; cursor: pointer;
+  padding: 4px 11px; border-radius: 999px;
+  background: var(--surface); color: var(--text-dim);
+  border: 1px solid var(--line);
+}
+.tagchip:hover { border-color: var(--text-dim); color: var(--text); }
+.tagchip.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+/* Derived tags read differently from ones you typed: no hash, tinted. */
+.chip.auto { background: rgba(29,93,75,0.12); color: var(--accent); }
+
 /* -- empty, login, misc ------------------------------------------------- */
 
 .empty { padding: 48px 24px; text-align: center; color: var(--text-dim); }
