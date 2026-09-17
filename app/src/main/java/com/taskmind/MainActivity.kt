@@ -23,6 +23,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.taskmind.di.AppContainer
 import com.taskmind.widget.TasksWidget
+import com.taskmind.work.Scheduler
 import com.taskmind.ui.shell.MainShell
 import com.taskmind.ui.shell.MainTab
 import com.taskmind.ui.AppViewModels
@@ -111,6 +112,10 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         TasksWidget.refresh(this)
+        // Leaving the app is the moment a change has just been made and the
+        // phone is most likely to still have a network. The worker is a no-op
+        // when sync is off or nothing has changed.
+        Scheduler.enqueueSync(this)
     }
 
     /** Log and data exports leave through the share sheet, not a file path. */
