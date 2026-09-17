@@ -54,6 +54,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -76,6 +77,7 @@ import com.taskmind.ui.design.Radius
 import com.taskmind.ui.design.Space
 import com.taskmind.ui.design.Touch
 import com.taskmind.ui.design.listContentPadding
+import kotlinx.coroutines.launch
 
 /**
  * The screen the app is for.
@@ -102,6 +104,7 @@ fun TaskListScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val undo by viewModel.undo.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     var showEditor by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
 
@@ -164,8 +167,14 @@ fun TaskListScreen(
         },
         floatingActionButton = {
             if (!state.selectionMode) {
-                FloatingActionButton(onClick = { showEditor = true }) {
-                    Icon(Icons.Filled.Add, contentDescription = "New task")
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    VoiceNoteButton { message ->
+                        scope.launch { snackbarHostState.showSnackbar(message) }
+                    }
+                    Spacer(Modifier.height(Space.step))
+                    FloatingActionButton(onClick = { showEditor = true }) {
+                        Icon(Icons.Filled.Add, contentDescription = "New task")
+                    }
                 }
             }
         },

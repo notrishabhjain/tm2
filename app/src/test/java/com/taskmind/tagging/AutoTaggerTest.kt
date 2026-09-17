@@ -201,6 +201,28 @@ class AutoTaggerTest {
         assertEquals(keys.size, keys.distinct().size)
     }
 
+    // -- voice notes ---------------------------------------------------------
+
+    @Test
+    fun `a voice note is tagged voice, not as a person called Voice note`() {
+        val keys = keysOf(
+            SourceType.CLIPBOARD,
+            label = AutoTagger.VOICE_LABEL,
+            title = "Call the accountant about the invoice",
+        )
+        assertTrue("voice" in keys)
+        assertFalse("voice note" in keys)
+        // Still topic-tagged like anything else.
+        assertTrue("payment" in keys)
+    }
+
+    @Test
+    fun `an ordinary pasted transcript is not treated as a voice note`() {
+        val keys = keysOf(SourceType.CLIPBOARD, label = "Amit - WhatsApp", title = "x")
+        assertFalse("voice" in keys)
+        assertTrue("pasted" in keys)
+    }
+
     @Test
     fun `the person leads so it reads as the most useful tag first`() {
         val tags = AutoTagger.tags(
