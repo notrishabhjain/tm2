@@ -125,8 +125,10 @@ fun WebSyncSection() {
                             busy = true
                             val result = SyncEngine(AppContainer.get(context), store, secrets).run(force = true)
                             message = when (result) {
-                                is SyncEngine.Result.Pushed ->
-                                    "Sent ${result.tasks} task(s) and ${result.reviews} awaiting review."
+                                // The store's summary already names both
+                                // directions; re-wording it here would only
+                                // give the two places a chance to disagree.
+                                is SyncEngine.Result.Pushed -> store.current().lastResult
                                 is SyncEngine.Result.Failed -> result.message
                                 SyncEngine.Result.Skipped -> "Nothing to do."
                             }
@@ -138,10 +140,16 @@ fun WebSyncSection() {
                     Text(if (busy) "Sending..." else "Sync now")
                 }
                 OutlinedButton(
-                    onClick = { scope.launch { store.forceFullResync(); message = "Everything will be re-sent next time." } },
+                    onClick = {
+                        scope.launch {
+                            store.forceFullResync()
+                            store.forceFullRepull()
+                            message = "Everything will be re-sent and re-read next time."
+                        }
+                    },
                     enabled = !busy,
                 ) {
-                    Text("Re-send all")
+                    Text("Start over")
                 }
             }
 
@@ -159,7 +167,9 @@ fun WebSyncSection() {
             Spacer(Modifier.height(8.dp))
             Text(
                 "Your task titles, dates and the evidence quote are sent. Full message text and " +
-                    "call transcripts are not, and there is nowhere on the server to put them.",
+                    "call transcripts are not, and there is nowhere on the server to put them. " +
+                    "Edits made in the browser arrive here on the next sync; if you change the " +
+                    "same task in both places, the later change wins.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -35,9 +35,18 @@ column for them in the database, so this cannot start happening by accident.
 1. In the project, open **SQL Editor** in the left sidebar.
 2. Open `supabase/schema.sql` from this repository, copy the whole file.
 3. Paste it into the editor and press **Run**.
+4. Do the same with `supabase/schema_v2.sql` — the columns that let you edit
+   from the browser.
+5. And `supabase/schema_v3.sql` — the column that carries the automatic tags.
 
-You should see "Success. No rows returned". If you get an error, fix it and run
-the whole file again — every statement in it is safe to run twice.
+You should see "Success. No rows returned" each time. If you get an error, fix
+it and run the whole file again — every statement in all three files is safe to
+run twice.
+
+> **Already set this up?** Run only the files you have not run yet, in order.
+> Each one adds to what is there and changes nothing you already have. Run them
+> **before** deploying the matching web build: the page copes with a column
+> that is not there yet, but it cannot show you tags that do not exist.
 
 ## 3. Create your login
 
@@ -76,6 +85,11 @@ Open **Project Settings → API** (or **Data API**) and copy:
    | `NEXT_PUBLIC_SUPABASE_URL` | the Project URL from step 4 |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the anon key from step 4 |
 
+   **Tick every environment — Production, Preview and Development.** Vercel
+   defaults to Production only, and preview deployments then come up with no
+   settings at all. The page says which variable is missing when that happens,
+   but it is easier to just tick all three now.
+
 6. **Deploy.**
 
 When it finishes you get a URL like `taskmind-xyz.vercel.app`. Open it — you
@@ -94,6 +108,64 @@ sent. Refresh the web page and they should be there.
 
 ---
 
+## Finding things
+
+Both the app and the web page search across the **title, the notes, the
+evidence quote, who it came from, and the tags** — so looking for "Sharma" or
+"whatsapp" or "invoice" finds the task even when none of those words are in its
+title.
+
+### The tags nobody has to type
+
+Every task gets tags worked out from where it came from:
+
+| Tag | What it is |
+|---|---|
+| `Sharma Ji` | who sent the message, or who the call was with |
+| `Project Alpha` | the group chat, when it was one |
+| `WhatsApp` | the app it arrived through |
+| `call` / `message` / `manual` | how it arrived |
+| `payment`, `meeting`, `document`, `send`, `follow-up`, `call-back` | roughly what sort of thing it is |
+
+The last row is worked out from the words in the task and the quote behind it,
+in English, Hindi and Hinglish — "paise bhej dena" and "भुगतान करना है" both
+come out as `payment`.
+
+These are **worked out, not stored**, which means they apply to every task you
+already have, not only new ones. It also means they are only as good as the
+rules: if something is tagged oddly, or a category you want is missing, say so
+and the rules change — and every existing task re-tags itself.
+
+Tap a tag under the view chips to filter by it; tap it again to clear.
+
+## What you can do from the browser
+
+- **Tick a task off**, or reopen it.
+- **Edit** the title, notes, due date and priority.
+- **Archive or delete.**
+- **Approve or reject** a review item.
+- **Add a task.** It shows as "not on your phone yet" until the phone picks it
+  up, because the phone is what actually creates it.
+
+Changes are not instant on the phone — they arrive on its next sync, which
+happens when you open and leave the app, or hourly. The page marks anything
+still waiting, so you are never guessing.
+
+### If you edit the same task in both places
+
+The later edit wins, and the other one is gone. There is no merge and no
+warning. For one person with a phone and a laptop that is almost always what
+you want, but it is worth knowing: if you change a task's date on your phone
+and then change it again in the browser a minute later, the browser's version
+is the one that survives.
+
+### Why approving does not create the task immediately
+
+Everything that creates a task on your phone goes through one piece of code, on
+purpose — it is what stops duplicates and keeps the evidence attached. The
+browser cannot reach into that, so it records your decision and the phone
+carries it out. Same for tasks you add here.
+
 ## After that
 
 The phone pushes when you leave the app, and hourly as a safety net. The web
@@ -105,8 +177,11 @@ what happened. Three controls there:
 - **Keep the web page up to date** — the master switch. Off means nothing more
   is sent; what is already on the server stays there.
 - **Sync now** — pushes immediately and reports the result on screen.
-- **Re-send all** — forgets what it has already sent and pushes everything
-  again. Use this if the web page is missing something and you cannot see why.
+- **Start over** — forgets what it has already sent and what it has already
+  read, then does both again from scratch. Use this if the two sides disagree
+  and you cannot see why. It cannot lose anything: re-sending overwrites with
+  what the phone has, and re-reading skips any edit the phone has since
+  changed.
 - **Disconnect** — forgets the account on this phone and stops sending.
 
 ## If something goes wrong
@@ -125,8 +200,21 @@ Row-level security means another account sees nothing at all rather than an
 error.
 
 **The Vercel build fails.**
-Nearly always the Root Directory is not set to `web`, or one of the two
-environment variables is missing. The build log names the missing variable.
+Nearly always the Root Directory is not set to `web`.
+
+**The page loads and says "Almost there".**
+That deployment has no Supabase settings. The message names the missing
+variable. Most often it is a preview deployment and the variables were added
+for Production only — see the note in step 5.
+
+**An edit in the browser never shows up on the phone.**
+Open the app and leave it — that is when it syncs. Then check **Settings → Web
+access**; the last result line says what it did. If it says
+"No such table" or names a missing column, `schema_v2.sql` has not been run.
+
+**A task added in the browser is stuck on "not on your phone yet".**
+Same cause: the phone has not synced. It is not lost — the row stays until the
+phone picks it up.
 
 ---
 
@@ -135,6 +223,7 @@ environment variables is missing. The build log names the missing variable.
 In Supabase, **SQL Editor**, run:
 
 ```sql
+drop table if exists public.web_new_tasks;
 drop table if exists public.tasks;
 drop table if exists public.review_items;
 ```

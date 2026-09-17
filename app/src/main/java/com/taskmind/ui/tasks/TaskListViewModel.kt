@@ -32,6 +32,8 @@ data class TaskListUiState(
     val pendingReviewCount: Int = 0,
     val selection: Set<String> = emptySet(),
     val searching: Boolean = false,
+    /** Tags the app worked out for itself, commonest first. */
+    val tagCloud: List<com.taskmind.tagging.AutoTagger.Tag> = emptyList(),
 ) {
     val selectionMode: Boolean get() = selection.isNotEmpty()
 }
@@ -65,6 +67,10 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
                 now = now,
             ),
             counts = TaskFilters.counts(tasks, now),
+            // Built from every task, not the filtered list: a filter row that
+            // loses the tag you are about to want, because the current filter
+            // already excluded it, is worse than no filter row.
+            tagCloud = TaskFilters.tagCloud(tasks),
             projects = projects,
             tags = tags,
             pendingReviewCount = reviewCount,

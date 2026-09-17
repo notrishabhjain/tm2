@@ -5,6 +5,7 @@ import com.taskmind.core.Stage
 import com.taskmind.data.db.entity.ReviewItemEntity
 import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.di.AppContainer
+import com.taskmind.tagging.AutoTagger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -16,9 +17,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import java.time.Instant
 
 /**
- * Pushes tasks and pending review items to Supabase so the web app can show
- * them. One direction only, for now: the phone is the source of truth and the
- * browser is a window onto it.
+ * Keeps the phone and the web mirror in step, in both directions.
+ *
+ * The phone is still where a task really lives. The browser records what you
+ * did - edited this, approved that, added one - and the phone carries it out
+ * through the same repository methods its own buttons call, so a recurring
+ * task completed in a browser still spawns its next instance and an approved
+ * candidate still goes through the intake funnel.
  *
  * WHAT TRAVELS
  *
@@ -38,11 +43,19 @@ import java.time.Instant
  * A high-water mark over `updatedAt`, held in [SyncStore] and advanced only
  * once a whole run has succeeded. So a push that dies halfway is re-sent in
  * full next time rather than leaving a hole, and a quiet day costs one
- * request that sends nothing.
+ * request that sends nothing. Incoming edits have their own mark over
+ * `web_updated_at`, a column only the browser ever writes - see [SyncPull].
  *
- * This reads through the DAO surface that already exists and writes nothing
- * locally except its own bookkeeping. The capture-to-task pipeline does not
- * know it is here.
+ * WHEN BOTH SIDES EDITED THE SAME TASK
+ *
+ * The later edit wins, compared honestly: the browser's `web_updated_at`
+ * against the task's own `updatedAt`. There is no merge and no prompt. For one
+ * person with a phone and a laptop that is the right trade, but it does mean
+ * editing the same task in both places within one sync window loses one of
+ * them, with nothing to say so.
+ *
+ * Everything here goes through the repository and DAO surface that already
+ * existed. The capture-to-task pipeline does not know it is here.
  */
 class SyncEngine(
     private val container: AppContainer,
@@ -52,12 +65,27 @@ class SyncEngine(
 ) {
 
     sealed interface Result {
-        data class Pushed(val tasks: Int, val reviews: Int) : Result
+        data class Pushed(
+            val tasks: Int,
+            val reviews: Int,
+            val pulled: SyncPull.Applied = SyncPull.Applied(0, 0, 0, 0),
+        ) : Result
         object Skipped : Result
         data class Failed(val message: String, val retryable: Boolean) : Result
     }
 
     suspend fun run(force: Boolean = false): Result = withContext(Dispatchers.IO) {
+        // Before anything else: if this build sends a column the last one did
+        // not, re-send everything once so older tasks are not left behind with
+        // it empty.
+        val migrated = store.migratePushSchemaIfNeeded()
+        if (migrated) {
+            container.logger.write(
+                Stage.SYSTEM,
+                LogLevel.INFO,
+                "Web sync: re-sending everything once, the push now carries tags",
+            )
+        }
         val state = store.current()
 
         if (!state.enabled && !force) return@withContext Result.Skipped
@@ -69,6 +97,19 @@ class SyncEngine(
 
         val token = accessToken(state.projectUrl)
             ?: return@withContext fail(store.current().lastResult.ifBlank { "Could not sign in." }, retryable = true)
+
+        // ---- pull, THEN push ----------------------------------------------
+        //
+        // The order is the whole trick, and getting it backwards silently
+        // loses work: pushing first would overwrite the browser's edit with
+        // the phone's older copy, and the pull that followed would then read
+        // back the row the push had just flattened. Pulling first merges the
+        // edit into the local task, so the push sends the merged result up.
+
+        val pulled = when (val out = SyncPull(container, store, api, state.projectUrl, secrets.anonKey, token).run()) {
+            is SupabaseApi.Outcome.Ok -> out.value
+            is SupabaseApi.Outcome.Failed -> return@withContext fail(out.message, out.retryable)
+        }
 
         // ---- tasks --------------------------------------------------------
 
@@ -112,15 +153,18 @@ class SyncEngine(
         // task is written while this run is in flight, its updatedAt is above
         // the mark and the next run picks it up.
         val mark = changed.maxOfOrNull { it.updatedAt } ?: state.pushedThrough
-        val summary = if (changed.isEmpty() && deleted.isEmpty()) {
-            "Up to date - nothing had changed."
-        } else {
-            "Sent ${changed.size} task(s), ${pending.size} awaiting review."
-        }
+        val summary = buildList {
+            if (pulled.created > 0) add("added ${pulled.created} from the browser")
+            if (pulled.decided > 0) add("applied ${pulled.decided} review decision(s)")
+            if (pulled.edited > 0) add("applied ${pulled.edited} browser edit(s)")
+            if (changed.isNotEmpty()) add("sent ${changed.size} task(s)")
+            if (isEmpty()) add("up to date - nothing had changed")
+        }.joinToString(", ").replaceFirstChar { it.uppercase() } + "."
+
         store.recordSuccess(System.currentTimeMillis(), mark, changed.size, summary)
         container.logger.write(Stage.SYSTEM, LogLevel.INFO, "Web sync: $summary")
 
-        Result.Pushed(changed.size, pending.size)
+        Result.Pushed(changed.size, pending.size, pulled)
     }
 
     /**
@@ -167,6 +211,18 @@ class SyncEngine(
             "priority" to JsonPrimitive(task.priority.name),
             "status" to JsonPrimitive(task.status.name),
             "tags" to JsonArray(task.tags.map { JsonPrimitive(it) }),
+            // Derived here rather than in the browser so the rules live in one
+            // place. Recomputed on every push, so changing a rule re-tags
+            // everything the next time a task moves.
+            "auto_tags" to JsonArray(
+                AutoTagger.keys(
+                    sourceType = task.sourceType,
+                    sourceApp = task.sourceApp,
+                    sourceLabel = task.sourceLabel,
+                    title = task.title,
+                    evidence = task.evidence,
+                ).map { JsonPrimitive(it) },
+            ),
             "recurrence_rule" to str(task.recurrenceRule),
             "parent_task_id" to str(task.parentTaskId),
             "source_type" to JsonPrimitive(task.sourceType.name),

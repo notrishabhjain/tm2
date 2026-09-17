@@ -70,6 +70,7 @@ import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.ui.components.DateFormats
 import com.taskmind.ui.design.CountPill
 import com.taskmind.ui.design.Empty
+import com.taskmind.tagging.AutoTagger
 import com.taskmind.ui.design.MetaChip
 import com.taskmind.ui.design.Radius
 import com.taskmind.ui.design.Space
@@ -193,6 +194,12 @@ fun TaskListScreen(
             }
 
             ViewChips(state = state, onSelect = viewModel::setView)
+
+            TagChips(
+                tags = state.tagCloud,
+                selected = state.tag,
+                onSelect = viewModel::setTag,
+            )
 
             if (state.tasks.isEmpty()) {
                 Empty(
@@ -344,8 +351,14 @@ private fun TaskRow(
                     overflow = TextOverflow.Ellipsis,
                 )
 
-                val source = task.sourceLabel?.takeIf { it.isNotBlank() }
-                if (task.dueAt != null || source != null) {
+                // Three chips rather than one truncated "Sharma Ji in Project
+                // Alpha - WhatsApp". The same information, but each part is
+                // separately readable and separately searchable, which is the
+                // point of deriving them at all.
+                val autoTags = remember(task.id, task.title, task.sourceLabel) {
+                    TaskFilters.autoTags(task).take(3)
+                }
+                if (task.dueAt != null || autoTags.isNotEmpty()) {
                     Spacer(Modifier.height(Space.tight))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -362,12 +375,63 @@ private fun TaskRow(
                                 },
                             )
                         }
-                        source?.let { MetaChip(text = it.take(28)) }
+                        autoTags.forEach { tag ->
+                            MetaChip(text = tag.value.take(22), color = tagColor(tag.kind))
+                        }
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * The tag filter row.
+ *
+ * Only tags the app worked out itself, and only ones that actually occur -
+ * an empty row is hidden rather than shown with nothing in it. Tapping the
+ * selected tag again clears the filter, so there is no separate "clear"
+ * control to find.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TagChips(
+    tags: List<AutoTagger.Tag>,
+    selected: String?,
+    onSelect: (String?) -> Unit,
+) {
+    if (tags.isEmpty()) return
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = Space.step, vertical = Space.tight),
+        horizontalArrangement = Arrangement.spacedBy(Space.snug),
+    ) {
+        tags.forEach { tag ->
+            val isOn = selected?.equals(tag.value, ignoreCase = true) == true
+            FilterChip(
+                selected = isOn,
+                onClick = { onSelect(if (isOn) null else tag.value) },
+                label = { Text(tag.value) },
+            )
+        }
+    }
+}
+
+/**
+ * Tags are coloured by what they tell you, not by which tag they are.
+ *
+ * Who said it is the thing the eye should land on; how it arrived is
+ * background. Same reasoning as the priority bar - the colour carries a rank,
+ * so the row can be scanned instead of read.
+ */
+@Composable
+private fun tagColor(kind: AutoTagger.Kind): Color = when (kind) {
+    AutoTagger.Kind.PERSON -> MaterialTheme.colorScheme.primary
+    AutoTagger.Kind.GROUP -> MaterialTheme.colorScheme.tertiary
+    AutoTagger.Kind.TOPIC -> MaterialTheme.colorScheme.secondary
+    AutoTagger.Kind.APP, AutoTagger.Kind.SOURCE -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 /** Overdue overrides priority: the deadline is the more urgent fact. */
