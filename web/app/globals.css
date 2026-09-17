@@ -95,26 +95,38 @@ header.top .spacer { flex: 1; }
   border-radius: var(--radius); overflow: hidden;
 }
 
-.row {
-  display: flex; gap: 12px; padding: 13px 15px;
-  border-top: 1px solid var(--line); cursor: pointer;
-  background: none; border-left: 0; border-right: 0; border-bottom: 0;
-  width: 100%; text-align: left; font: inherit; color: inherit;
+.row-wrap { border-top: 1px solid var(--line); }
+.row-wrap:first-child { border-top: 0; }
+
+.row { display: flex; gap: 11px; align-items: flex-start; padding: 12px 15px; }
+.row.static { border-top: 1px solid var(--line); align-items: center; }
+.row.static:first-child { border-top: 0; }
+
+/* The row body is a button so the whole line is one keyboard target, but it
+   must not look like one. */
+.body.as-button {
+  flex: 1; min-width: 0; text-align: left;
+  background: none; border: 0; padding: 0; margin: 0;
+  font: inherit; color: inherit; cursor: pointer;
 }
-.row:first-child { border-top: 0; }
-.row:hover { background: var(--surface-2); }
+.body.as-button:hover .title { text-decoration: underline; text-underline-offset: 2px; }
+.row .body { flex: 1; min-width: 0; }
+
+.tick {
+  width: 17px; height: 17px; margin: 2px 0 0; flex: 0 0 17px;
+  accent-color: var(--accent); cursor: pointer;
+}
 
 /* A bar, not a dot - the same cue the phone uses, so a task looks like
    itself on both. */
-.bar { width: 3px; border-radius: 2px; flex: 0 0 3px; align-self: stretch; }
+.bar { width: 3px; border-radius: 2px; flex: 0 0 3px; align-self: stretch; min-height: 20px; }
 .bar.URGENT { background: var(--p-urgent); }
 .bar.HIGH   { background: var(--p-high); }
 .bar.MEDIUM { background: var(--p-medium); }
 .bar.LOW    { background: var(--p-low); }
 
-.row .body { flex: 1; min-width: 0; }
-.row .title { font-weight: 450; }
-.row .title.done { color: var(--text-dim); text-decoration: line-through; }
+.title { display: block; font-weight: 450; }
+.title.done { color: var(--text-dim); text-decoration: line-through; }
 
 .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .chip {
@@ -123,6 +135,9 @@ header.top .spacer { flex: 1; }
 }
 .chip.due-over { background: rgba(179,38,30,0.12); color: var(--danger); }
 .chip.strong { background: rgba(127,127,127,0.18); color: var(--text); }
+/* Anything the phone has not carried out yet. Saying so is the difference
+   between a page you trust and one you have to double-check. */
+.chip.pending { background: rgba(178,94,0,0.14); color: var(--warn); }
 
 /* -- detail ------------------------------------------------------------- */
 
@@ -138,6 +153,43 @@ header.top .spacer { flex: 1; }
 .fact { display: flex; gap: 12px; padding: 3px 0; font-size: 13px; }
 .fact dt { width: 104px; flex: 0 0 104px; color: var(--text-dim); margin: 0; }
 .fact dd { margin: 0; }
+
+.notes, .reasoning { margin: 10px 0; white-space: pre-wrap; }
+.reasoning { font-size: 13.5px; color: var(--text-dim); }
+
+.hint { font-size: 11.5px; color: var(--text-dim); margin: 12px 0 0; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+.btn {
+  padding: 6px 13px; font: inherit; font-size: 13.5px; cursor: pointer;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.btn:hover { border-color: var(--text-dim); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn.strong { background: var(--text); color: var(--bg); border-color: var(--text); }
+.btn.danger { color: var(--danger); }
+.btn.danger:hover { border-color: var(--danger); }
+
+/* -- editing ------------------------------------------------------------ */
+
+.editor { padding: 16px 15px 18px 30px; }
+.editor.standalone { padding: 16px; margin-bottom: 8px; }
+.editor .field { margin-bottom: 12px; }
+.two-up { display: flex; gap: 12px; flex-wrap: wrap; }
+.two-up .field { flex: 1 1 180px; }
+
+textarea, select {
+  width: 100%; padding: 9px 11px; font: inherit;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: 9px;
+}
+textarea { resize: vertical; }
+textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.tab.add { color: var(--accent); font-size: 13.5px; }
+.tab.add:hover { background: var(--surface-2); }
 
 /* -- empty, login, misc ------------------------------------------------- */
 

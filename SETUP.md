@@ -35,9 +35,16 @@ column for them in the database, so this cannot start happening by accident.
 1. In the project, open **SQL Editor** in the left sidebar.
 2. Open `supabase/schema.sql` from this repository, copy the whole file.
 3. Paste it into the editor and press **Run**.
+4. Do the same with `supabase/schema_v2.sql` — that one adds the columns that
+   let you edit from the browser.
 
-You should see "Success. No rows returned". If you get an error, fix it and run
-the whole file again — every statement in it is safe to run twice.
+You should see "Success. No rows returned" both times. If you get an error, fix
+it and run the whole file again — every statement in both files is safe to run
+twice.
+
+> **Already set this up before editing existed?** You only need
+> `schema_v2.sql`. Run it on your existing project; it adds to what is there
+> and changes nothing you already have.
 
 ## 3. Create your login
 
@@ -94,6 +101,34 @@ sent. Refresh the web page and they should be there.
 
 ---
 
+## What you can do from the browser
+
+- **Tick a task off**, or reopen it.
+- **Edit** the title, notes, due date and priority.
+- **Archive or delete.**
+- **Approve or reject** a review item.
+- **Add a task.** It shows as "not on your phone yet" until the phone picks it
+  up, because the phone is what actually creates it.
+
+Changes are not instant on the phone — they arrive on its next sync, which
+happens when you open and leave the app, or hourly. The page marks anything
+still waiting, so you are never guessing.
+
+### If you edit the same task in both places
+
+The later edit wins, and the other one is gone. There is no merge and no
+warning. For one person with a phone and a laptop that is almost always what
+you want, but it is worth knowing: if you change a task's date on your phone
+and then change it again in the browser a minute later, the browser's version
+is the one that survives.
+
+### Why approving does not create the task immediately
+
+Everything that creates a task on your phone goes through one piece of code, on
+purpose — it is what stops duplicates and keeps the evidence attached. The
+browser cannot reach into that, so it records your decision and the phone
+carries it out. Same for tasks you add here.
+
 ## After that
 
 The phone pushes when you leave the app, and hourly as a safety net. The web
@@ -105,8 +140,11 @@ what happened. Three controls there:
 - **Keep the web page up to date** — the master switch. Off means nothing more
   is sent; what is already on the server stays there.
 - **Sync now** — pushes immediately and reports the result on screen.
-- **Re-send all** — forgets what it has already sent and pushes everything
-  again. Use this if the web page is missing something and you cannot see why.
+- **Start over** — forgets what it has already sent and what it has already
+  read, then does both again from scratch. Use this if the two sides disagree
+  and you cannot see why. It cannot lose anything: re-sending overwrites with
+  what the phone has, and re-reading skips any edit the phone has since
+  changed.
 - **Disconnect** — forgets the account on this phone and stops sending.
 
 ## If something goes wrong
@@ -128,6 +166,15 @@ error.
 Nearly always the Root Directory is not set to `web`, or one of the two
 environment variables is missing. The build log names the missing variable.
 
+**An edit in the browser never shows up on the phone.**
+Open the app and leave it — that is when it syncs. Then check **Settings → Web
+access**; the last result line says what it did. If it says
+"No such table" or names a missing column, `schema_v2.sql` has not been run.
+
+**A task added in the browser is stuck on "not on your phone yet".**
+Same cause: the phone has not synced. It is not lost — the row stays until the
+phone picks it up.
+
 ---
 
 ## Deleting everything
@@ -135,6 +182,7 @@ environment variables is missing. The build log names the missing variable.
 In Supabase, **SQL Editor**, run:
 
 ```sql
+drop table if exists public.web_new_tasks;
 drop table if exists public.tasks;
 drop table if exists public.review_items;
 ```

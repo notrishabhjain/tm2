@@ -48,6 +48,16 @@ class SyncStore(private val context: Context) {
          */
         val pushedThrough = longPreferencesKey("pushed_through")
 
+        /**
+         * The newest `web_updated_at` already applied from the browser.
+         *
+         * Separate from [pushedThrough] because they measure different
+         * clocks: one is the phone's own edit times, the other is the
+         * browser's. Sharing a single mark would make a busy phone skip
+         * browser edits, or a busy browser make the phone re-send everything.
+         */
+        val pulledThrough = stringPreferencesKey("pulled_through")
+
         val lastAttemptAt = longPreferencesKey("last_attempt_at")
         val lastSuccessAt = longPreferencesKey("last_success_at")
         val lastResult = stringPreferencesKey("last_result")
@@ -59,6 +69,9 @@ class SyncStore(private val context: Context) {
         val projectUrl: String = "",
         val email: String = "",
         val pushedThrough: Long = 0L,
+        /** ISO-8601, or empty for "never pulled". Compared as a string, which
+         *  is safe because every value comes from Postgres in UTC. */
+        val pulledThrough: String = "",
         val lastAttemptAt: Long = 0L,
         val lastSuccessAt: Long = 0L,
         val lastResult: String = "",
@@ -75,6 +88,7 @@ class SyncStore(private val context: Context) {
                 projectUrl = p[K.projectUrl].orEmpty(),
                 email = p[K.email].orEmpty(),
                 pushedThrough = p[K.pushedThrough] ?: 0L,
+                pulledThrough = p[K.pulledThrough].orEmpty(),
                 lastAttemptAt = p[K.lastAttemptAt] ?: 0L,
                 lastSuccessAt = p[K.lastSuccessAt] ?: 0L,
                 lastResult = p[K.lastResult].orEmpty(),
@@ -100,6 +114,12 @@ class SyncStore(private val context: Context) {
         context.syncDataStore.edit { it[K.lastAttemptAt] = at }
     }
 
+    /** Advanced only after every pulled row has been applied. */
+    suspend fun recordPulled(through: String) {
+        if (through.isBlank()) return
+        context.syncDataStore.edit { it[K.pulledThrough] = through }
+    }
+
     suspend fun recordSuccess(at: Long, pushedThrough: Long, count: Int, message: String) {
         context.syncDataStore.edit {
             it[K.lastSuccessAt] = at
@@ -121,6 +141,17 @@ class SyncStore(private val context: Context) {
      */
     suspend fun forceFullResync() {
         context.syncDataStore.edit { it[K.pushedThrough] = 0L }
+    }
+
+    /**
+     * Re-applies every browser edit from the beginning.
+     *
+     * Safe to do: applying an edit twice sets the same fields to the same
+     * values, and the last-write-wins comparison skips anything the phone has
+     * since changed.
+     */
+    suspend fun forceFullRepull() {
+        context.syncDataStore.edit { it.remove(K.pulledThrough) }
     }
 
     suspend fun clear() {

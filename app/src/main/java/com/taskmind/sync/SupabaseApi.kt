@@ -135,6 +135,35 @@ class SupabaseApi(private val http: OkHttpClient) {
     }
 
     /**
+     * Reads rows back. The only place this app asks the server a question
+     * rather than telling it something.
+     *
+     * [filter] is raw PostgREST query syntax (`web_updated_at=gt.2026-01-01T00:00:00Z`).
+     * Values in it must already be encoded - the caller knows which parts are
+     * operators and which are data, and this does not.
+     */
+    fun select(
+        projectUrl: String,
+        anonKey: String,
+        accessToken: String,
+        table: String,
+        filter: String,
+        limit: Int,
+    ): Outcome<JsonArray> {
+        val request = Request.Builder()
+            .url("$projectUrl/rest/v1/$table?select=*&$filter&limit=$limit")
+            .addHeader("apikey", anonKey)
+            .addHeader("Authorization", "Bearer $accessToken")
+            .get()
+            .build()
+        return call(request) { text ->
+            val parsed = runCatching { json.parseToJsonElement(text) as? JsonArray }.getOrNull()
+                ?: return@call Outcome.Failed("Server did not return a list of rows.", retryable = false)
+            Outcome.Ok(parsed)
+        }
+    }
+
+    /**
      * Removes every row EXCEPT the ids given - how the pending-review mirror
      * is kept honest.
      *
