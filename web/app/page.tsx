@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { isConfigured, missingConfig, supabase } from "@/lib/supabase";
 import type { NewTask, Priority, ReviewItem, Task } from "@/lib/types";
 import {
   addTask,
@@ -22,6 +22,10 @@ export default function Page() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    if (!isConfigured) {
+      setReady(true);
+      return;
+    }
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setReady(true);
@@ -30,8 +34,35 @@ export default function Page() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  if (!isConfigured) return <NotConfigured />;
   if (!ready) return null;
   return session ? <Dashboard email={session.user.email ?? ""} /> : <Login />;
+}
+
+/**
+ * Shown when the deployment has no Supabase settings.
+ *
+ * Named on screen rather than left in a build log: whoever opens this page is
+ * the person who can go and set them, and "it is blank" is not a diagnosis.
+ */
+function NotConfigured() {
+  return (
+    <div className="login">
+      <h1>Almost there</h1>
+      <p className="sub">
+        This deployment has no Supabase settings, so there is nothing for it to read.
+      </p>
+      <div className="error">
+        Missing: {missingConfig.join(" and ")}
+      </div>
+      <p className="sub" style={{ marginTop: 20 }}>
+        Add them in the Vercel project under <strong>Settings → Environment Variables</strong>, tick
+        every environment (Production, Preview and Development), then redeploy. Both values are on
+        the Supabase project&rsquo;s <strong>Settings → API</strong> page. Use the <strong>anon</strong>{" "}
+        key, never <code>service_role</code>.
+      </p>
+    </div>
+  );
 }
 
 /* -- login --------------------------------------------------------------- */

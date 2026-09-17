@@ -83,6 +83,11 @@ Open **Project Settings → API** (or **Data API**) and copy:
    | `NEXT_PUBLIC_SUPABASE_URL` | the Project URL from step 4 |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the anon key from step 4 |
 
+   **Tick every environment — Production, Preview and Development.** Vercel
+   defaults to Production only, and preview deployments then come up with no
+   settings at all. The page says which variable is missing when that happens,
+   but it is easier to just tick all three now.
+
 6. **Deploy.**
 
 When it finishes you get a URL like `taskmind-xyz.vercel.app`. Open it — you
@@ -163,8 +168,12 @@ Row-level security means another account sees nothing at all rather than an
 error.
 
 **The Vercel build fails.**
-Nearly always the Root Directory is not set to `web`, or one of the two
-environment variables is missing. The build log names the missing variable.
+Nearly always the Root Directory is not set to `web`.
+
+**The page loads and says "Almost there".**
+That deployment has no Supabase settings. The message names the missing
+variable. Most often it is a preview deployment and the variables were added
+for Production only — see the note in step 5.
 
 **An edit in the browser never shows up on the phone.**
 Open the app and leave it — that is when it syncs. Then check **Settings → Web

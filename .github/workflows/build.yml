@@ -107,15 +107,18 @@ jobs:
         working-directory: web
         run: npm run typecheck
 
-      # Placeholder values on purpose. The client reads these at import time
-      # and throws when they are missing - which is the behaviour we want in
-      # production, and which would otherwise fail this build for the wrong
-      # reason. The real values live in the Vercel project settings.
+      # Built with NO Supabase variables, deliberately.
+      #
+      # That is exactly what a Vercel preview deployment looks like, because
+      # preview builds do not inherit production environment variables. An
+      # earlier version of the client threw at import time when they were
+      # missing, which Next hit while prerendering and turned into a failed
+      # build - and this job passed anyway, because it was supplying
+      # placeholders. Building the harder case here means the next time
+      # someone reaches for a required-at-build-time variable, this job says
+      # so before Vercel does.
       - name: Build
         working-directory: web
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
         run: npm run build
 
   build:
