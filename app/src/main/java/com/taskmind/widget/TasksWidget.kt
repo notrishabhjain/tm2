@@ -16,6 +16,7 @@ import com.taskmind.core.Stage
 import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.di.AppContainer
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /**
  * The home-screen widget: what is pending, without opening anything.
@@ -53,45 +54,69 @@ class TasksWidget : AppWidgetProvider() {
      * for a moment, rather than one that says nothing can be loaded at all.
      */
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != ACTION_REFRESH &&
-            intent.action != AppWidgetManager.ACTION_APPWIDGET_UPDATE
-        ) {
+        if (intent.action !in HANDLED) {
             super.onReceive(context, intent)
             return
         }
 
         val app = context.applicationContext
+
+        // Acted on before the redraw below, so the redraw already reflects it
+        // and the row disappears in one step rather than two.
+        when (intent.action) {
+            ACTION_COMPLETE -> {
+                val taskId = intent.getStringExtra(EXTRA_TASK_ID)
+                if (!taskId.isNullOrBlank()) {
+                    val pending = goAsync()
+                    Thread {
+                        try {
+                            val container = AppContainer.get(app)
+                            // The same repository call the app's own checkbox
+                            // makes, so a recurring task still spawns its next
+                            // instance when ticked off from the home screen.
+                            runBlocking { container.taskRepository.complete(taskId) }
+                            renderAll(app)
+                        } catch (t: Throwable) {
+                            log(app, "widget could not complete a task", t)
+                        } finally {
+                            pending.finish()
+                        }
+                    }.start()
+                    return
+                }
+            }
+
+            ACTION_PAGE -> {
+                val widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, 0)
+                val delta = intent.getIntExtra(EXTRA_PAGE_DELTA, 0)
+                if (widgetId != 0 && delta != 0) WidgetPaging.move(app, widgetId, delta * SLOTS)
+            }
+        }
         val manager = AppWidgetManager.getInstance(app)
         val ids = runCatching {
             manager.getAppWidgetIds(ComponentName(app, TasksWidget::class.java))
         }.getOrDefault(IntArray(0))
         if (ids.isEmpty()) return
 
-        for (id in ids) {
-            runCatching { manager.updateAppWidget(id, placeholder(app)) }
+        // Only on the system's own update, which is the case where the widget
+        // may still be showing nothing. Painting it on a page tap or a refresh
+        // would blank the rows and flash "Loading" over content that is
+        // already correct.
+        if (intent.action == AppWidgetManager.ACTION_APPWIDGET_UPDATE) {
+            for (id in ids) {
+                runCatching { manager.updateAppWidget(id, placeholder(app)) }
+            }
         }
 
         val pending = goAsync()
         Thread {
             try {
-                val snapshot = WidgetData.snapshot(app)
-                val views = render(app, snapshot)
-                for (id in ids) manager.updateAppWidget(id, views)
+                renderAll(app)
             } catch (t: Throwable) {
                 // The placeholder is already on screen, so this degrades to a
                 // widget showing its header and nothing else - visible, and
                 // explained in the log rather than nowhere.
-                runCatching {
-                    val container = AppContainer.get(app)
-                    container.applicationScope.launch {
-                        container.logger.write(
-                            Stage.SYSTEM,
-                            LogLevel.WARN,
-                            "widget could not read tasks",
-                            t.toString(),
-                        )
-                    }
-                }
+                log(app, "widget could not read tasks", t)
             } finally {
                 pending.finish()
             }
@@ -99,12 +124,41 @@ class TasksWidget : AppWidgetProvider() {
     }
 
     /**
+     * Redraws every placed widget from one read of the database.
+     *
+     * Each widget gets its own RemoteViews because each has its own page
+     * offset; the snapshot behind them is shared.
+     */
+    private fun renderAll(context: Context) {
+        val manager = AppWidgetManager.getInstance(context)
+        val ids = manager.getAppWidgetIds(ComponentName(context, TasksWidget::class.java))
+        if (ids.isEmpty()) return
+        val snapshot = WidgetData.snapshot(context)
+        for (id in ids) manager.updateAppWidget(id, render(context, snapshot, id))
+    }
+
+    private fun log(context: Context, message: String, t: Throwable) {
+        runCatching {
+            val container = AppContainer.get(context)
+            container.applicationScope.launch {
+                container.logger.write(Stage.SYSTEM, LogLevel.WARN, message, t.toString())
+            }
+        }
+    }
+
+    /**
      * Unreachable while [onReceive] intercepts the update broadcast; kept as
      * the correct behaviour for any direct caller.
      */
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        val views = render(context, WidgetData.snapshot(context))
-        for (id in ids) manager.updateAppWidget(id, views)
+        val snapshot = WidgetData.snapshot(context)
+        for (id in ids) manager.updateAppWidget(id, render(context, snapshot, id))
+    }
+
+    /** Forgets a removed widget's page offset rather than leaking it forever. */
+    override fun onDeleted(context: Context, ids: IntArray) {
+        super.onDeleted(context, ids)
+        WidgetPaging.forget(context, ids)
     }
 
     /** A complete, valid frame that touches nothing but strings. */
@@ -112,17 +166,20 @@ class TasksWidget : AppWidgetProvider() {
         RemoteViews(context.packageName, R.layout.widget_tasks).apply {
             setTextViewText(R.id.widget_summary, "Loading…")
             setViewVisibility(R.id.widget_empty, View.GONE)
-            setViewVisibility(R.id.widget_more, View.GONE)
+            setViewVisibility(R.id.widget_footer, View.GONE)
             setViewVisibility(R.id.widget_review_badge, View.GONE)
             for (slot in 0 until SLOTS) setViewVisibility(ROWS[slot], View.GONE)
             setOnClickPendingIntent(R.id.widget_title, openApp(context, Routes.TASKS))
         }
 
-    private fun render(context: Context, snapshot: WidgetData.Snapshot): RemoteViews {
+    private fun render(context: Context, snapshot: WidgetData.Snapshot, widgetId: Int): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_tasks)
         val counts = snapshot.counts
-        val tasks = snapshot.tasks
+        val all = snapshot.tasks
         val now = System.currentTimeMillis()
+
+        val offset = WidgetPaging.offset(context, widgetId, all.size, SLOTS)
+        val tasks = all.drop(offset).take(SLOTS)
 
         views.setTextViewText(R.id.widget_summary, counts.summary)
 
@@ -139,18 +196,23 @@ class TasksWidget : AppWidgetProvider() {
             if (task == null) {
                 views.setViewVisibility(ROWS[slot], View.GONE)
             } else {
-                fillRow(context, views, slot, task, now)
+                fillRow(context, views, slot, task, now, widgetId)
             }
         }
 
-        views.setViewVisibility(R.id.widget_empty, if (tasks.isEmpty()) View.VISIBLE else View.GONE)
+        views.setViewVisibility(R.id.widget_empty, if (all.isEmpty()) View.VISIBLE else View.GONE)
 
-        val hidden = tasks.size - minOf(tasks.size, SLOTS)
-        if (hidden > 0) {
-            views.setTextViewText(R.id.widget_more, "and $hidden more")
-            views.setViewVisibility(R.id.widget_more, View.VISIBLE)
+        if (all.size > SLOTS) {
+            val from = offset + 1
+            val to = offset + tasks.size
+            views.setViewVisibility(R.id.widget_footer, View.VISIBLE)
+            views.setTextViewText(R.id.widget_more, "$from-$to of ${all.size}")
+            // Both arrows stay visible at the ends and simply do nothing, so
+            // the row does not reflow as you page through it.
+            views.setOnClickPendingIntent(R.id.widget_prev, pageIntent(context, widgetId, -1))
+            views.setOnClickPendingIntent(R.id.widget_next, pageIntent(context, widgetId, 1))
         } else {
-            views.setViewVisibility(R.id.widget_more, View.GONE)
+            views.setViewVisibility(R.id.widget_footer, View.GONE)
         }
 
         views.setOnClickPendingIntent(R.id.widget_title, openApp(context, Routes.TASKS))
@@ -167,6 +229,7 @@ class TasksWidget : AppWidgetProvider() {
         slot: Int,
         task: TaskEntity,
         now: Long,
+        widgetId: Int,
     ) {
         val due = task.dueAt
         val overdue = due != null && due < now
@@ -195,6 +258,43 @@ class TasksWidget : AppWidgetProvider() {
         }
 
         views.setOnClickPendingIntent(ROWS[slot], openApp(context, Routes.taskDetail(task.id)))
+        views.setOnClickPendingIntent(DONES[slot], completeIntent(context, task.id, widgetId))
+    }
+
+    /**
+     * Ticks a task off without opening the app.
+     *
+     * The request code mixes the task id and the widget id so two widgets
+     * showing the same task do not share one pending intent - the system keys
+     * these on request code and intent equality, and extras do not count
+     * towards that.
+     */
+    private fun completeIntent(context: Context, taskId: String, widgetId: Int): PendingIntent {
+        val intent = Intent(context, TasksWidget::class.java)
+            .setAction(ACTION_COMPLETE)
+            .putExtra(EXTRA_TASK_ID, taskId)
+            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+            .setData(android.net.Uri.parse("taskmind://complete/$widgetId/$taskId"))
+        return PendingIntent.getBroadcast(
+            context,
+            (taskId + widgetId).hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    private fun pageIntent(context: Context, widgetId: Int, delta: Int): PendingIntent {
+        val intent = Intent(context, TasksWidget::class.java)
+            .setAction(ACTION_PAGE)
+            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+            .putExtra(EXTRA_PAGE_DELTA, delta)
+            .setData(android.net.Uri.parse("taskmind://page/$widgetId/$delta"))
+        return PendingIntent.getBroadcast(
+            context,
+            ("page$widgetId:$delta").hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     /**
@@ -217,6 +317,18 @@ class TasksWidget : AppWidgetProvider() {
 
     companion object {
         const val ACTION_REFRESH = "com.taskmind.action.WIDGET_REFRESH"
+        const val ACTION_COMPLETE = "com.taskmind.action.WIDGET_COMPLETE"
+        const val ACTION_PAGE = "com.taskmind.action.WIDGET_PAGE"
+
+        const val EXTRA_TASK_ID = "task_id"
+        const val EXTRA_PAGE_DELTA = "page_delta"
+
+        private val HANDLED = setOf(
+            ACTION_REFRESH,
+            ACTION_COMPLETE,
+            ACTION_PAGE,
+            AppWidgetManager.ACTION_APPWIDGET_UPDATE,
+        )
 
         /** Must match the number of row blocks in `widget_tasks.xml`. */
         const val SLOTS = 8
@@ -237,9 +349,24 @@ class TasksWidget : AppWidgetProvider() {
             R.id.row0_meta, R.id.row1_meta, R.id.row2_meta, R.id.row3_meta,
             R.id.row4_meta, R.id.row5_meta, R.id.row6_meta, R.id.row7_meta,
         )
+        private val DONES = intArrayOf(
+            R.id.row0_done, R.id.row1_done, R.id.row2_done, R.id.row3_done,
+            R.id.row4_done, R.id.row5_done, R.id.row6_done, R.id.row7_done,
+        )
 
-        /** Nudges every placed widget to re-read. Safe to call when none exist. */
+        /**
+         * Nudges every placed widget to re-read, back at the first page.
+         *
+         * Called when the app goes to the background. Coming back to a home
+         * screen showing page three of a list you have just been editing is
+         * disorienting; the top is where the urgent things are.
+         */
         fun refresh(context: Context) {
+            runCatching {
+                val manager = AppWidgetManager.getInstance(context)
+                val ids = manager.getAppWidgetIds(ComponentName(context, TasksWidget::class.java))
+                for (id in ids) WidgetPaging.reset(context, id)
+            }
             val intent = Intent(context, TasksWidget::class.java).setAction(ACTION_REFRESH)
             runCatching { context.sendBroadcast(intent) }
         }

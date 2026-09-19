@@ -16,6 +16,7 @@ import androidx.work.WorkManager
 import com.taskmind.capture.ReminderReceiver
 import com.taskmind.capture.WatchdogReceiver
 import com.taskmind.di.AppContainer
+import com.taskmind.reminders.OngoingReminderWorker
 import com.taskmind.sync.SyncWorker
 import java.util.concurrent.TimeUnit
 
@@ -36,6 +37,7 @@ object Scheduler {
     private const val WORK_RETENTION = "taskmind.retention"
     private const val WORK_UPDATE = "taskmind.update_check"
     private const val WORK_SYNC = "taskmind.web_sync"
+    private const val WORK_ONGOING = "taskmind.ongoing_reminder"
 
     private fun wm(context: Context): WorkManager = WorkManager.getInstance(context.applicationContext)
 
@@ -116,6 +118,29 @@ object Scheduler {
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 5, TimeUnit.MINUTES)
                 .build(),
         )
+        // The standing reminder. Hourly so "due today" stops being true at a
+        // sensible time, and so an overdue task starts being marked as one
+        // without the app having been opened.
+        wm(context).enqueueUniquePeriodicWork(
+            WORK_ONGOING,
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<OngoingReminderWorker>(1, TimeUnit.HOURS).build(),
+        )
+    }
+
+    /**
+     * Refreshes the standing "due today" notification now.
+     *
+     * No network constraint: it reads the local database and posts a
+     * notification, and waiting for Wi-Fi to tell someone a task is overdue
+     * would be absurd.
+     */
+    fun enqueueOngoingReminder(context: Context) {
+        wm(context).enqueueUniqueWork(
+            WORK_ONGOING + ".now",
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<OngoingReminderWorker>().build(),
+        )
     }
 
     /**
@@ -149,7 +174,7 @@ object Scheduler {
      * for.
      */
     fun scheduledWorkNames(context: Context): List<String> =
-        listOf(WORK_MAINTENANCE, WORK_RETENTION, WORK_UPDATE, WORK_SYNC).filter { name ->
+        listOf(WORK_MAINTENANCE, WORK_RETENTION, WORK_UPDATE, WORK_SYNC, WORK_ONGOING).filter { name ->
             runCatching {
                 wm(context).getWorkInfosForUniqueWork(name).get()
                     .any { !it.state.isFinished }
@@ -161,6 +186,7 @@ object Scheduler {
         wm(context).cancelUniqueWork(WORK_RETENTION)
         wm(context).cancelUniqueWork(WORK_UPDATE)
         wm(context).cancelUniqueWork(WORK_SYNC)
+        wm(context).cancelUniqueWork(WORK_ONGOING)
         WatchdogReceiver.cancel(context)
     }
 
