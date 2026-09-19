@@ -27,7 +27,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -50,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -86,6 +89,7 @@ fun TaskDetailScreen(
     taskId: String,
     viewModel: TaskDetailViewModel,
     onBack: () -> Unit,
+    onOpenTask: (String) -> Unit = {},
 ) {
     LaunchedEffect(taskId) { viewModel.load(taskId) }
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -295,6 +299,59 @@ fun TaskDetailScreen(
                 }
             }
 
+            // -- related -----------------------------------------------------
+            // Only when there is something to say. A heading reading "Related"
+            // above nothing is the app telling you it found no connections,
+            // which is not worth a line on a screen this dense.
+            if (state.related.isNotEmpty()) {
+                Rule()
+                Label("Related", trailing = state.relatedReason)
+                state.related.forEach { other ->
+                    RelatedRow(
+                        title = other.title,
+                        meta = DateFormats.due(other.dueAt),
+                        icon = Icons.Outlined.Link,
+                        onClick = { onOpenTask(other.id) },
+                    )
+                }
+                Spacer(Modifier.height(Space.snug))
+                FilledTonalButton(
+                    onClick = {
+                        viewModel.completeBundle()
+                        onBack()
+                    },
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(Space.snug))
+                    Text("Complete all ${state.related.size + 1}")
+                }
+            }
+
+            // -- possible duplicates -----------------------------------------
+            // Shown as a question and never acted on by itself. The app has
+            // been wrong about what a message meant before, and quietly
+            // merging two tasks would destroy the evidence that says which
+            // reading was right.
+            if (state.duplicates.isNotEmpty()) {
+                Rule()
+                Label("Possible duplicate")
+                Text(
+                    "This looks like the same thing as the task below. If it is, delete " +
+                        "whichever one you do not want - nothing is merged automatically.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(Space.snug))
+                state.duplicates.forEach { other ->
+                    RelatedRow(
+                        title = other.title,
+                        meta = DateFormats.due(other.dueAt),
+                        icon = Icons.Outlined.ContentCopy,
+                        onClick = { onOpenTask(other.id) },
+                    )
+                }
+            }
+
             // -- notes -------------------------------------------------------
             Rule()
             Label("Notes")
@@ -428,6 +485,44 @@ private fun Fact(label: String, value: String, valueColor: Color? = null) {
             style = MaterialTheme.typography.bodySmall,
             color = valueColor ?: MaterialTheme.colorScheme.onSurface,
         )
+    }
+}
+
+/** One other task, tappable, with just enough to recognise it by. */
+@Composable
+private fun RelatedRow(
+    title: String,
+    meta: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = Touch.min)
+            .clickable(onClick = onClick)
+            .padding(vertical = Space.tight),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(Space.snug))
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                meta,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

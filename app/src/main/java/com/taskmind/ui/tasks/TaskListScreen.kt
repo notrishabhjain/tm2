@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DoneAll
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Sort
@@ -36,6 +37,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +48,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -165,6 +168,21 @@ fun TaskListScreen(
                                         },
                                     )
                                 }
+                                HorizontalDivider()
+                                GroupMode.entries.forEach { mode ->
+                                    DropdownMenuItem(
+                                        text = { Text(mode.label) },
+                                        onClick = {
+                                            viewModel.setGroup(mode)
+                                            showSortMenu = false
+                                        },
+                                        trailingIcon = {
+                                            if (state.group == mode) {
+                                                Icon(Icons.Outlined.CheckCircle, contentDescription = null)
+                                            }
+                                        },
+                                    )
+                                }
                             }
                         }
                     },
@@ -264,21 +282,50 @@ fun TaskListScreen(
                         }
                     }
 
-                    if (state.view == TaskView.AGENDA) {
-                        // Overdue first: that is what someone opens the app to
-                        // find out, and it is the thing a flat list buries.
-                        for ((section, rows) in TaskFilters.agenda(state.tasks, System.currentTimeMillis())) {
-                            item(key = "section-${section.name}") {
-                                SectionHeading(
-                                    label = section.label,
-                                    count = rows.size,
-                                    urgent = section == TaskFilters.AgendaSection.OVERDUE,
-                                )
+                    when {
+                        // Bundling wins over the agenda when it is on: the two
+                        // answer different questions and stacking both would
+                        // put a task under two headings at once.
+                        state.group == GroupMode.RELATED -> {
+                            for (group in state.bundles) {
+                                item(key = "bundle-${group.bundle.key}") {
+                                    BundleHeading(
+                                        group = group,
+                                        onCompleteAll = { viewModel.completeBundle(group) },
+                                    )
+                                }
+                                taskRows(group.tasks)
                             }
-                            taskRows(rows)
+                            if (state.unbundled.isNotEmpty()) {
+                                if (state.bundles.isNotEmpty()) {
+                                    item(key = "section-loose") {
+                                        SectionHeading(
+                                            label = "On their own",
+                                            count = state.unbundled.size,
+                                            urgent = false,
+                                        )
+                                    }
+                                }
+                                taskRows(state.unbundled)
+                            }
                         }
-                    } else {
-                        taskRows(state.tasks)
+
+                        state.view == TaskView.AGENDA -> {
+                            // Overdue first: that is what someone opens the app to
+                            // find out, and it is the thing a flat list buries.
+                            for ((section, rows) in TaskFilters.agenda(state.tasks, System.currentTimeMillis())) {
+                                item(key = "section-${section.name}") {
+                                    SectionHeading(
+                                        label = section.label,
+                                        count = rows.size,
+                                        urgent = section == TaskFilters.AgendaSection.OVERDUE,
+                                    )
+                                }
+                                taskRows(rows)
+                            }
+                        }
+
+                        else -> taskRows(state.tasks)
                     }
                 }
             }
@@ -482,6 +529,53 @@ private fun SectionHeading(label: String, count: Int, urgent: Boolean) {
         )
         Spacer(Modifier.width(Space.snug))
         CountPill(count, color)
+    }
+}
+
+/**
+ * A bundle's heading, with the one action the whole feature exists for.
+ *
+ * The reason line is not decoration. The app decided these belong together,
+ * and a grouping that cannot say why is one nobody will trust enough to hit
+ * "Complete all" on.
+ */
+@Composable
+private fun BundleHeading(group: TaskBundles.Group, onCompleteAll: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = Space.edge, end = Space.snug, top = Space.step, bottom = Space.tight),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Outlined.Link,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(Space.snug))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = group.bundle.label.uppercase(),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(Space.snug))
+                CountPill(group.tasks.size, MaterialTheme.colorScheme.primary)
+            }
+            Text(
+                text = group.bundle.reason,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        TextButton(onClick = onCompleteAll) { Text("Complete all") }
     }
 }
 

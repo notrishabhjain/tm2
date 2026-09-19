@@ -60,27 +60,32 @@ enum class SortMode(val label: String) {
     CREATED("Recently added"),
 }
 
+/**
+ * How the list is arranged beyond sorting.
+ *
+ * By-date and by-project used to be listed here and were never implemented -
+ * the agenda already groups by date and projects have their own filter, so
+ * both would have been a second way to do something the screen already does.
+ * Bundling is the one grouping that shows something a sort cannot.
+ */
 enum class GroupMode(val label: String) {
-    NONE("No grouping"),
-    DATE("By date"),
-    PROJECT("By project"),
+    NONE("Flat list"),
+    RELATED("Group related"),
 }
 
 object TaskFilters {
 
-    fun apply(
-        tasks: List<TaskEntity>,
-        view: TaskView,
-        query: String,
-        projectId: String?,
-        tag: String?,
-        sort: SortMode,
-        now: Long,
-    ): List<TaskEntity> {
+    /**
+     * The tasks a view could show, before any search, project or tag filter.
+     *
+     * Pulled out of [apply] because the filter row needs it: the tags on
+     * offer have to come from the same set of tasks the view is drawing from,
+     * or a tag outlives the last task carrying it.
+     */
+    fun scope(tasks: List<TaskEntity>, view: TaskView, now: Long): List<TaskEntity> {
         val startOfToday = DateResolver.startOfDay(now)
         val endOfToday = DateResolver.endOfDay(now)
-
-        val byView = tasks.filter { task ->
+        return tasks.filter { task ->
             when (view) {
                 // Everything active with a date, plus the undated, sectioned
                 // by AgendaSection below rather than filtered out here.
@@ -97,6 +102,18 @@ object TaskFilters {
                 TaskView.ARCHIVED -> task.status == TaskStatus.ARCHIVED
             }
         }
+    }
+
+    fun apply(
+        tasks: List<TaskEntity>,
+        view: TaskView,
+        query: String,
+        projectId: String?,
+        tag: String?,
+        sort: SortMode,
+        now: Long,
+    ): List<TaskEntity> {
+        val byView = scope(tasks, view, now)
 
         val byProject = if (projectId == null) byView else byView.filter { it.projectId == projectId }
 
@@ -176,15 +193,43 @@ object TaskFilters {
      * What the filter row offers. Ordering by frequency means the people and
      * apps you actually deal with are the ones in reach, rather than whatever
      * sorts first alphabetically.
+     *
+     * These are derived, never stored, so a tag exists exactly as long as a
+     * task carrying it does. Pass the tasks the current view can show and the
+     * chip for "Sharma Ji" disappears the moment his last task is ticked off,
+     * which is the only behaviour that makes sense for a tag nobody typed.
+     *
+     * [selected] is kept in the list even if it falls outside [limit], because
+     * a filter you cannot see is a filter you cannot turn off.
      */
-    fun tagCloud(tasks: List<TaskEntity>, limit: Int = 12): List<AutoTagger.Tag> =
-        tasks.flatMap { autoTags(it) }
+    fun tagCloud(
+        tasks: List<TaskEntity>,
+        selected: String? = null,
+        limit: Int = 12,
+    ): List<AutoTagger.Tag> {
+        val ranked = tasks.flatMap { autoTags(it) }
             .groupingBy { it }
             .eachCount()
             .entries
             .sortedWith(compareByDescending<Map.Entry<AutoTagger.Tag, Int>> { it.value }.thenBy { it.key.value })
             .map { it.key }
-            .take(limit)
+        val shown = ranked.take(limit)
+        if (selected == null || shown.any { it.value.equals(selected, ignoreCase = true) }) return shown
+        val pinned = ranked.firstOrNull { it.value.equals(selected, ignoreCase = true) } ?: return shown
+        return listOf(pinned) + shown.dropLast(1)
+    }
+
+    /**
+     * Whether any of these tasks still carries this tag, typed or derived.
+     *
+     * The test behind clearing a filter that has run out of tasks.
+     */
+    fun hasTag(tasks: List<TaskEntity>, tag: String): Boolean {
+        val wanted = tag.lowercase()
+        return tasks.any { task ->
+            task.tags.any { it.equals(tag, ignoreCase = true) } || wanted in autoKeys(task)
+        }
+    }
 
     /**
      * Where a task sits on the agenda.

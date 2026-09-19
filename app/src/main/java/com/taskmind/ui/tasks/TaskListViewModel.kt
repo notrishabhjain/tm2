@@ -35,6 +35,10 @@ data class TaskListUiState(
     val searching: Boolean = false,
     /** Tags the app worked out for itself, commonest first. */
     val tagCloud: List<com.taskmind.tagging.AutoTagger.Tag> = emptyList(),
+    /** Groups of related tasks; empty unless [group] is RELATED. */
+    val bundles: List<TaskBundles.Group> = emptyList(),
+    /** What bundling left over. Equals [tasks] when bundling is off. */
+    val unbundled: List<TaskEntity> = emptyList(),
 ) {
     val selectionMode: Boolean get() = selection.isNotEmpty()
 }
@@ -59,21 +63,48 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
         filters,
     ) { tasks, projects, tags, reviewCount, current ->
         val now = System.currentTimeMillis()
+
+        // The tasks this view can show, before search, project or tag. The
+        // filter row is built from these rather than from every task in the
+        // database, because a derived tag has no life of its own: "Sharma Ji"
+        // exists precisely as long as one of his tasks does, and a chip that
+        // outlives its last task is a filter that returns nothing.
+        val scope = TaskFilters.scope(tasks, current.view, now)
+
+        // A tag whose last task has just been ticked off stops filtering, and
+        // is cleared at the source so it does not come back when the view
+        // changes to one that still has it. Writing to `filters` from inside
+        // the transform is safe here: it settles in one extra emission, since
+        // the very next pass finds a null tag and does nothing.
+        val liveTag = current.tag?.takeIf { TaskFilters.hasTag(scope, it) }
+        if (current.tag != null && liveTag == null) filters.update { it.copy(tag = null) }
+
+        val visible = TaskFilters.apply(
+            tasks = tasks,
+            view = current.view,
+            query = current.query,
+            projectId = current.projectId,
+            tag = liveTag,
+            sort = current.sort,
+            now = now,
+        )
+
+        // Only when the mode is on: relating every task to every other is
+        // quadratic, and paying for it while nobody is looking at the result
+        // would slow down every edit in the app.
+        val (bundles, loose) = if (current.group == GroupMode.RELATED) {
+            TaskBundles.grouped(visible)
+        } else {
+            emptyList<TaskBundles.Group>() to visible
+        }
+
         current.copy(
-            tasks = TaskFilters.apply(
-                tasks = tasks,
-                view = current.view,
-                query = current.query,
-                projectId = current.projectId,
-                tag = current.tag,
-                sort = current.sort,
-                now = now,
-            ),
+            tag = liveTag,
+            tasks = visible,
+            bundles = bundles,
+            unbundled = loose,
             counts = TaskFilters.counts(tasks, now),
-            // Built from every task, not the filtered list: a filter row that
-            // loses the tag you are about to want, because the current filter
-            // already excluded it, is worse than no filter row.
-            tagCloud = TaskFilters.tagCloud(tasks),
+            tagCloud = TaskFilters.tagCloud(scope, liveTag),
             projects = projects,
             tags = tags,
             pendingReviewCount = reviewCount,
@@ -195,6 +226,23 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             container.taskRepository.delete(task.id)
             offerUndo("Deleted \"${task.title.take(40)}\"") {
                 container.taskRepository.restore(task.id)
+            }
+        }
+    }
+
+    /**
+     * Ticks off everything in one bundle.
+     *
+     * The whole reason for grouping: five things one person asked for are one
+     * phone call, and afterwards they are all done. One write, one undo.
+     */
+    fun completeBundle(group: TaskBundles.Group) {
+        val ids = group.tasks.map { it.id }
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            container.taskRepository.bulkSetStatus(ids, TaskStatus.COMPLETED)
+            offerUndo("Completed ${ids.size} in \"${group.bundle.label.take(24)}\"") {
+                container.taskRepository.bulkSetStatus(ids, TaskStatus.ACTIVE)
             }
         }
     }

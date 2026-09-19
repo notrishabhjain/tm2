@@ -3,6 +3,7 @@ package com.taskmind.ui.tasks
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskmind.core.Priority
+import com.taskmind.core.TaskStatus
 import com.taskmind.data.db.entity.RawCaptureEntity
 import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.di.AppContainer
@@ -18,6 +19,12 @@ data class TaskDetailUiState(
     val rawCapture: RawCaptureEntity? = null,
     val loading: Boolean = true,
     val notFound: Boolean = false,
+    /** Other active tasks the app thinks belong with this one. */
+    val related: List<TaskEntity> = emptyList(),
+    /** Why, in the words shown under the heading. */
+    val relatedReason: String? = null,
+    /** Tasks that look like this one captured twice. */
+    val duplicates: List<TaskEntity> = emptyList(),
 )
 
 class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
@@ -51,6 +58,40 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
             container.taskRepository.observeSubTasks(taskId).collect { subs ->
                 _state.value = _state.value.copy(subTasks = subs)
             }
+        }
+        viewModelScope.launch {
+            container.taskRepository.observeTasks().collect { all ->
+                // Only active, top-level tasks. Offering to complete something
+                // already completed is not an offer, and a sub-task is already
+                // shown under its parent.
+                val pool = all.filter { it.status == TaskStatus.ACTIVE && it.parentTaskId == null }
+                val dupes = TaskBundles.duplicatesOf(taskId, pool)
+                val dupeIds = dupes.map { it.id }.toSet()
+                val group = TaskBundles.relatedTo(taskId, pool)
+                _state.value = _state.value.copy(
+                    // A suspected duplicate is shown on its own, as a
+                    // question, so it is kept out of the list you are being
+                    // invited to tick off in one go.
+                    related = group?.tasks.orEmpty()
+                        .filter { it.id != taskId && it.id !in dupeIds },
+                    relatedReason = group?.bundle?.reason,
+                    duplicates = dupes,
+                )
+            }
+        }
+    }
+
+    /**
+     * Ticks off this task and everything bundled with it.
+     *
+     * One call rather than a loop of them, so the whole thing is one write and
+     * one undo - which is the point of bundling in the first place.
+     */
+    fun completeBundle() {
+        val task = _state.value.task ?: return
+        val ids = listOf(task.id) + _state.value.related.map { it.id }
+        viewModelScope.launch {
+            container.taskRepository.bulkSetStatus(ids, TaskStatus.COMPLETED)
         }
     }
 

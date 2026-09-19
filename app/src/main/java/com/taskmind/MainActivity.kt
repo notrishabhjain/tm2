@@ -263,7 +263,12 @@ fun TaskMindNavHost(
         composable(Routes.TASK_DETAIL) { backStackEntry ->
             val taskId = backStackEntry.arguments?.getString("taskId").orEmpty()
             val vm: TaskDetailViewModel = viewModel(factory = AppViewModels.factory)
-            TaskDetailScreen(taskId = taskId, viewModel = vm, onBack = { navController.popBackStack() })
+            TaskDetailScreen(
+                taskId = taskId,
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onOpenTask = { id -> navController.navigate(Routes.taskDetail(id)) },
+            )
         }
 
         composable(Routes.REVIEW) {

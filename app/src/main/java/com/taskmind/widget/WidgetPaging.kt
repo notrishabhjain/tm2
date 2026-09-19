@@ -17,6 +17,21 @@ import android.content.Context
  */
 object WidgetPaging {
 
+    /**
+     * Whether the widget scrolls or pages.
+     *
+     * A setting rather than a decision, because scrolling needs a
+     * RemoteViewsService the launcher binds across processes, and that path
+     * has failed on a real device before. If it fails again, this flips back
+     * to the fixed rows without reinstalling anything.
+     */
+    fun scrolling(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_SCROLLING, true)
+
+    fun setScrolling(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SCROLLING, enabled).apply()
+    }
+
     fun offset(context: Context, widgetId: Int, total: Int, pageSize: Int): Int {
         if (total <= pageSize) return 0
         val stored = prefs(context).getInt(key(widgetId), 0)
@@ -41,6 +56,8 @@ object WidgetPaging {
         for (id in widgetIds) editor.remove(key(id))
         editor.apply()
     }
+
+    private const val KEY_SCROLLING = "scrolling"
 
     private fun key(widgetId: Int) = "offset_$widgetId"
 

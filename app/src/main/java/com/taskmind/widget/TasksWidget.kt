@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.view.View
 import android.widget.RemoteViews
 import com.taskmind.MainActivity
@@ -21,22 +22,27 @@ import kotlinx.coroutines.runBlocking
 /**
  * The home-screen widget: what is pending, without opening anything.
  *
- * THIRD ATTEMPT, AND DELIBERATELY THE DULLEST ONE
+ * TWO MODES, AND WHY
  *
- * The first version used a ListView fed by a RemoteViewsService and the
- * launcher drew "Couldn't add widget." in every row. The second built rows
- * with RemoteViews.addView and the launcher rejected the whole thing with
- * "Can't load widget". Both were guesses at which link in a chain had broken,
- * and both were wrong.
+ * The widget can draw its rows in either of two ways, chosen by
+ * [WidgetPaging.scrolling]:
  *
- * So this one has no chain. Every row is declared in `widget_tasks.xml`, and
- * the only calls made here are setTextViewText, setViewVisibility,
- * setTextColor, setInt and setOnClickPendingIntent against ids from that file.
- * No service, no adapter, no nested RemoteViews, no addView. The cost is a
- * fixed ceiling of [SLOTS] rows; the benefit is that there is no longer any
- * mechanism left to fail.
+ *  - SCROLLING (the default): a real ListView fed by [TasksWidgetService].
+ *    Every task is reachable by dragging, which is what a task list on a home
+ *    screen is for.
+ *  - PAGING: eight fixed row blocks declared in `widget_tasks.xml`, with
+ *    prev/next arrows. No service, no adapter, no binder in the middle.
  *
- * It also renders twice on purpose - see [onReceive].
+ * Scrolling was tried first and the launcher drew "Couldn't add widget." in
+ * every row, which is why the paging mode exists at all. The cause was found
+ * much later and it was never the service: the row layout used a bare `View`
+ * for its accent bar, and `View` is not a class RemoteViews supports. That
+ * survives being applied in-process - which is why the paging rows worked -
+ * but a collection item is serialised across a binder into the launcher and
+ * validated strictly on arrival. The bar is a TextView now.
+ *
+ * The paging mode stays, reachable from Settings, because it costs nothing to
+ * keep and the user has no way to build a debug APK if the list fails again.
  *
  * It reads through the same DAO flows the app uses and writes nothing.
  */
@@ -67,22 +73,27 @@ class TasksWidget : AppWidgetProvider() {
             ACTION_COMPLETE -> {
                 val taskId = intent.getStringExtra(EXTRA_TASK_ID)
                 if (!taskId.isNullOrBlank()) {
-                    val pending = goAsync()
-                    Thread {
-                        try {
-                            val container = AppContainer.get(app)
-                            // The same repository call the app's own checkbox
-                            // makes, so a recurring task still spawns its next
-                            // instance when ticked off from the home screen.
-                            runBlocking { container.taskRepository.complete(taskId) }
-                            renderAll(app)
-                        } catch (t: Throwable) {
-                            log(app, "widget could not complete a task", t)
-                        } finally {
-                            pending.finish()
-                        }
-                    }.start()
+                    completeAsync(app, taskId)
                     return
+                }
+            }
+
+            ACTION_ROW -> {
+                // One template serves the whole list, so the row says in an
+                // extra which half of itself was tapped.
+                when (intent.getStringExtra(EXTRA_ROW_OP)) {
+                    OP_DONE -> {
+                        val taskId = intent.getStringExtra(EXTRA_TASK_ID)
+                        if (!taskId.isNullOrBlank()) {
+                            completeAsync(app, taskId)
+                            return
+                        }
+                    }
+
+                    OP_OPEN -> {
+                        openFromRow(app, intent.getStringExtra(MainActivity.EXTRA_ROUTE))
+                        return
+                    }
                 }
             }
 
@@ -104,7 +115,7 @@ class TasksWidget : AppWidgetProvider() {
         // already correct.
         if (intent.action == AppWidgetManager.ACTION_APPWIDGET_UPDATE) {
             for (id in ids) {
-                runCatching { manager.updateAppWidget(id, placeholder(app)) }
+                runCatching { manager.updateAppWidget(id, placeholder(app, id)) }
             }
         }
 
@@ -123,6 +134,45 @@ class TasksWidget : AppWidgetProvider() {
         }.start()
     }
 
+    /** Ticks a task off the database, then redraws, without blocking this thread. */
+    private fun completeAsync(app: Context, taskId: String) {
+        val pending = goAsync()
+        Thread {
+            try {
+                val container = AppContainer.get(app)
+                // The same repository call the app's own checkbox makes, so a
+                // recurring task still spawns its next instance when ticked
+                // off from the home screen.
+                runBlocking { container.taskRepository.complete(taskId) }
+                renderAll(app)
+            } catch (t: Throwable) {
+                log(app, "widget could not complete a task", t)
+            } finally {
+                pending.finish()
+            }
+        }.start()
+    }
+
+    /**
+     * Opens a task from a scrolling row.
+     *
+     * A collection view can carry exactly one pending-intent template, and the
+     * tick needs a broadcast, so the tap has to come back through here and
+     * start the activity by hand. Starting an activity from a receiver is
+     * normally blocked in the background; it is allowed in this case because
+     * the launcher - a visible app - is what sent the PendingIntent, which
+     * grants this app a short window to do it. If a launcher ever declines,
+     * the paging mode in Settings uses a direct activity PendingIntent instead.
+     */
+    private fun openFromRow(app: Context, route: String?) {
+        val intent = Intent(app, MainActivity::class.java)
+            .setAction(Intent.ACTION_VIEW)
+            .putExtra(MainActivity.EXTRA_ROUTE, route ?: Routes.TASKS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        runCatching { app.startActivity(intent) }
+            .onFailure { log(app, "widget could not open a task", it) }
+    }
+
     /**
      * Redraws every placed widget from one read of the database.
      *
@@ -135,6 +185,9 @@ class TasksWidget : AppWidgetProvider() {
         if (ids.isEmpty()) return
         val snapshot = WidgetData.snapshot(context)
         for (id in ids) manager.updateAppWidget(id, render(context, snapshot, id))
+        // The adapter holds its own copy of the rows and will not re-query on
+        // its own; without this the list keeps showing what it loaded first.
+        runCatching { manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_list) }
     }
 
     private fun log(context: Context, message: String, t: Throwable) {
@@ -153,6 +206,7 @@ class TasksWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         val snapshot = WidgetData.snapshot(context)
         for (id in ids) manager.updateAppWidget(id, render(context, snapshot, id))
+        runCatching { manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_list) }
     }
 
     /** Forgets a removed widget's page offset rather than leaking it forever. */
@@ -161,14 +215,23 @@ class TasksWidget : AppWidgetProvider() {
         WidgetPaging.forget(context, ids)
     }
 
-    /** A complete, valid frame that touches nothing but strings. */
-    private fun placeholder(context: Context): RemoteViews =
+    /**
+     * A complete, valid frame that touches nothing but strings.
+     *
+     * It binds the list too, even though it has read no data. The adapter is
+     * bound by intent, not by content, so doing it here means the rows are
+     * already on screen by the time the header stops saying "Loading" - rather
+     * than the list vanishing for the length of a database read every time the
+     * system sends an update.
+     */
+    private fun placeholder(context: Context, widgetId: Int): RemoteViews =
         RemoteViews(context.packageName, R.layout.widget_tasks).apply {
             setTextViewText(R.id.widget_summary, "Loading…")
             setViewVisibility(R.id.widget_empty, View.GONE)
             setViewVisibility(R.id.widget_footer, View.GONE)
             setViewVisibility(R.id.widget_review_badge, View.GONE)
             for (slot in 0 until SLOTS) setViewVisibility(ROWS[slot], View.GONE)
+            if (WidgetPaging.scrolling(context)) bindList(context, this, widgetId)
             setOnClickPendingIntent(R.id.widget_title, openApp(context, Routes.TASKS))
         }
 
@@ -176,10 +239,6 @@ class TasksWidget : AppWidgetProvider() {
         val views = RemoteViews(context.packageName, R.layout.widget_tasks)
         val counts = snapshot.counts
         val all = snapshot.tasks
-        val now = System.currentTimeMillis()
-
-        val offset = WidgetPaging.offset(context, widgetId, all.size, SLOTS)
-        val tasks = all.drop(offset).take(SLOTS)
 
         views.setTextViewText(R.id.widget_summary, counts.summary)
 
@@ -190,6 +249,56 @@ class TasksWidget : AppWidgetProvider() {
         } else {
             views.setViewVisibility(R.id.widget_review_badge, View.GONE)
         }
+
+        if (WidgetPaging.scrolling(context)) {
+            bindList(context, views, widgetId)
+        } else {
+            renderPages(context, views, all, widgetId)
+        }
+
+        views.setOnClickPendingIntent(R.id.widget_title, openApp(context, Routes.TASKS))
+        views.setOnClickPendingIntent(R.id.widget_summary, openApp(context, Routes.TASKS))
+        views.setOnClickPendingIntent(R.id.widget_empty, openApp(context, Routes.TASKS))
+
+        return views
+    }
+
+    /**
+     * Points the ListView at [TasksWidgetService] and hides everything the
+     * paging mode owns.
+     *
+     * The adapter intent needs a per-widget `data` URI: the system caches
+     * adapters keyed on intent equality, and extras are not part of that, so
+     * without it two placed widgets would share one factory.
+     */
+    private fun bindList(context: Context, views: RemoteViews, widgetId: Int) {
+        val service = Intent(context, TasksWidgetService::class.java)
+            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+            .setData(Uri.parse("taskmind://widget/$widgetId"))
+
+        for (slot in 0 until SLOTS) views.setViewVisibility(ROWS[slot], View.GONE)
+        views.setViewVisibility(R.id.widget_footer, View.GONE)
+        views.setViewVisibility(R.id.widget_list, View.VISIBLE)
+        // Left to the AdapterView from here - it swaps the two around itself
+        // whenever the adapter reports nothing to show.
+        views.setViewVisibility(R.id.widget_empty, View.GONE)
+        views.setRemoteAdapter(R.id.widget_list, service)
+        views.setEmptyView(R.id.widget_list, R.id.widget_empty)
+        views.setPendingIntentTemplate(R.id.widget_list, rowTemplate(context, widgetId))
+    }
+
+    /** The eight-fixed-rows fallback, unchanged from the version that worked. */
+    private fun renderPages(
+        context: Context,
+        views: RemoteViews,
+        all: List<TaskEntity>,
+        widgetId: Int,
+    ) {
+        val now = System.currentTimeMillis()
+        val offset = WidgetPaging.offset(context, widgetId, all.size, SLOTS)
+        val tasks = all.drop(offset).take(SLOTS)
+
+        views.setViewVisibility(R.id.widget_list, View.GONE)
 
         for (slot in 0 until SLOTS) {
             val task = tasks.getOrNull(slot)
@@ -211,16 +320,10 @@ class TasksWidget : AppWidgetProvider() {
             // the row does not reflow as you page through it.
             views.setOnClickPendingIntent(R.id.widget_prev, pageIntent(context, widgetId, -1))
             views.setOnClickPendingIntent(R.id.widget_next, pageIntent(context, widgetId, 1))
+            views.setOnClickPendingIntent(R.id.widget_more, openApp(context, Routes.TASKS))
         } else {
             views.setViewVisibility(R.id.widget_footer, View.GONE)
         }
-
-        views.setOnClickPendingIntent(R.id.widget_title, openApp(context, Routes.TASKS))
-        views.setOnClickPendingIntent(R.id.widget_summary, openApp(context, Routes.TASKS))
-        views.setOnClickPendingIntent(R.id.widget_empty, openApp(context, Routes.TASKS))
-        views.setOnClickPendingIntent(R.id.widget_more, openApp(context, Routes.TASKS))
-
-        return views
     }
 
     private fun fillRow(
@@ -240,7 +343,7 @@ class TasksWidget : AppWidgetProvider() {
         views.setInt(BARS[slot], "setBackgroundColor", accent)
 
         val meta = buildList {
-            due?.let { add(shortDate(it, now)) }
+            due?.let { add(WidgetFormat.shortDate(it, now)) }
             task.sourceLabel?.takeIf { it.isNotBlank() }?.let { add(it) }
         }.joinToString("  ·  ")
 
@@ -262,6 +365,28 @@ class TasksWidget : AppWidgetProvider() {
     }
 
     /**
+     * The one template every scrolling row fills in.
+     *
+     * MUTABLE, and it has to be: filling in a template is precisely mutating
+     * it, and an immutable one arrives at this receiver with no extras at all.
+     * It is safe here because the intent names this app's own component, so
+     * the only thing a filled-in copy can ever reach is [onReceive] - and the
+     * fill-in itself comes from this app's own RemoteViewsFactory.
+     */
+    private fun rowTemplate(context: Context, widgetId: Int): PendingIntent {
+        val intent = Intent(context, TasksWidget::class.java)
+            .setAction(ACTION_ROW)
+            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+            .setData(Uri.parse("taskmind://row/$widgetId"))
+        return PendingIntent.getBroadcast(
+            context,
+            ("row$widgetId").hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+        )
+    }
+
+    /**
      * Ticks a task off without opening the app.
      *
      * The request code mixes the task id and the widget id so two widgets
@@ -274,7 +399,7 @@ class TasksWidget : AppWidgetProvider() {
             .setAction(ACTION_COMPLETE)
             .putExtra(EXTRA_TASK_ID, taskId)
             .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-            .setData(android.net.Uri.parse("taskmind://complete/$widgetId/$taskId"))
+            .setData(Uri.parse("taskmind://complete/$widgetId/$taskId"))
         return PendingIntent.getBroadcast(
             context,
             (taskId + widgetId).hashCode(),
@@ -288,7 +413,7 @@ class TasksWidget : AppWidgetProvider() {
             .setAction(ACTION_PAGE)
             .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
             .putExtra(EXTRA_PAGE_DELTA, delta)
-            .setData(android.net.Uri.parse("taskmind://page/$widgetId/$delta"))
+            .setData(Uri.parse("taskmind://page/$widgetId/$delta"))
         return PendingIntent.getBroadcast(
             context,
             ("page$widgetId:$delta").hashCode(),
@@ -319,14 +444,20 @@ class TasksWidget : AppWidgetProvider() {
         const val ACTION_REFRESH = "com.taskmind.action.WIDGET_REFRESH"
         const val ACTION_COMPLETE = "com.taskmind.action.WIDGET_COMPLETE"
         const val ACTION_PAGE = "com.taskmind.action.WIDGET_PAGE"
+        const val ACTION_ROW = "com.taskmind.action.WIDGET_ROW"
 
         const val EXTRA_TASK_ID = "task_id"
         const val EXTRA_PAGE_DELTA = "page_delta"
+        const val EXTRA_ROW_OP = "row_op"
+
+        const val OP_OPEN = "open"
+        const val OP_DONE = "done"
 
         private val HANDLED = setOf(
             ACTION_REFRESH,
             ACTION_COMPLETE,
             ACTION_PAGE,
+            ACTION_ROW,
             AppWidgetManager.ACTION_APPWIDGET_UPDATE,
         )
 
@@ -370,29 +501,5 @@ class TasksWidget : AppWidgetProvider() {
             val intent = Intent(context, TasksWidget::class.java).setAction(ACTION_REFRESH)
             runCatching { context.sendBroadcast(intent) }
         }
-    }
-}
-
-/** "Overdue", "Today", "Tue" or "3 Oct" - whichever is shortest and clearest. */
-private fun shortDate(millis: Long, now: Long): String {
-    val zone = java.util.TimeZone.getTimeZone("Asia/Kolkata")
-    val day = 24L * 60 * 60 * 1000
-    val today = java.util.Calendar.getInstance(zone).apply {
-        timeInMillis = now
-        set(java.util.Calendar.HOUR_OF_DAY, 0)
-        set(java.util.Calendar.MINUTE, 0)
-        set(java.util.Calendar.SECOND, 0)
-        set(java.util.Calendar.MILLISECOND, 0)
-    }.timeInMillis
-    return when {
-        millis < today -> "Overdue"
-        millis < today + day -> "Today"
-        millis < today + 2 * day -> "Tomorrow"
-        millis < today + 7 * day ->
-            java.text.SimpleDateFormat("EEE", java.util.Locale.ENGLISH)
-                .apply { timeZone = zone }.format(java.util.Date(millis))
-        else ->
-            java.text.SimpleDateFormat("d MMM", java.util.Locale.ENGLISH)
-                .apply { timeZone = zone }.format(java.util.Date(millis))
     }
 }
