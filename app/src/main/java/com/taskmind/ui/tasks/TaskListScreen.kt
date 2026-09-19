@@ -59,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -71,6 +72,7 @@ import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.ui.components.DateFormats
 import com.taskmind.ui.design.CountPill
 import com.taskmind.ui.design.Empty
+import com.taskmind.prefs.UiPreferences
 import com.taskmind.tagging.AutoTagger
 import com.taskmind.ui.design.MetaChip
 import com.taskmind.ui.design.Radius
@@ -105,6 +107,10 @@ fun TaskListScreen(
     val undo by viewModel.undo.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    val context = LocalContext.current
+    val uiPrefs = remember(context) { UiPreferences(context) }
+    val ui by uiPrefs.state.collectAsStateWithLifecycle(initialValue = UiPreferences.State())
     var showEditor by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
 
@@ -226,28 +232,35 @@ fun TaskListScreen(
                     // the two paths cannot drift apart.
                     fun LazyListScope.taskRows(rows: List<TaskEntity>) {
                         items(rows, key = { it.id }) { task ->
-                            TaskRow(
-                                task = task,
-                                selected = task.id in state.selection,
-                                selectionMode = state.selectionMode,
-                                overdue = TaskFilters.sectionFor(task, System.currentTimeMillis()) ==
-                                    TaskFilters.AgendaSection.OVERDUE,
-                                onClick = {
-                                    if (state.selectionMode) {
-                                        viewModel.toggleSelection(task.id)
-                                    } else {
-                                        onOpenTask(task.id)
-                                    }
-                                },
-                                onLongClick = { viewModel.toggleSelection(task.id) },
-                                onToggleComplete = {
-                                    if (task.status == TaskStatus.COMPLETED) {
-                                        viewModel.reopen(task)
-                                    } else {
-                                        viewModel.complete(task)
-                                    }
-                                },
-                            )
+                            SwipeableTaskRow(
+                                rightAction = ui.swipeRight,
+                                leftAction = ui.swipeLeft,
+                                enabled = !state.selectionMode,
+                                onAction = { action -> viewModel.runSwipe(task, action) },
+                            ) {
+                                TaskRow(
+                                    task = task,
+                                    selected = task.id in state.selection,
+                                    selectionMode = state.selectionMode,
+                                    overdue = TaskFilters.sectionFor(task, System.currentTimeMillis()) ==
+                                        TaskFilters.AgendaSection.OVERDUE,
+                                    onClick = {
+                                        if (state.selectionMode) {
+                                            viewModel.toggleSelection(task.id)
+                                        } else {
+                                            onOpenTask(task.id)
+                                        }
+                                    },
+                                    onLongClick = { viewModel.toggleSelection(task.id) },
+                                    onToggleComplete = {
+                                        if (task.status == TaskStatus.COMPLETED) {
+                                            viewModel.reopen(task)
+                                        } else {
+                                            viewModel.complete(task)
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
 

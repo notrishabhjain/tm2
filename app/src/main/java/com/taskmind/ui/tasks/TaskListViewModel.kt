@@ -8,6 +8,7 @@ import com.taskmind.data.db.entity.ProjectEntity
 import com.taskmind.data.db.entity.TagEntity
 import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.di.AppContainer
+import com.taskmind.prefs.UiPreferences
 import com.taskmind.intake.IntakeResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -40,6 +41,8 @@ data class TaskListUiState(
 
 /** A destructive action the user can take back (spec 16: undo for every one). */
 data class UndoAction(val message: String, val undo: suspend () -> Unit)
+
+private const val DAY_MILLIS = 24L * 60 * 60 * 1000
 
 class TaskListViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -141,6 +144,41 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
 
     fun reopen(task: TaskEntity) {
         viewModelScope.launch { container.taskRepository.reopen(task.id) }
+    }
+
+    /**
+     * Carries out whatever the swipe was configured to do.
+     *
+     * A single entry point so the gesture layer does not have to know which
+     * actions exist, and so every one of them goes through the methods that
+     * already record an undo.
+     */
+    fun runSwipe(task: TaskEntity, action: UiPreferences.SwipeAction) {
+        when (action) {
+            UiPreferences.SwipeAction.COMPLETE ->
+                if (task.status == TaskStatus.COMPLETED) reopen(task) else complete(task)
+            UiPreferences.SwipeAction.ARCHIVE -> archive(task)
+            UiPreferences.SwipeAction.DELETE -> delete(task)
+            UiPreferences.SwipeAction.SNOOZE -> snooze(task)
+            UiPreferences.SwipeAction.NONE -> Unit
+        }
+    }
+
+    /**
+     * Pushes a task a day out, with undo.
+     *
+     * A day rather than an hour: this is the swipe gesture, used while
+     * scanning a list, and "not today" is what that gesture means.
+     */
+    fun snooze(task: TaskEntity) {
+        val previous = task.dueAt
+        val target = (task.dueAt ?: System.currentTimeMillis()) + DAY_MILLIS
+        viewModelScope.launch {
+            container.taskRepository.setDueAt(task.id, target)
+            _undo.value = UndoAction("Snoozed \"${task.title.take(30)}\"") {
+                container.taskRepository.setDueAt(task.id, previous)
+            }
+        }
     }
 
     fun archive(task: TaskEntity) {

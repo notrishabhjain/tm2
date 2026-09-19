@@ -122,6 +122,15 @@
                 android:visibility="gone"
                 android:textColor="@color/widget_on_surface_variant" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/row0_done"
+            android:layout_width="40dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="@string/widget_tick"
+            android:textSize="17sp"
+            android:textColor="@color/widget_accent" />
     </LinearLayout>
 
     <LinearLayout
@@ -166,6 +175,15 @@
                 android:visibility="gone"
                 android:textColor="@color/widget_on_surface_variant" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/row1_done"
+            android:layout_width="40dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="@string/widget_tick"
+            android:textSize="17sp"
+            android:textColor="@color/widget_accent" />
     </LinearLayout>
 
     <LinearLayout
@@ -210,6 +228,15 @@
                 android:visibility="gone"
                 android:textColor="@color/widget_on_surface_variant" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/row2_done"
+            android:layout_width="40dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="@string/widget_tick"
+            android:textSize="17sp"
+            android:textColor="@color/widget_accent" />
     </LinearLayout>
 
     <LinearLayout
@@ -254,6 +281,15 @@
                 android:visibility="gone"
                 android:textColor="@color/widget_on_surface_variant" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/row3_done"
+            android:layout_width="40dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="@string/widget_tick"
+            android:textSize="17sp"
+            android:textColor="@color/widget_accent" />
     </LinearLayout>
 
     <LinearLayout
@@ -298,6 +334,15 @@
                 android:visibility="gone"
                 android:textColor="@color/widget_on_surface_variant" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/row4_done"
+            android:layout_width="40dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="@string/widget_tick"
+            android:textSize="17sp"
+            android:textColor="@color/widget_accent" />
     </LinearLayout>
 
     <LinearLayout
@@ -342,6 +387,15 @@
                 android:visibility="gone"
                 android:textColor="@color/widget_on_surface_variant" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/row5_done"
+            android:layout_width="40dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="@string/widget_tick"
+            android:textSize="17sp"
+            android:textColor="@color/widget_accent" />
     </LinearLayout>
 
     <LinearLayout
@@ -386,6 +440,15 @@
                 android:visibility="gone"
                 android:textColor="@color/widget_on_surface_variant" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/row6_done"
+            android:layout_width="40dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="@string/widget_tick"
+            android:textSize="17sp"
+            android:textColor="@color/widget_accent" />
     </LinearLayout>
 
     <LinearLayout
@@ -430,14 +493,65 @@
                 android:visibility="gone"
                 android:textColor="@color/widget_on_surface_variant" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/row7_done"
+            android:layout_width="40dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="@string/widget_tick"
+            android:textSize="17sp"
+            android:textColor="@color/widget_accent" />
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/widget_more"
+    <!--
+      Paging, not scrolling. A scrolling widget needs a ListView fed by a
+      RemoteViewsService, which is the mechanism that failed twice on this
+      device. Two buttons and an offset reach every task using nothing but the
+      static views that are known to work.
+    -->
+    <LinearLayout
+        android:id="@+id/widget_footer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textSize="11sp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:paddingTop="4dp"
-        android:visibility="gone"
-        android:textColor="@color/widget_on_surface_variant" />
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/widget_prev"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="6dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:text="@string/widget_prev"
+            android:textSize="15sp"
+            android:textColor="@color/widget_accent" />
+
+        <TextView
+            android:id="@+id/widget_more"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textSize="11sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="@color/widget_on_surface_variant" />
+
+        <TextView
+            android:id="@+id/widget_next"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:text="@string/widget_next"
+            android:textSize="15sp"
+            android:textColor="@color/widget_accent" />
+    </LinearLayout>
 </LinearLayout>

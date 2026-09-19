@@ -116,6 +116,9 @@ class MainActivity : ComponentActivity() {
         // phone is most likely to still have a network. The worker is a no-op
         // when sync is off or nothing has changed.
         Scheduler.enqueueSync(this)
+        // Leaving the app is when tasks have most likely just changed, so the
+        // standing reminder is rebuilt here rather than waiting for the hour.
+        Scheduler.enqueueOngoingReminder(this)
     }
 
     /** Log and data exports leave through the share sheet, not a file path. */

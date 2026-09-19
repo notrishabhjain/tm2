@@ -37,6 +37,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Devices
+import androidx.compose.material.icons.outlined.Gesture
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Science
@@ -157,6 +158,8 @@ fun SettingsScreen(
                     onOpenRecordings,
                 )
 
+                SettingsPage.BEHAVIOUR -> BehaviourSection()
+
                 SettingsPage.WEB -> WebSyncSection()
 
                 SettingsPage.ABOUT -> UpdateSection(settings, viewModel)
@@ -225,6 +228,11 @@ enum class SettingsPage(val title: String, val summary: String, val icon: ImageV
         "How it works",
         "Prompts, model calls, recordings and the diagnostic report",
         Icons.Outlined.Science,
+    ),
+    BEHAVIOUR(
+        "Gestures and reminders",
+        "Swipe actions, and the standing notification for today",
+        Icons.Outlined.Gesture,
     ),
     WEB(
         "Web access",
