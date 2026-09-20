@@ -206,20 +206,52 @@ function Dashboard({ email }: { email: string }) {
   const done = useMemo(() => visible.filter((t) => t.status === "COMPLETED"), [visible]);
 
   /**
-   * The tag filter row, commonest first, built from every task rather than the
-   * filtered ones - a row that drops the tag you were about to want, because
-   * the current filter already excluded it, is worse than no row.
+   * The tasks the tag row is allowed to describe: whatever this page is
+   * currently showing, before the search and tag filters narrow it.
+   *
+   * Not every task in the table. These tags are derived from a task's source,
+   * never stored, so a tag has no existence apart from the tasks carrying it -
+   * and a chip for a person whose last task was ticked off a month ago is a
+   * filter that can only ever return an empty list.
    */
+  const scope = useMemo(
+    () => tasks.filter((t) => t.status === "ACTIVE" || (showDone && t.status === "COMPLETED")),
+    [tasks, showDone],
+  );
+
+  /** The tag filter row, commonest first. */
   const tagCloud = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const t of tasks) {
+    for (const t of scope) {
       for (const x of t.auto_tags ?? []) counts.set(x, (counts.get(x) ?? 0) + 1);
     }
-    return [...counts.entries()]
+    const ranked = [...counts.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, 14)
       .map(([value]) => value);
-  }, [tasks]);
+    const shown = ranked.slice(0, 14);
+    // A filter you cannot see is a filter you cannot turn off, so a selected
+    // tag that ranks below the cut is pulled up rather than dropped.
+    if (tag && !shown.some((x) => x.toLowerCase() === tag.toLowerCase())) {
+      const pinned = ranked.find((x) => x.toLowerCase() === tag.toLowerCase());
+      if (pinned) return [pinned, ...shown.slice(0, 13)];
+    }
+    return shown;
+  }, [scope, tag]);
+
+  /**
+   * Clears a tag filter once nothing carries it any more - which is what
+   * happens the moment you tick off the last task from that person.
+   */
+  useEffect(() => {
+    if (!tag) return;
+    const wanted = tag.toLowerCase();
+    const alive = scope.some(
+      (t) =>
+        (t.auto_tags ?? []).some((x) => x.toLowerCase() === wanted) ||
+        t.tags.some((x) => x.toLowerCase() === wanted),
+    );
+    if (!alive) setTag(null);
+  }, [scope, tag]);
 
   const groups = useMemo(() => {
     const overdue = active.filter((t) => isOverdue(t.due_at));

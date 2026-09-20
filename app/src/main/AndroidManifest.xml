@@ -132,6 +132,15 @@
                 android:resource="@xml/widget_tasks_info" />
         </receiver>
 
+        <!--
+          Serves the widget's scrolling list. BIND_REMOTEVIEWS is what lets the
+          launcher bind it and nothing else.
+        -->
+        <service
+            android:name=".widget.TasksWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
         <receiver
             android:name=".capture.WatchdogReceiver"
             android:exported="false">

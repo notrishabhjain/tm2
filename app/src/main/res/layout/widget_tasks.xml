@@ -1,22 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The widget frame, with a fixed number of task slots.
+  The widget frame. It holds BOTH row mechanisms, and shows one of them.
 
-  DELIBERATELY DULL. Two previous versions failed on this device: a ListView
-  fed by a RemoteViewsService drew "Couldn't add widget." in every row, and
-  replacing it with RemoteViews.addView of nested row layouts made the launcher
-  reject the whole thing with "Can't load widget".
+  A ListView fed by a RemoteViewsService failed here twice, drawing
+  "Couldn't add widget." in every row, and the fixed rows below are what
+  replaced it. The cause turned out to be neither: the row item layout used a
+  bare <View> for its accent bar, and `View` is not one of the classes
+  RemoteViews supports. A layout applied in-process tolerates one - which is
+  why the fixed rows worked - but a collection item is serialised across a
+  binder into the launcher and validated strictly on arrival.
 
-  So there is no dynamic construction left at all. Every row exists in this
-  file, and the provider only ever calls setTextViewText, setViewVisibility,
-  setTextColor and setOnClickPendingIntent on ids declared right here. Those
-  are the oldest and least exotic RemoteViews operations there are. The cost is
-  a fixed maximum of 8 rows and a repetitive file; the benefit is that
-  there is no mechanism left that can fail.
+  So the list is back, and it is the default. The eight fixed slots stay as a
+  fallback that Settings can switch to, because the alternative to a working
+  fallback is a broken home screen and no way to build a debug APK.
 
-  Bars are TextViews rather than plain Views on purpose: TextView is on the
-  documented list of widget-supported classes and View is not. It almost
-  certainly works either way, but this removes one more unknown.
+  Every bar in this file is a TextView for the same reason.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -79,6 +77,21 @@
         android:paddingTop="10dp"
         android:visibility="gone"
         android:textColor="@color/widget_on_surface_variant" />
+
+    <!--
+      The scrolling list. Shown instead of the fixed rows below when scrolling
+      mode is on; both live in this file so the mode can be switched at runtime
+      without reinstalling, which matters because the scrolling path is the one
+      with a history of failing on this device.
+    -->
+    <ListView
+        android:id="@+id/widget_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@null"
+        android:dividerHeight="0dp"
+        android:visibility="gone" />
 
     <LinearLayout
         android:id="@+id/row0"

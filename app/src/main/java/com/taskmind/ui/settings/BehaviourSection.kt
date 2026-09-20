@@ -12,8 +12,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -22,6 +24,8 @@ import com.taskmind.prefs.UiPreferences
 import com.taskmind.reminders.OngoingReminder
 import com.taskmind.ui.components.LabeledSwitch
 import com.taskmind.ui.components.SectionCard
+import com.taskmind.widget.TasksWidget
+import com.taskmind.widget.WidgetPaging
 import com.taskmind.work.Scheduler
 import kotlinx.coroutines.launch
 
@@ -85,6 +89,39 @@ fun BehaviourSection() {
                 "it, it returns at the next refresh rather than staying gone.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    WidgetSection()
+}
+
+/**
+ * The widget's row mechanism.
+ *
+ * This is here rather than hidden because the scrolling list is served across
+ * a binder to the launcher, and that path has failed on a real device before.
+ * If it ever fails again there is no way to build a debug APK to fix it from,
+ * so the way back has to be a switch the user can reach.
+ */
+@Composable
+private fun WidgetSection() {
+    val context = LocalContext.current
+    var scrolling by remember(context) { mutableStateOf(WidgetPaging.scrolling(context)) }
+
+    SectionCard(
+        title = "Home screen widget",
+        subtitle = "How the widget shows more tasks than fit on it.",
+    ) {
+        LabeledSwitch(
+            label = "Scroll the widget",
+            checked = scrolling,
+            onCheckedChange = { on ->
+                scrolling = on
+                WidgetPaging.setScrolling(context, on)
+                TasksWidget.refresh(context)
+            },
+            description = "Off, the widget shows eight tasks at a time with arrows to page " +
+                "through them. Turn it off if the widget ever stops loading.",
         )
     }
 }
