@@ -284,6 +284,17 @@ interface ActivityLogDao {
     @Query("DELETE FROM activity_log WHERE id NOT IN (SELECT id FROM activity_log ORDER BY id DESC LIMIT :keep)")
     suspend fun trimTo(keep: Int)
 
+    /**
+     * Spec 6.3, the half that was missing.
+     *
+     * Log entries carry excerpts of the messages they describe, so the cap on
+     * COUNT was not enough: on a quiet phone the newest 2000 entries can reach
+     * back months, and the retention screen promises message text is gone
+     * after the chosen number of days. This makes that true of the log too.
+     */
+    @Query("DELETE FROM activity_log WHERE timestamp < :before")
+    suspend fun purgeOlderThan(before: Long)
+
     @Query("SELECT * FROM activity_log ORDER BY id DESC LIMIT :limit")
     fun observeRecent(limit: Int): Flow<List<ActivityLogEntity>>
 
@@ -354,6 +365,14 @@ interface InferenceCallDao {
     /** Kept small: each row can hold several kilobytes of prompt and reply. */
     @Query("DELETE FROM inference_calls WHERE id NOT IN (SELECT id FROM inference_calls ORDER BY id DESC LIMIT :keep)")
     suspend fun trimTo(keep: Int)
+
+    /**
+     * These rows hold the prompt and the reply verbatim, which means they hold
+     * the message text. Same reasoning as the activity log: a count cap alone
+     * lets them outlive the retention window the user chose.
+     */
+    @Query("DELETE FROM inference_calls WHERE startedAt < :before")
+    suspend fun purgeOlderThan(before: Long)
 
     @Query("SELECT * FROM inference_calls ORDER BY id DESC LIMIT :limit")
     fun observeRecent(limit: Int): Flow<List<InferenceCallEntity>>

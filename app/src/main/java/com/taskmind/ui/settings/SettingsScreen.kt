@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.Gesture
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Visibility
@@ -150,6 +151,8 @@ fun SettingsScreen(
                     }
                 }
 
+                SettingsPage.SECURITY -> SecuritySection()
+
                 SettingsPage.TRANSPARENCY -> TransparencySection(
                     onOpenHowItWorks,
                     onOpenPrompts,
@@ -223,6 +226,11 @@ enum class SettingsPage(val title: String, val summary: String, val icon: ImageV
         "Privacy and data",
         "Consent, how long content is kept, export and erase",
         Icons.Outlined.Lock,
+    ),
+    SECURITY(
+        "Lock and screenshots",
+        "Require your fingerprint, and keep TaskMind out of the app switcher",
+        Icons.Outlined.Shield,
     ),
     TRANSPARENCY(
         "How it works",

@@ -261,6 +261,13 @@ class RetentionWorker(context: Context, params: WorkerParameters) : CoroutineWor
             // that writes it thinks it is.
             container.database.activityLogDao().trimTo(ActivityLogger.KEEP)
             container.database.inferenceCallDao().trimTo(RoomInferenceRecorder.KEEP)
+
+            // And by age, not only by count. Both of these tables quote the
+            // message text they describe, so a count-only cap let excerpts sit
+            // on the device long after the raw captures they came from were
+            // purged - which is not what the retention screen says happens.
+            container.database.activityLogDao().purgeOlderThan(cutoff)
+            container.database.inferenceCallDao().purgeOlderThan(cutoff)
             Result.success()
         } catch (t: Throwable) {
             container.logger.write(Stage.WORKER, LogLevel.ERROR, "retention worker failed", t.toString())

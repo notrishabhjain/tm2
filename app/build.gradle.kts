@@ -165,6 +165,9 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.security.crypto)
+    // Also brings androidx.fragment, which MainActivity extends so the
+    // biometric prompt has somewhere to attach.
+    implementation(libs.androidx.biometric)
     implementation(libs.androidx.documentfile)
 
     implementation(libs.kotlinx.coroutines.android)

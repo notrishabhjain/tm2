@@ -4,7 +4,7 @@ import android.content.Intent
 import androidx.core.content.FileProvider
 import java.io.File
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
@@ -21,7 +21,10 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.fragment.app.FragmentActivity
 import com.taskmind.di.AppContainer
+import com.taskmind.security.AppLock
+import com.taskmind.security.LockGate
 import com.taskmind.widget.TasksWidget
 import com.taskmind.work.Scheduler
 import com.taskmind.ui.shell.MainShell
@@ -58,34 +61,46 @@ import com.taskmind.ui.transparency.HowItWorksViewModel
 import com.taskmind.ui.theme.TaskMindTheme
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+/**
+ * A FragmentActivity rather than a ComponentActivity, and only for one reason:
+ * androidx.biometric raises its prompt through a headless fragment, so the app
+ * lock does not work without a fragment host. FragmentActivity extends
+ * ComponentActivity, so setContent, enableEdgeToEdge and lifecycleScope all
+ * behave exactly as before.
+ */
+class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        applyScreenPrivacy()
 
         val container = AppContainer.get(this)
         val startRoute = intent?.getStringExtra(EXTRA_ROUTE)
 
         setContent {
             TaskMindTheme {
-                var onboardingChecked by remember { mutableStateOf(false) }
-                var needsOnboarding by remember { mutableStateOf(false) }
+                // Outside the onboarding check on purpose: the lock must be the
+                // first thing on screen, before anything reads the database.
+                LockGate {
+                    var onboardingChecked by remember { mutableStateOf(false) }
+                    var needsOnboarding by remember { mutableStateOf(false) }
 
-                LaunchedEffect(Unit) {
-                    val settings = container.settingsRepository.current()
-                    needsOnboarding = !settings.onboardingComplete
-                    onboardingChecked = true
+                    LaunchedEffect(Unit) {
+                        val settings = container.settingsRepository.current()
+                        needsOnboarding = !settings.onboardingComplete
+                        onboardingChecked = true
+                    }
+
+                    if (onboardingChecked) {
+                        TaskMindNavHost(
+                            startOnboarding = needsOnboarding,
+                            startRoute = startRoute,
+                            onShareText = ::shareText,
+                            onShareFile = ::shareFile,
+                        )
+                    }
                 }
-
-                if (!onboardingChecked) return@TaskMindTheme
-
-                TaskMindNavHost(
-                    startOnboarding = needsOnboarding,
-                    startRoute = startRoute,
-                    onShareText = ::shareText,
-                    onShareFile = ::shareFile,
-                )
             }
         }
 
@@ -109,6 +124,25 @@ class MainActivity : ComponentActivity() {
      * a call into the widget from the intake funnel, and the funnel is not
      * mine to touch.
      */
+    /**
+     * Re-read on every resume, so turning the setting on in Settings takes
+     * effect without restarting the app. FLAG_SECURE is what keeps the task
+     * list out of the recents thumbnail and out of screenshots; it can only be
+     * set on the window, which is why it lives here and not in Compose.
+     */
+    override fun onResume() {
+        super.onResume()
+        applyScreenPrivacy()
+    }
+
+    private fun applyScreenPrivacy() {
+        if (AppLock.hideContent(this) || AppLock.enabled(this)) {
+            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
     override fun onStop() {
         super.onStop()
         TasksWidget.refresh(this)

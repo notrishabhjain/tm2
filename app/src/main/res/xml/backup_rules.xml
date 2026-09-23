@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and below. The Android 12+ rules are in data_extraction_rules.xml. -->
 <full-backup-content>
-    <!-- API keys are keystore-bound and would not survive a restore anyway;
-         backing up the ciphertext would only produce a confusing failure. -->
     <exclude domain="sharedpref" path="taskmind_secrets.xml" />
     <exclude domain="sharedpref" path="taskmind_secrets_plain.xml" />
+    <exclude domain="sharedpref" path="taskmind_sync_secrets.xml" />
+    <exclude domain="sharedpref" path="taskmind_sync_secrets_plain.xml" />
+    <exclude domain="database" path="taskmind.db" />
+    <exclude domain="file" path="datastore" />
 </full-backup-content>
