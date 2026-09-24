@@ -76,6 +76,7 @@ import com.taskmind.ui.components.DateFormats
 import com.taskmind.ui.design.CountPill
 import com.taskmind.ui.design.Empty
 import com.taskmind.prefs.UiPreferences
+import com.taskmind.profiles.Profile
 import com.taskmind.tagging.AutoTagger
 import com.taskmind.ui.design.MetaChip
 import com.taskmind.ui.design.Radius
@@ -225,6 +226,8 @@ fun TaskListScreen(
             if (state.pendingReviewCount > 0) {
                 ReviewBanner(count = state.pendingReviewCount, onClick = onOpenReview)
             }
+
+            ProfileChips(selected = state.profile, onSelect = viewModel::setProfile)
 
             ViewChips(state = state, onSelect = viewModel::setView)
 
@@ -679,6 +682,37 @@ private fun SearchField(query: String, onQuery: (String) -> Unit, onClose: () ->
             .fillMaxWidth()
             .padding(horizontal = Space.edge, vertical = Space.snug),
     )
+}
+
+/**
+ * Work, personal, or everything.
+ *
+ * Shown only once something has actually been classified - a switch between
+ * two identical lists is furniture. Settings -> People and chats is where the
+ * classifying happens, and the row appears the moment the first name is sorted.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProfileChips(selected: Profile?, onSelect: (Profile?) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = Space.step, end = Space.step, top = Space.snug),
+        horizontalArrangement = Arrangement.spacedBy(Space.snug),
+    ) {
+        FilterChip(
+            selected = selected == null,
+            onClick = { onSelect(null) },
+            label = { Text("Everything") },
+        )
+        Profile.entries.forEach { profile ->
+            FilterChip(
+                selected = selected == profile,
+                onClick = { onSelect(if (selected == profile) null else profile) },
+                label = { Text(profile.label) },
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

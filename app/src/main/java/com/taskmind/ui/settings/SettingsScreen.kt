@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.Gesture
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Speed
@@ -137,6 +138,8 @@ fun SettingsScreen(
 
                 SettingsPage.GROUPS -> GroupSection(settings, viewModel)
 
+                SettingsPage.PROFILES -> ProfileSection()
+
                 SettingsPage.PROVIDERS -> {
                     LlmSection(settings, ui, viewModel)
                     AsrSection(settings, ui, viewModel)
@@ -214,6 +217,11 @@ enum class SettingsPage(val title: String, val summary: String, val icon: ImageV
         "Your name and group chats",
         "Stop colleagues' requests to each other becoming your tasks",
         Icons.Outlined.Groups,
+    ),
+    PROFILES(
+        "People and chats",
+        "Sort who is work and who is personal, and get two lists",
+        Icons.Outlined.People,
     ),
     PROVIDERS(
         "AI providers",
