@@ -24,10 +24,27 @@
   --p-low: #5f6b67;
 
   --radius: 12px;
+  --radius-sm: 9px;
+  --radius-pill: 999px;
+
+  /* Two shadows, not five. One lifts a surface off the page, the other says
+     "this is the thing you are pointing at". More levels than that and the
+     hierarchy stops being readable. */
+  --shadow: 0 1px 2px rgba(16, 18, 17, 0.04), 0 1px 3px rgba(16, 18, 17, 0.06);
+  --shadow-lift: 0 2px 4px rgba(16, 18, 17, 0.05), 0 8px 20px rgba(16, 18, 17, 0.08);
+
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --fast: 120ms;
+  --slow: 220ms;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    /* Shadows do almost nothing on a dark background; a hairline does the
+       lifting instead, so they are dialled right down rather than left to
+       look like smudges. */
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-lift: 0 4px 16px rgba(0, 0, 0, 0.5);
     --bg: #131312;
     --surface: #1d1d1b;
     --surface-2: #262624;
@@ -51,17 +68,66 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* One visible focus treatment for everything, rather than the browser's
+   default on some elements and nothing on the ones styled as buttons. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+button:focus:not(:focus-visible) { outline: none; }
+
+/* Everything that responds to a pointer says so, and says it quickly. 120ms
+   reads as immediate; anything slower feels like the page is thinking. */
+button, input, textarea, select, .card, .tagchip, .tab, .btn {
+  transition:
+    background-color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease),
+    color var(--fast) var(--ease),
+    box-shadow var(--slow) var(--ease),
+    transform var(--fast) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .shell { max-width: 860px; margin: 0 auto; padding: 24px 20px 80px; }
 
+/* A phone holds this page too - the link goes in a chat as often as it gets
+   bookmarked on a laptop - so the gutters come in rather than staying at
+   desktop width on a 390px screen. */
+@media (max-width: 560px) {
+  .shell { padding: 16px 14px 64px; }
+  .fact { flex-direction: column; gap: 0; }
+  .fact dt { width: auto; flex: none; }
+  .detail { padding-left: 15px; }
+  .editor { padding-left: 15px; }
+  .actions .btn { flex: 1 1 auto; }
+}
+
 /* -- header ------------------------------------------------------------- */
 
+/* Sticky, because the sign-out and the account you are signed in as are the
+   two things you look for after scrolling, and scrolling back up to find them
+   is the kind of small friction that makes a page feel unfinished. */
 header.top {
+  position: sticky; top: 0; z-index: 10;
   display: flex; align-items: center; gap: 16px;
-  padding-bottom: 20px; border-bottom: 1px solid var(--line); margin-bottom: 8px;
+  padding: 14px 0 16px; margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 header.top h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
 header.top .spacer { flex: 1; }
@@ -83,22 +149,31 @@ header.top .spacer { flex: 1; }
 
 /* -- sections and rows -------------------------------------------------- */
 
+/* Sticky too, one step below the header: scrolling a long agenda without
+   knowing whether you are still in Overdue is the main way this page gets
+   misread. */
 .group-head {
+  position: sticky; top: 52px; z-index: 5;
   display: flex; align-items: center; gap: 9px;
-  margin: 28px 0 8px; font-size: 12px; font-weight: 600;
+  margin: 28px 0 8px; padding: 6px 0; font-size: 12px; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .group-head.alert { color: var(--danger); }
 
 .card {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius); overflow: hidden;
+  box-shadow: var(--shadow);
 }
 
 .row-wrap { border-top: 1px solid var(--line); }
 .row-wrap:first-child { border-top: 0; }
 
 .row { display: flex; gap: 11px; align-items: flex-start; padding: 12px 15px; }
+.row-wrap:hover { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
 .row.static { border-top: 1px solid var(--line); align-items: center; }
 .row.static:first-child { border-top: 0; }
 
@@ -125,7 +200,7 @@ header.top .spacer { flex: 1; }
 .bar.MEDIUM { background: var(--p-medium); }
 .bar.LOW    { background: var(--p-low); }
 
-.title { display: block; font-weight: 450; }
+.title { display: block; font-weight: 450; letter-spacing: -0.005em; }
 .title.done { color: var(--text-dim); text-decoration: line-through; }
 
 .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -166,7 +241,8 @@ header.top .spacer { flex: 1; }
   background: var(--surface); color: var(--text);
   border: 1px solid var(--line); border-radius: 8px;
 }
-.btn:hover { border-color: var(--text-dim); }
+.btn:hover { border-color: var(--text-dim); box-shadow: var(--shadow); }
+.btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .btn.strong { background: var(--text); color: var(--bg); border-color: var(--text); }
 .btn.danger { color: var(--danger); }
@@ -210,6 +286,7 @@ textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset:
   border: 1px solid var(--line);
 }
 .tagchip:hover { border-color: var(--text-dim); color: var(--text); }
+.tagchip:active { transform: translateY(1px); }
 .tagchip.on { background: var(--text); color: var(--bg); border-color: var(--text); }
 
 /* Derived tags read differently from ones you typed: no hash, tinted. */
@@ -221,6 +298,7 @@ textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset:
 .empty strong { display: block; color: var(--text); margin-bottom: 6px; font-weight: 550; }
 
 .login { max-width: 360px; margin: 14vh auto; padding: 0 20px; }
+@media (max-width: 560px) { .login { margin: 8vh auto; } }
 .login h1 { font-size: 21px; margin: 0 0 6px; }
 .login p.sub { color: var(--text-dim); margin: 0 0 24px; font-size: 14px; }
 
@@ -239,6 +317,8 @@ button.primary {
   background: var(--text); color: var(--bg); border: 0; border-radius: 9px;
 }
 button.primary:disabled { opacity: 0.5; cursor: default; }
+button.primary:not(:disabled):hover { box-shadow: var(--shadow-lift); }
+button.primary:not(:disabled):active { transform: translateY(1px); }
 
 button.link {
   background: none; border: 0; color: var(--text-dim);

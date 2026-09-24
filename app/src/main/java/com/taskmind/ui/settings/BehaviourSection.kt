@@ -93,6 +93,8 @@ fun BehaviourSection() {
     }
 
     WidgetSection()
+
+    AppearanceSection()
 }
 
 /**

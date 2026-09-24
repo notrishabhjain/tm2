@@ -254,8 +254,8 @@ enum class SettingsPage(val title: String, val summary: String, val icon: ImageV
         Icons.Outlined.Science,
     ),
     BEHAVIOUR(
-        "Gestures and reminders",
-        "Swipe actions, and the standing notification for today",
+        "Appearance and gestures",
+        "Theme, swipe actions, the widget, and the standing notification",
         Icons.Outlined.Gesture,
     ),
     WEB(
