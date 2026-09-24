@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="TaskMind">
+  <!--
+    The browser-tab mark. Geometry matches web/tools/make-icons.py, which
+    rasterises the same drawing for Apple's touch icon - Apple ignores SVG.
+
+    Deliberately plain. A tab favicon is 16 CSS pixels; anything with a second
+    element in it turns to mush at that size, so this is one shape and one
+    stroke. The green is the Android theme's primary, so the tab and the phone
+    read as the same app.
+  -->
+  <rect width="64" height="64" rx="14" fill="#1D5D4B"/>
+  <path d="M17.3 33.3 L28.2 44.2 L48 21.8"
+        fill="none" stroke="#FFFFFF" stroke-width="7.4"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

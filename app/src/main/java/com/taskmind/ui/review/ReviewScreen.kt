@@ -9,15 +9,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -56,6 +60,7 @@ import com.taskmind.ui.components.StatusPill
 fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
     val pending by viewModel.items.collectAsStateWithLifecycle()
     val dismissed by viewModel.dismissed.collectAsStateWithLifecycle()
+    val stale by viewModel.stale.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showingDismissed by remember { mutableStateOf(false) }
@@ -103,6 +108,16 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
                 )
             }
 
+            // Only on the waiting tab, and only when there is something to
+            // clear. A button that says "0 items" is furniture.
+            if (!showingDismissed && stale.count > 0) {
+                StaleBanner(
+                    count = stale.count,
+                    days = stale.days,
+                    onClear = { viewModel.clearStale() },
+                )
+            }
+
             if (items.isEmpty()) {
                 EmptyState(
                     title = if (showingDismissed) "Nothing dismissed" else "Nothing to review",
@@ -133,6 +148,53 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * "These have been waiting a week. Clear them?"
+ *
+ * The retention worker does this on its own schedule, so the button is not
+ * the only way it happens - it is the way it happens NOW, which is what you
+ * want when you open the inbox and find a backlog rather than a decision.
+ *
+ * It says how many and where they go, because a button that silently empties
+ * a queue is one people are right not to press.
+ */
+@Composable
+private fun StaleBanner(count: Int, days: Int, onClear: () -> Unit) {
+    Card(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Row(
+            Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.Schedule,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (count == 1) "1 item has been waiting over $days days" else "$count items have been waiting over $days days",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Text(
+                    "Clearing moves them to Dismissed, where you can still put any of them back.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            FilledTonalButton(onClick = onClear) { Text("Clear") }
         }
     }
 }
