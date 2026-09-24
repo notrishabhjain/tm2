@@ -1,11 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nothing that identifies you or lets anything sign in as you leaves this
+  device through a backup or a phone-to-phone transfer.
+
+  The <device-transfer> block matters on its own. android:allowBackup="false"
+  in the manifest stops cloud backup, but direct transfer to a new phone is
+  governed here, and the sync credentials were added to the app long after
+  these rules were first written - so the Supabase refresh token, which is
+  enough to read every task in the account, was being carried across.
+-->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="taskmind_secrets.xml" />
         <exclude domain="sharedpref" path="taskmind_secrets_plain.xml" />
+        <exclude domain="sharedpref" path="taskmind_sync_secrets.xml" />
+        <exclude domain="sharedpref" path="taskmind_sync_secrets_plain.xml" />
+        <exclude domain="database" path="taskmind.db" />
+        <exclude domain="file" path="datastore" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="taskmind_secrets.xml" />
         <exclude domain="sharedpref" path="taskmind_secrets_plain.xml" />
+        <exclude domain="sharedpref" path="taskmind_sync_secrets.xml" />
+        <exclude domain="sharedpref" path="taskmind_sync_secrets_plain.xml" />
+        <exclude domain="database" path="taskmind.db" />
+        <exclude domain="file" path="datastore" />
     </device-transfer>
 </data-extraction-rules>

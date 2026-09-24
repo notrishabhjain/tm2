@@ -37,6 +37,8 @@ data class MessageInput(
     /** Carried so the model call can be traced back to the capture it came from. */
     val rawCaptureId: String? = null,
     val sourceLabel: String? = null,
+    /** What the user is called in chats, so the model can tell whose task this is. */
+    val userNames: Set<String> = emptySet(),
 )
 
 data class TranscriptInput(
@@ -112,6 +114,7 @@ class CloudTaskExtractor(
             senderKey = input.senderKey,
             groupName = input.groupName,
             messageText = input.text,
+            userNames = input.userNames,
         )
         val result = llm.complete(
             config = config,

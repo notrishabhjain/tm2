@@ -95,13 +95,13 @@ private class TasksWidgetFactory(private val context: Context) : RemoteViewsServ
         views.setOnClickFillInIntent(
             R.id.item_root,
             Intent()
-                .putExtra(TasksWidget.EXTRA_ROW_OP, TasksWidget.OP_OPEN)
+                .putExtra(TasksWidgetActions.EXTRA_ROW_OP, TasksWidgetActions.OP_OPEN)
                 .putExtra(MainActivity.EXTRA_ROUTE, Routes.taskDetail(task.id)),
         )
         views.setOnClickFillInIntent(
             R.id.item_done,
             Intent()
-                .putExtra(TasksWidget.EXTRA_ROW_OP, TasksWidget.OP_DONE)
+                .putExtra(TasksWidgetActions.EXTRA_ROW_OP, TasksWidgetActions.OP_DONE)
                 .putExtra(TasksWidget.EXTRA_TASK_ID, task.id),
         )
         return views

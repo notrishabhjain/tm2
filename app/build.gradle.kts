@@ -11,8 +11,8 @@ plugins {
 
 // versionCode / versionName are the contract the self-updater (spec S19) checks
 // against update.json. Bump both together.
-val appVersionCode = 16
-val appVersionName = "1.15.0"
+val appVersionCode = 17
+val appVersionName = "1.16.0"
 
 /**
  * Release signing.
@@ -165,6 +165,9 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.security.crypto)
+    // Also brings androidx.fragment, which MainActivity extends so the
+    // biometric prompt has somewhere to attach.
+    implementation(libs.androidx.biometric)
     implementation(libs.androidx.documentfile)
 
     implementation(libs.kotlinx.coroutines.android)

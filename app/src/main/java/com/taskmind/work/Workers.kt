@@ -255,12 +255,38 @@ class RetentionWorker(context: Context, params: WorkerParameters) : CoroutineWor
             }
 
             container.database.fingerprintDao().purgeOlderThan(System.currentTimeMillis() - SEVEN_DAYS)
+
+            // Candidates nobody answered. Dismissed rather than deleted, so the
+            // Dismissed tab can hand one back - the inbox gets cleared without
+            // a real commitment being able to disappear for good.
+            if (settings.reviewExpiryDays > 0) {
+                val stale = System.currentTimeMillis() - settings.reviewExpiryDays * DAY_MILLIS
+                val dao = container.database.reviewItemDao()
+                val count = dao.countPendingOlderThan(stale)
+                if (count > 0) {
+                    dao.expirePending(stale)
+                    container.logger.write(
+                        Stage.SYSTEM,
+                        LogLevel.INFO,
+                        "dismissed $count review item(s) nobody answered",
+                        "older than ${settings.reviewExpiryDays} days; recoverable from Review -> Dismissed",
+                    )
+                }
+            }
+
             container.database.reviewItemDao().purgeResolved(cutoff)
             // One source of truth for the cap: the logger's own constant. These
             // two drifting apart is how the log ends up shorter than the code
             // that writes it thinks it is.
             container.database.activityLogDao().trimTo(ActivityLogger.KEEP)
             container.database.inferenceCallDao().trimTo(RoomInferenceRecorder.KEEP)
+
+            // And by age, not only by count. Both of these tables quote the
+            // message text they describe, so a count-only cap let excerpts sit
+            // on the device long after the raw captures they came from were
+            // purged - which is not what the retention screen says happens.
+            container.database.activityLogDao().purgeOlderThan(cutoff)
+            container.database.inferenceCallDao().purgeOlderThan(cutoff)
             Result.success()
         } catch (t: Throwable) {
             container.logger.write(Stage.WORKER, LogLevel.ERROR, "retention worker failed", t.toString())

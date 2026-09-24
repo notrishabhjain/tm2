@@ -26,6 +26,19 @@ class SyncSecrets(context: Context) {
     private val prefs: SharedPreferences by lazy { openOrRecreate() }
 
     /**
+     * True when the keystore-backed store could not be opened and the keys are
+     * sitting in a plain file instead.
+     *
+     * It is surfaced rather than swallowed. The fallback exists so the app does
+     * not boot-loop on a restored phone, but silently downgrading how somebody's
+     * credentials are stored and saying nothing is not a trade the user got to
+     * make. Settings shows a warning when this is true.
+     */
+    @Volatile
+    var usingPlainFallback: Boolean = false
+        private set
+
+    /**
      * After a restore to a new device the master key is gone and the old
      * ciphertext is unreadable. Wipe rather than crash on every launch: the
      * user signs in again, which is a minor annoyance, where a boot loop is
@@ -38,6 +51,7 @@ class SyncSecrets(context: Context) {
         try {
             create()
         } catch (_: Throwable) {
+            usingPlainFallback = true
             appContext.getSharedPreferences(FALLBACK_FILE, Context.MODE_PRIVATE)
         }
     }

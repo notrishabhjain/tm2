@@ -9,6 +9,10 @@ import com.taskmind.data.db.entity.TagEntity
 import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.di.AppContainer
 import com.taskmind.prefs.UiPreferences
+import com.taskmind.tagging.AutoTagger
+import com.taskmind.profiles.Profile
+import com.taskmind.profiles.ProfileRules
+import com.taskmind.profiles.ProfileStore
 import com.taskmind.intake.IntakeResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,6 +39,19 @@ data class TaskListUiState(
     val searching: Boolean = false,
     /** Tags the app worked out for itself, commonest first. */
     val tagCloud: List<com.taskmind.tagging.AutoTagger.Tag> = emptyList(),
+    /**
+     * Every person and chat that has ever produced a task, commonest first.
+     *
+     * Deliberately built BEFORE the profile filter and without the tag row's
+     * cap: this is what the classification screen lists, and a page for
+     * sorting names that only showed names already sorted into the profile you
+     * are looking at would be unusable.
+     */
+    val allSubjects: List<String> = emptyList(),
+    /** Which half of your life you are looking at. Null is everything. */
+    val profile: Profile? = null,
+    /** Who is work and who is personal. Derived filtering needs it on hand. */
+    val profileBook: ProfileRules.Book = ProfileRules.Book(),
     /** Groups of related tasks; empty unless [group] is RELATED. */
     val bundles: List<TaskBundles.Group> = emptyList(),
     /** What bundling left over. Equals [tasks] when bundling is off. */
@@ -52,6 +69,29 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
 
     private val filters = MutableStateFlow(TaskListUiState())
 
+    private val profiles = ProfileStore(container.context)
+
+    init {
+        // Folded into the filter state rather than combined separately, so
+        // there is still exactly one place where the visible list is decided.
+        // Counts, the tag row and the bundles all have to agree with it, and
+        // they only can if they are computed from the same list.
+        viewModelScope.launch {
+            profiles.state.collect { p ->
+                filters.update { it.copy(profile = p.viewing, profileBook = p.book) }
+            }
+        }
+    }
+
+    fun setProfile(profile: Profile?) {
+        viewModelScope.launch { profiles.setViewing(profile) }
+    }
+
+    /** Files everything from this person or chat under one side of your life. */
+    fun classify(subject: String, profile: Profile?) {
+        viewModelScope.launch { profiles.classify(subject, profile) }
+    }
+
     private val _undo = MutableStateFlow<UndoAction?>(null)
     val undo: StateFlow<UndoAction?> = _undo.asStateFlow()
 
@@ -61,8 +101,21 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
         container.taskRepository.observeTags(),
         container.taskRepository.observePendingReviewCount(),
         filters,
-    ) { tasks, projects, tags, reviewCount, current ->
+    ) { allTasks, projects, tags, reviewCount, current ->
         val now = System.currentTimeMillis()
+
+        // The profile filter comes first, before everything else, because a
+        // task outside the profile you are looking at should not be counted,
+        // should not put a tag on the filter row, and should not pull another
+        // task into a bundle. An unclassified task is in every profile - see
+        // ProfileRules.matches for why that matters.
+        val tasks = if (current.profile == null) {
+            allTasks
+        } else {
+            allTasks.filter {
+                ProfileRules.matches(TaskFilters.autoTags(it), current.profileBook, current.profile)
+            }
+        }
 
         // The tasks this view can show, before search, project or tag. The
         // filter row is built from these rather than from every task in the
@@ -105,6 +158,10 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             unbundled = loose,
             counts = TaskFilters.counts(tasks, now),
             tagCloud = TaskFilters.tagCloud(scope, liveTag),
+            allSubjects = TaskFilters.tagCloud(allTasks, limit = Int.MAX_VALUE)
+                .filter { it.kind == AutoTagger.Kind.PERSON || it.kind == AutoTagger.Kind.GROUP }
+                .map { it.value }
+                .distinctBy { it.lowercase() },
             projects = projects,
             tags = tags,
             pendingReviewCount = reviewCount,

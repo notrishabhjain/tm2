@@ -46,6 +46,15 @@ class TaskRepository(
     fun observeProjects(): Flow<List<ProjectEntity>> = projectDao.observeAll()
     fun observeTags(): Flow<List<TagEntity>> = tagDao.observeAll()
     fun observePendingReview() = reviewItemDao.observePending()
+
+    /** Capped: this is a "did the app get that one wrong" list, not an archive. */
+    fun observeDismissedReview(limit: Int = 50) = reviewItemDao.observeDismissed(limit)
+
+    /** Puts an auto-dismissed candidate back in the queue. */
+    suspend fun restoreReviewItem(id: String) {
+        reviewItemDao.setState(id, ReviewState.PENDING)
+    }
+
     fun observePendingReviewCount() = reviewItemDao.observePendingCount()
     fun observeCalls(limit: Int = 100) = callRecordDao.observeRecent(limit)
 

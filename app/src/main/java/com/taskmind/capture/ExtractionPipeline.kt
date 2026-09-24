@@ -119,7 +119,8 @@ class ExtractionPipeline(
         }
 
         return when (capture.sourceType) {
-            SourceType.NOTIFICATION -> processMessage(capture, text, settings.verifyPass, now, todayKey)
+            SourceType.NOTIFICATION ->
+                processMessage(capture, text, settings.verifyPass, settings.ownNames, now, todayKey)
             SourceType.CALL, SourceType.CLIPBOARD -> processTranscript(capture, text, settings.verifyPass, now, todayKey)
             SourceType.MANUAL, SourceType.REVIEW -> {
                 rawCaptureDao.setState(capture.id, CaptureState.DONE)
@@ -134,6 +135,8 @@ class ExtractionPipeline(
         capture: RawCaptureEntity,
         text: String,
         verifyPass: Boolean,
+        /** Passed down rather than re-read: the caller already has the settings. */
+        userNames: Set<String>,
         now: Long,
         todayKey: String,
     ): Outcome {
@@ -146,6 +149,7 @@ class ExtractionPipeline(
             occurredAt = capture.occurredAt,
             rawCaptureId = capture.id,
             sourceLabel = capture.sourceLabel,
+            userNames = userNames,
         )
 
         logger.write(

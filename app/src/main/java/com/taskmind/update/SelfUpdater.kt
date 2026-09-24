@@ -54,8 +54,23 @@ class SelfUpdater(
 
     fun isNewer(manifest: Manifest): Boolean = manifest.versionCode > installedVersionCode
 
+    /**
+     * HTTPS only, for the manifest and for the APK it names.
+     *
+     * The platform already blocks cleartext, and Android refuses an update
+     * signed with a different key - so this is the third lock on the same
+     * door. It is here anyway because the manifest URL is a field the user
+     * types into, and a check that says WHY beats a download that fails with
+     * a network error nobody can interpret.
+     */
+    private fun isHttps(url: String): Boolean = url.trim().startsWith("https://", ignoreCase = true)
+
     suspend fun fetchManifest(url: String): Manifest? = withContext(Dispatchers.IO) {
         if (url.isBlank()) return@withContext null
+        if (!isHttps(url)) {
+            logger.write(Stage.UPDATE, LogLevel.WARN, "update manifest URL is not https", url)
+            return@withContext null
+        }
         try {
             val request = Request.Builder().url(url).get().build()
             http.newCall(request).execute().use { response ->
@@ -91,6 +106,9 @@ class SelfUpdater(
      */
     suspend fun download(manifest: Manifest, onProgress: (Float) -> Unit): DownloadResult =
         withContext(Dispatchers.IO) {
+            if (!isHttps(manifest.apkUrl)) {
+                return@withContext DownloadResult.Failed("The update points at a non-HTTPS address and was not downloaded.")
+            }
             val dir = File(context.cacheDir, "updates").apply { mkdirs() }
             val target = File(dir, "taskmind-${manifest.versionName}.apk")
             try {

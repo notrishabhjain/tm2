@@ -38,9 +38,12 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Gesture
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Visibility
@@ -133,6 +136,10 @@ fun SettingsScreen(
                 SettingsPage.CAPTURE ->
                     CaptureSection(settings, ui, viewModel) { dirLauncher.launch(null) }
 
+                SettingsPage.GROUPS -> GroupSection(settings, viewModel)
+
+                SettingsPage.PROFILES -> ProfileSection()
+
                 SettingsPage.PROVIDERS -> {
                     LlmSection(settings, ui, viewModel)
                     AsrSection(settings, ui, viewModel)
@@ -149,6 +156,8 @@ fun SettingsScreen(
                         importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                     }
                 }
+
+                SettingsPage.SECURITY -> SecuritySection()
 
                 SettingsPage.TRANSPARENCY -> TransparencySection(
                     onOpenHowItWorks,
@@ -204,6 +213,16 @@ enum class SettingsPage(val title: String, val summary: String, val icon: ImageV
         "Apps, calls, minimum call length, recordings folder",
         Icons.Outlined.Visibility,
     ),
+    GROUPS(
+        "Your name and group chats",
+        "Stop colleagues' requests to each other becoming your tasks",
+        Icons.Outlined.Groups,
+    ),
+    PROFILES(
+        "People and chats",
+        "Sort who is work and who is personal, and get two lists",
+        Icons.Outlined.People,
+    ),
     PROVIDERS(
         "AI providers",
         "Keys, models and connection tests for text and speech",
@@ -224,14 +243,19 @@ enum class SettingsPage(val title: String, val summary: String, val icon: ImageV
         "Consent, how long content is kept, export and erase",
         Icons.Outlined.Lock,
     ),
+    SECURITY(
+        "Lock and screenshots",
+        "Require your fingerprint, and keep TaskMind out of the app switcher",
+        Icons.Outlined.Shield,
+    ),
     TRANSPARENCY(
         "How it works",
         "Prompts, model calls, recordings and the diagnostic report",
         Icons.Outlined.Science,
     ),
     BEHAVIOUR(
-        "Gestures and reminders",
-        "Swipe actions, and the standing notification for today",
+        "Appearance and gestures",
+        "Theme, swipe actions, the widget, and the standing notification",
         Icons.Outlined.Gesture,
     ),
     WEB(
@@ -757,6 +781,27 @@ private fun RetentionSection(settings: Settings, viewModel: SettingsViewModel, o
             checked = settings.deleteRecordingsAfterTranscription,
             onCheckedChange = viewModel::setDeleteRecordings,
         )
+
+        Spacer(Modifier.height(16.dp))
+        Text("Clear unanswered review items after", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Settings.REVIEW_EXPIRY_CHOICES.forEach { days ->
+                FilterChip(
+                    selected = settings.reviewExpiryDays == days,
+                    onClick = { viewModel.setReviewExpiryDays(days) },
+                    label = { Text(if (days == 0) "Never" else "$days days") },
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "They move to Review \u2192 Dismissed rather than being deleted, so one you would " +
+                "have accepted can still be put back. Nothing in the review inbox expired before " +
+                "this, so the queue only ever grew.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
         Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = onErase) { Text("Erase all captured content") }
     }

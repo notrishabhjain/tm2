@@ -13,6 +13,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.taskmind.core.AsrProvider
+import com.taskmind.core.PreFilter
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -40,6 +41,10 @@ class SettingsRepository(private val context: Context) {
         val asrLanguage = stringPreferencesKey("asr_language")
 
         val allowedPackages = stringSetPreferencesKey("allowed_packages")
+        val ownNames = stringSetPreferencesKey("own_names")
+        val groupPolicy = stringPreferencesKey("group_policy")
+        val groupsAlwaysWatch = stringSetPreferencesKey("groups_always_watch")
+        val groupsNeverWatch = stringSetPreferencesKey("groups_never_watch")
         val captureNotifications = booleanPreferencesKey("capture_notifications")
         val captureCalls = booleanPreferencesKey("capture_calls")
         val minCallDuration = longPreferencesKey("min_call_duration")
@@ -58,6 +63,7 @@ class SettingsRepository(private val context: Context) {
         val maxLlmCallsPerPackage = intPreferencesKey("max_llm_calls_per_package")
         val wifiOnlyAsr = booleanPreferencesKey("wifi_only_asr")
 
+        val reviewExpiryDays = intPreferencesKey("review_expiry_days")
         val retentionDays = intPreferencesKey("retention_days")
         val deleteRecordings = booleanPreferencesKey("delete_recordings_after_transcription")
 
@@ -101,6 +107,12 @@ class SettingsRepository(private val context: Context) {
             asrModel = this[K.asrModel] ?: d.asrModel,
             asrLanguage = this[K.asrLanguage] ?: d.asrLanguage,
             allowedPackages = this[K.allowedPackages] ?: d.allowedPackages,
+            ownNames = this[K.ownNames] ?: d.ownNames,
+            // A stored name that no longer matches an entry falls back rather
+            // than crashing - a saved value can outlive the enum it came from.
+            groupPolicy = PreFilter.GroupPolicy.byName(this[K.groupPolicy]) ?: d.groupPolicy,
+            groupsAlwaysWatch = this[K.groupsAlwaysWatch] ?: d.groupsAlwaysWatch,
+            groupsNeverWatch = this[K.groupsNeverWatch] ?: d.groupsNeverWatch,
             captureNotifications = this[K.captureNotifications] ?: d.captureNotifications,
             captureCalls = this[K.captureCalls] ?: d.captureCalls,
             minCallDurationSeconds = this[K.minCallDuration] ?: d.minCallDurationSeconds,
@@ -116,6 +128,7 @@ class SettingsRepository(private val context: Context) {
             maxAsrMinutesPerDay = this[K.maxAsrMinutesPerDay] ?: d.maxAsrMinutesPerDay,
             maxLlmCallsPerPackagePerDay = this[K.maxLlmCallsPerPackage] ?: d.maxLlmCallsPerPackagePerDay,
             wifiOnlyAsr = this[K.wifiOnlyAsr] ?: d.wifiOnlyAsr,
+            reviewExpiryDays = this[K.reviewExpiryDays] ?: d.reviewExpiryDays,
             retentionDays = this[K.retentionDays] ?: d.retentionDays,
             deleteRecordingsAfterTranscription = this[K.deleteRecordings] ?: d.deleteRecordingsAfterTranscription,
             updateManifestUrl = this[K.updateManifestUrl] ?: d.updateManifestUrl,
@@ -142,6 +155,24 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setAllowedPackages(packages: Set<String>) = edit { it[K.allowedPackages] = packages }
+
+    /** Trimmed and de-duplicated here so the matcher never has to. */
+    suspend fun setOwnNames(names: Set<String>) = edit { prefs ->
+        prefs[K.ownNames] = names.map { it.trim() }.filter { it.length >= 2 }.toSet()
+    }
+
+    suspend fun setGroupPolicy(policy: PreFilter.GroupPolicy) = edit { it[K.groupPolicy] = policy.name }
+
+    suspend fun setGroupOverride(groupName: String, policy: PreFilter.GroupPolicy?) = edit { prefs ->
+        val name = groupName.trim()
+        if (name.isEmpty()) return@edit
+        val always = (prefs[K.groupsAlwaysWatch] ?: emptySet()).filterNot { it.equals(name, true) }.toSet()
+        val never = (prefs[K.groupsNeverWatch] ?: emptySet()).filterNot { it.equals(name, true) }.toSet()
+        // Removed from both first, so a group can never be in two lists at once
+        // and the order the two are checked in stops mattering.
+        prefs[K.groupsAlwaysWatch] = if (policy == PreFilter.GroupPolicy.EVERYTHING) always + name else always
+        prefs[K.groupsNeverWatch] = if (policy == PreFilter.GroupPolicy.NEVER) never + name else never
+    }
 
     suspend fun togglePackage(packageName: String, allowed: Boolean) = edit { prefs ->
         val current = prefs[K.allowedPackages] ?: Settings.DEFAULT.allowedPackages
@@ -194,6 +225,8 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setWifiOnlyAsr(value: Boolean) = edit { it[K.wifiOnlyAsr] = value }
+    suspend fun setReviewExpiryDays(days: Int) = edit { it[K.reviewExpiryDays] = days }
+
     suspend fun setRetentionDays(days: Int) = edit { it[K.retentionDays] = days }
     suspend fun setDeleteRecordings(value: Boolean) = edit { it[K.deleteRecordings] = value }
     suspend fun setUpdateManifestUrl(url: String) = edit { it[K.updateManifestUrl] = url.trim() }

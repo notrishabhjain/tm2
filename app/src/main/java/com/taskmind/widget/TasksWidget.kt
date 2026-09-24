@@ -67,42 +67,6 @@ class TasksWidget : AppWidgetProvider() {
 
         val app = context.applicationContext
 
-        // Acted on before the redraw below, so the redraw already reflects it
-        // and the row disappears in one step rather than two.
-        when (intent.action) {
-            ACTION_COMPLETE -> {
-                val taskId = intent.getStringExtra(EXTRA_TASK_ID)
-                if (!taskId.isNullOrBlank()) {
-                    completeAsync(app, taskId)
-                    return
-                }
-            }
-
-            ACTION_ROW -> {
-                // One template serves the whole list, so the row says in an
-                // extra which half of itself was tapped.
-                when (intent.getStringExtra(EXTRA_ROW_OP)) {
-                    OP_DONE -> {
-                        val taskId = intent.getStringExtra(EXTRA_TASK_ID)
-                        if (!taskId.isNullOrBlank()) {
-                            completeAsync(app, taskId)
-                            return
-                        }
-                    }
-
-                    OP_OPEN -> {
-                        openFromRow(app, intent.getStringExtra(MainActivity.EXTRA_ROUTE))
-                        return
-                    }
-                }
-            }
-
-            ACTION_PAGE -> {
-                val widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, 0)
-                val delta = intent.getIntExtra(EXTRA_PAGE_DELTA, 0)
-                if (widgetId != 0 && delta != 0) WidgetPaging.move(app, widgetId, delta * SLOTS)
-            }
-        }
         val manager = AppWidgetManager.getInstance(app)
         val ids = runCatching {
             manager.getAppWidgetIds(ComponentName(app, TasksWidget::class.java))
@@ -134,52 +98,13 @@ class TasksWidget : AppWidgetProvider() {
         }.start()
     }
 
-    /** Ticks a task off the database, then redraws, without blocking this thread. */
-    private fun completeAsync(app: Context, taskId: String) {
-        val pending = goAsync()
-        Thread {
-            try {
-                val container = AppContainer.get(app)
-                // The same repository call the app's own checkbox makes, so a
-                // recurring task still spawns its next instance when ticked
-                // off from the home screen.
-                runBlocking { container.taskRepository.complete(taskId) }
-                renderAll(app)
-            } catch (t: Throwable) {
-                log(app, "widget could not complete a task", t)
-            } finally {
-                pending.finish()
-            }
-        }.start()
-    }
-
-    /**
-     * Opens a task from a scrolling row.
-     *
-     * A collection view can carry exactly one pending-intent template, and the
-     * tick needs a broadcast, so the tap has to come back through here and
-     * start the activity by hand. Starting an activity from a receiver is
-     * normally blocked in the background; it is allowed in this case because
-     * the launcher - a visible app - is what sent the PendingIntent, which
-     * grants this app a short window to do it. If a launcher ever declines,
-     * the paging mode in Settings uses a direct activity PendingIntent instead.
-     */
-    private fun openFromRow(app: Context, route: String?) {
-        val intent = Intent(app, MainActivity::class.java)
-            .setAction(Intent.ACTION_VIEW)
-            .putExtra(MainActivity.EXTRA_ROUTE, route ?: Routes.TASKS)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        runCatching { app.startActivity(intent) }
-            .onFailure { log(app, "widget could not open a task", it) }
-    }
-
     /**
      * Redraws every placed widget from one read of the database.
      *
      * Each widget gets its own RemoteViews because each has its own page
      * offset; the snapshot behind them is shared.
      */
-    private fun renderAll(context: Context) {
+    internal fun renderAll(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
         val ids = manager.getAppWidgetIds(ComponentName(context, TasksWidget::class.java))
         if (ids.isEmpty()) return
@@ -374,8 +299,8 @@ class TasksWidget : AppWidgetProvider() {
      * fill-in itself comes from this app's own RemoteViewsFactory.
      */
     private fun rowTemplate(context: Context, widgetId: Int): PendingIntent {
-        val intent = Intent(context, TasksWidget::class.java)
-            .setAction(ACTION_ROW)
+        val intent = Intent(context, TasksWidgetActions::class.java)
+            .setAction(TasksWidgetActions.ACTION_ROW)
             .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
             .setData(Uri.parse("taskmind://row/$widgetId"))
         return PendingIntent.getBroadcast(
@@ -395,8 +320,8 @@ class TasksWidget : AppWidgetProvider() {
      * towards that.
      */
     private fun completeIntent(context: Context, taskId: String, widgetId: Int): PendingIntent {
-        val intent = Intent(context, TasksWidget::class.java)
-            .setAction(ACTION_COMPLETE)
+        val intent = Intent(context, TasksWidgetActions::class.java)
+            .setAction(TasksWidgetActions.ACTION_COMPLETE)
             .putExtra(EXTRA_TASK_ID, taskId)
             .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
             .setData(Uri.parse("taskmind://complete/$widgetId/$taskId"))
@@ -409,10 +334,10 @@ class TasksWidget : AppWidgetProvider() {
     }
 
     private fun pageIntent(context: Context, widgetId: Int, delta: Int): PendingIntent {
-        val intent = Intent(context, TasksWidget::class.java)
-            .setAction(ACTION_PAGE)
+        val intent = Intent(context, TasksWidgetActions::class.java)
+            .setAction(TasksWidgetActions.ACTION_PAGE)
             .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-            .putExtra(EXTRA_PAGE_DELTA, delta)
+            .putExtra(TasksWidgetActions.EXTRA_PAGE_DELTA, delta)
             .setData(Uri.parse("taskmind://page/$widgetId/$delta"))
         return PendingIntent.getBroadcast(
             context,
@@ -442,24 +367,33 @@ class TasksWidget : AppWidgetProvider() {
 
     companion object {
         const val ACTION_REFRESH = "com.taskmind.action.WIDGET_REFRESH"
-        const val ACTION_COMPLETE = "com.taskmind.action.WIDGET_COMPLETE"
-        const val ACTION_PAGE = "com.taskmind.action.WIDGET_PAGE"
-        const val ACTION_ROW = "com.taskmind.action.WIDGET_ROW"
 
         const val EXTRA_TASK_ID = "task_id"
-        const val EXTRA_PAGE_DELTA = "page_delta"
-        const val EXTRA_ROW_OP = "row_op"
 
-        const val OP_OPEN = "open"
-        const val OP_DONE = "done"
-
+        /**
+         * This receiver is exported - a launcher cannot bind an app widget
+         * otherwise - so it deliberately answers to nothing that changes data.
+         * Everything the widget's buttons do lives on [TasksWidgetActions],
+         * which is not exported. The worst another app can do by shouting at
+         * this one is make it redraw.
+         */
         private val HANDLED = setOf(
             ACTION_REFRESH,
-            ACTION_COMPLETE,
-            ACTION_PAGE,
-            ACTION_ROW,
             AppWidgetManager.ACTION_APPWIDGET_UPDATE,
         )
+
+        /**
+         * Redraws every placed widget.
+         *
+         * Instantiating the provider is unusual but correct: an
+         * AppWidgetProvider is a BroadcastReceiver, and rendering reads only
+         * the context it is handed - no receiver state, no goAsync. It gives
+         * [TasksWidgetActions] the same drawing code rather than a second copy
+         * of it.
+         */
+        internal fun redrawAll(context: Context) {
+            TasksWidget().renderAll(context)
+        }
 
         /** Must match the number of row blocks in `widget_tasks.xml`. */
         const val SLOTS = 8

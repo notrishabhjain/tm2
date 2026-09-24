@@ -258,6 +258,21 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    // -- who you are, and group chats --------------------------------------
+
+    fun setOwnNames(names: Set<String>) {
+        viewModelScope.launch { container.settingsRepository.setOwnNames(names) }
+    }
+
+    fun setGroupPolicy(policy: com.taskmind.core.PreFilter.GroupPolicy) {
+        viewModelScope.launch { container.settingsRepository.setGroupPolicy(policy) }
+    }
+
+    /** A null policy removes the group from both lists. */
+    fun setGroupOverride(groupName: String, policy: com.taskmind.core.PreFilter.GroupPolicy?) {
+        viewModelScope.launch { container.settingsRepository.setGroupOverride(groupName, policy) }
+    }
+
     // -- budgets and retention ---------------------------------------------
 
     fun setBudgets(llmCalls: Int, asrMinutes: Int, perPackage: Int) {
@@ -266,6 +281,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setWifiOnlyAsr(value: Boolean) {
         viewModelScope.launch { container.settingsRepository.setWifiOnlyAsr(value) }
+    }
+
+    fun setReviewExpiryDays(days: Int) {
+        viewModelScope.launch { container.settingsRepository.setReviewExpiryDays(days) }
     }
 
     fun setRetentionDays(days: Int) {

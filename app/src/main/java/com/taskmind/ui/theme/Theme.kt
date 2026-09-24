@@ -2,7 +2,9 @@ package com.taskmind.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -11,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.taskmind.core.Priority
+import com.taskmind.ui.design.Radius
 
 /**
  * Spec 16: dark and light themes following the system, with 4.5:1 contrast.
@@ -58,26 +61,54 @@ private val DarkColors = darkColorScheme(
     outline = Color(0xFF89938E),
 )
 
+/**
+ * Dynamic colour is OFF by default - see [ThemePrefs.dynamicColour].
+ *
+ * The parameters stay so a preview can force either, but the running app takes
+ * its answer from the store, synchronously, because a suspending read means
+ * the first frame is drawn in one palette and repainted in another.
+ *
+ * The shapes are wired in too. [Radius] existed and every screen applied it by
+ * hand, which meant anything drawn by Material itself - menus, sheets, dialogs,
+ * chips - kept Material's single default radius and quietly disagreed with
+ * everything around it.
+ */
 @Composable
 fun TaskMindTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    darkTheme: Boolean? = null,
+    dynamicColor: Boolean? = null,
     content: @Composable () -> Unit,
 ) {
+    val context = LocalContext.current
+    val dark = darkTheme ?: ThemePrefs.darkOverride(context) ?: isSystemInDarkTheme()
+    val dynamic = dynamicColor ?: ThemePrefs.dynamicColour(context)
+
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColors
+        dynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+            if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        dark -> DarkColors
         else -> LightColors
     }
 
     MaterialTheme(
         colorScheme = colorScheme,
+        typography = TaskMindTypography,
+        shapes = TaskMindShapes,
         content = content,
     )
 }
+
+/**
+ * One radius scale, from [Radius], so a dropdown menu and the card it opens
+ * over have the same corners.
+ */
+private val TaskMindShapes = Shapes(
+    extraSmall = RoundedCornerShape(Radius.chip),
+    small = RoundedCornerShape(Radius.chip),
+    medium = RoundedCornerShape(Radius.row),
+    large = RoundedCornerShape(Radius.card),
+    extraLarge = RoundedCornerShape(Radius.sheet),
+)
 
 /** Priority carries visual weight (spec 16), and a label for screen readers. */
 object PriorityStyle {
