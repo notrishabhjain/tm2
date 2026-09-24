@@ -63,6 +63,7 @@ class SettingsRepository(private val context: Context) {
         val maxLlmCallsPerPackage = intPreferencesKey("max_llm_calls_per_package")
         val wifiOnlyAsr = booleanPreferencesKey("wifi_only_asr")
 
+        val reviewExpiryDays = intPreferencesKey("review_expiry_days")
         val retentionDays = intPreferencesKey("retention_days")
         val deleteRecordings = booleanPreferencesKey("delete_recordings_after_transcription")
 
@@ -127,6 +128,7 @@ class SettingsRepository(private val context: Context) {
             maxAsrMinutesPerDay = this[K.maxAsrMinutesPerDay] ?: d.maxAsrMinutesPerDay,
             maxLlmCallsPerPackagePerDay = this[K.maxLlmCallsPerPackage] ?: d.maxLlmCallsPerPackagePerDay,
             wifiOnlyAsr = this[K.wifiOnlyAsr] ?: d.wifiOnlyAsr,
+            reviewExpiryDays = this[K.reviewExpiryDays] ?: d.reviewExpiryDays,
             retentionDays = this[K.retentionDays] ?: d.retentionDays,
             deleteRecordingsAfterTranscription = this[K.deleteRecordings] ?: d.deleteRecordingsAfterTranscription,
             updateManifestUrl = this[K.updateManifestUrl] ?: d.updateManifestUrl,
@@ -223,6 +225,8 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setWifiOnlyAsr(value: Boolean) = edit { it[K.wifiOnlyAsr] = value }
+    suspend fun setReviewExpiryDays(days: Int) = edit { it[K.reviewExpiryDays] = days }
+
     suspend fun setRetentionDays(days: Int) = edit { it[K.retentionDays] = days }
     suspend fun setDeleteRecordings(value: Boolean) = edit { it[K.deleteRecordings] = value }
     suspend fun setUpdateManifestUrl(url: String) = edit { it[K.updateManifestUrl] = url.trim() }

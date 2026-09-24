@@ -190,6 +190,24 @@ interface ReviewItemDao {
     @Query("DELETE FROM review_items WHERE state != 'PENDING' AND createdAt < :before")
     suspend fun purgeResolved(before: Long)
 
+    /**
+     * Candidates nobody answered.
+     *
+     * Dismissed rather than deleted, and counted first so the log can say how
+     * many. A pending item had no expiry at all before this, so the inbox only
+     * ever grew - and a badge showing a number nobody is going to act on is a
+     * badge people stop reading.
+     */
+    @Query("SELECT COUNT(*) FROM review_items WHERE state = 'PENDING' AND createdAt < :before")
+    suspend fun countPendingOlderThan(before: Long): Int
+
+    @Query("UPDATE review_items SET state = 'DISMISSED' WHERE state = 'PENDING' AND createdAt < :before")
+    suspend fun expirePending(before: Long)
+
+    /** What the "Dismissed" tab shows, so an auto-dismissal is recoverable. */
+    @Query("SELECT * FROM review_items WHERE state = 'DISMISSED' ORDER BY createdAt DESC LIMIT :limit")
+    fun observeDismissed(limit: Int): Flow<List<ReviewItemEntity>>
+
     @Query("SELECT * FROM review_items WHERE rawCaptureId = :rawCaptureId")
     suspend fun byRawCapture(rawCaptureId: String): List<ReviewItemEntity>
 

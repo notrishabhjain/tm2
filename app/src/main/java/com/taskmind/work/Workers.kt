@@ -255,6 +255,25 @@ class RetentionWorker(context: Context, params: WorkerParameters) : CoroutineWor
             }
 
             container.database.fingerprintDao().purgeOlderThan(System.currentTimeMillis() - SEVEN_DAYS)
+
+            // Candidates nobody answered. Dismissed rather than deleted, so the
+            // Dismissed tab can hand one back - the inbox gets cleared without
+            // a real commitment being able to disappear for good.
+            if (settings.reviewExpiryDays > 0) {
+                val stale = System.currentTimeMillis() - settings.reviewExpiryDays * DAY_MILLIS
+                val dao = container.database.reviewItemDao()
+                val count = dao.countPendingOlderThan(stale)
+                if (count > 0) {
+                    dao.expirePending(stale)
+                    container.logger.write(
+                        Stage.SYSTEM,
+                        LogLevel.INFO,
+                        "dismissed $count review item(s) nobody answered",
+                        "older than ${settings.reviewExpiryDays} days; recoverable from Review -> Dismissed",
+                    )
+                }
+            }
+
             container.database.reviewItemDao().purgeResolved(cutoff)
             // One source of truth for the cap: the logger's own constant. These
             // two drifting apart is how the log ends up shorter than the code

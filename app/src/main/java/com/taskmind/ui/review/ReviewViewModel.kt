@@ -28,6 +28,15 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
     val items: StateFlow<List<ReviewItemEntity>> = container.taskRepository.observePendingReview()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * What you said no to, and what the app said no to on your behalf after
+     * nobody answered it for a week. The second is why this list exists: an
+     * auto-dismissal has to be recoverable, or it is just a silent deletion
+     * with a longer fuse.
+     */
+    val dismissed: StateFlow<List<ReviewItemEntity>> = container.taskRepository.observeDismissedReview()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
@@ -42,6 +51,13 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             container.taskRepository.dismissReviewItem(item.id)
             _message.value = "Dismissed"
+        }
+    }
+
+    fun restore(item: ReviewItemEntity) {
+        viewModelScope.launch {
+            container.taskRepository.restoreReviewItem(item.id)
+            _message.value = "Back in the queue"
         }
     }
 

@@ -773,6 +773,27 @@ private fun RetentionSection(settings: Settings, viewModel: SettingsViewModel, o
             checked = settings.deleteRecordingsAfterTranscription,
             onCheckedChange = viewModel::setDeleteRecordings,
         )
+
+        Spacer(Modifier.height(16.dp))
+        Text("Clear unanswered review items after", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Settings.REVIEW_EXPIRY_CHOICES.forEach { days ->
+                FilterChip(
+                    selected = settings.reviewExpiryDays == days,
+                    onClick = { viewModel.setReviewExpiryDays(days) },
+                    label = { Text(if (days == 0) "Never" else "$days days") },
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "They move to Review \u2192 Dismissed rather than being deleted, so one you would " +
+                "have accepted can still be put back. Nothing in the review inbox expired before " +
+                "this, so the queue only ever grew.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
         Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = onErase) { Text("Erase all captured content") }
     }

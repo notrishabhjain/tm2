@@ -283,6 +283,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsRepository.setWifiOnlyAsr(value) }
     }
 
+    fun setReviewExpiryDays(days: Int) {
+        viewModelScope.launch { container.settingsRepository.setReviewExpiryDays(days) }
+    }
+
     fun setRetentionDays(days: Int) {
         viewModelScope.launch { container.settingsRepository.setRetentionDays(days) }
     }

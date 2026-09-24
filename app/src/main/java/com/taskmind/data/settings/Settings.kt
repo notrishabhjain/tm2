@@ -107,6 +107,18 @@ data class Settings(
      */
     val wifiOnlyAsr: Boolean = false,
 
+    /**
+     * How long a review candidate waits before the app answers for you.
+     *
+     * Dismissed, never deleted: it moves to the Dismissed tab, where it can be
+     * brought back. A commitment that silently vanished because you were busy
+     * for a week is the exact failure the review inbox exists to prevent, so
+     * the queue gets cleared without anything becoming unrecoverable.
+     *
+     * Zero means never.
+     */
+    val reviewExpiryDays: Int = 7,
+
     // -- retention (spec 6.3) ----------------------------------------------
     val retentionDays: Int = 30,
     val deleteRecordingsAfterTranscription: Boolean = false,
@@ -159,5 +171,8 @@ data class Settings(
         )
 
         val RETENTION_CHOICES = listOf(7, 30, 90)
+
+        /** Zero is "never", and it is offered because some people want the pile. */
+        val REVIEW_EXPIRY_CHOICES = listOf(3, 7, 14, 30, 0)
     }
 }

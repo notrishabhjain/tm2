@@ -230,6 +230,18 @@ class HowItWorksViewModel(private val container: AppContainer) : ViewModel() {
                 ),
                 Rule("Message text, transcripts and recordings", "Deleted on this schedule.", "${s.retentionDays} days"),
                 Rule(
+                    "The activity log and the model-call log",
+                    "Both quote the message text they describe, so both are cleared on the same " +
+                        "schedule rather than only when they get long.",
+                    "${s.retentionDays} days",
+                ),
+                Rule(
+                    "Review items nobody answered",
+                    "Dismissed, not deleted - they stay in Review \u2192 Dismissed where you can put " +
+                        "one back.",
+                    if (s.reviewExpiryDays == 0) "never" else "${s.reviewExpiryDays} days",
+                ),
+                Rule(
                     "Deleting them never deletes your tasks",
                     "The quote and the source label are copied onto each task, so a task still says who " +
                         "asked and in what words after the original is gone.",
