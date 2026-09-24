@@ -31,7 +31,46 @@ object PreFilter {
         val isAllowListed: Boolean = true,
         val fingerprintSeen: Boolean = false,
         val ownPackageName: String = "com.taskmind",
+        /** A group chat rather than a one-to-one conversation. */
+        val isGroup: Boolean = false,
+        /** What to do about groups. Ignored entirely when [isGroup] is false. */
+        val groupPolicy: GroupPolicy = GroupPolicy.EVERYTHING,
+        /** From [Mention]: is there positive reason to think this concerns the user. */
+        val mention: Mention.Result = Mention.Result(false, false, false),
     )
+
+    /**
+     * How much of a group chat is worth reading.
+     *
+     * The rest of this filter rejects only what is definitely not a task. This
+     * one rejects things that MIGHT be, and that is a deliberate exception:
+     * in a work group most messages are two other people talking, and a task
+     * created from one of those costs a deletion every time, every day. The
+     * cost of the opposite mistake is bounded by the per-group override: a
+     * group where everything really does concern the user is set back to
+     * EVERYTHING and behaves exactly as it always has.
+     */
+    enum class GroupPolicy(val label: String, val explanation: String) {
+        EVERYTHING(
+            "Read every message",
+            "How TaskMind behaved before. Accurate, and noisy in busy groups.",
+        ),
+        ADDRESSED_TO_ME(
+            "Only when I'm involved",
+            "Your name, an @mention of you, or a message to the whole group. " +
+                "Colleagues asking each other for updates are skipped.",
+        ),
+        NEVER(
+            "Ignore group chats",
+            "One-to-one messages and calls are still read.",
+        ),
+        ;
+
+        companion object {
+            /** A stored name that no longer matches an entry falls back rather than crashing. */
+            fun byName(name: String?): GroupPolicy? = entries.firstOrNull { it.name == name }
+        }
+    }
 
     sealed interface Verdict {
         data object Pass : Verdict
@@ -147,7 +186,68 @@ object PreFilter {
 
         if (input.fingerprintSeen) return Verdict.Reject("fingerprint seen within 7 days")
 
+        val groupVerdict = evaluateGroup(input)
+        if (groupVerdict is Verdict.Reject) return groupVerdict
+
         return Verdict.Pass
+    }
+
+    /**
+     * Which policy actually applies to one conversation.
+     *
+     * Pure, and separated from [evaluate], because the interesting part is the
+     * order of the exceptions rather than the rule itself:
+     *
+     *  - a one-to-one chat is never filtered by group rules
+     *  - a group the user marked "always watch" beats everything
+     *  - a group they marked "ignore" comes next
+     *  - and if they have not told the app what they are called, the whole
+     *    feature stands down. "Only when I'm involved" with no names to look
+     *    for would reject every group message on the phone, silently. That is
+     *    worse than the noise it was meant to fix.
+     */
+    fun resolveGroupPolicy(
+        isGroup: Boolean,
+        groupName: String?,
+        chosen: GroupPolicy,
+        ownNames: Set<String>,
+        alwaysWatch: Set<String>,
+        neverWatch: Set<String>,
+    ): GroupPolicy {
+        if (!isGroup) return GroupPolicy.EVERYTHING
+        val name = groupName?.trim().orEmpty()
+        if (name.isNotEmpty()) {
+            if (alwaysWatch.any { it.equals(name, ignoreCase = true) }) return GroupPolicy.EVERYTHING
+            if (neverWatch.any { it.equals(name, ignoreCase = true) }) return GroupPolicy.NEVER
+        }
+        if (chosen == GroupPolicy.ADDRESSED_TO_ME && ownNames.none { it.isNotBlank() }) {
+            return GroupPolicy.EVERYTHING
+        }
+        return chosen
+    }
+
+    /**
+     * The group rule, last, so a message it would have let through has already
+     * been judged on everything else and the log line names the real reason.
+     *
+     * It runs only for group conversations. A one-to-one message is by
+     * definition addressed to the user and is never touched here.
+     */
+    fun evaluateGroup(input: Input): Verdict {
+        if (!input.isGroup) return Verdict.Pass
+        return when (input.groupPolicy) {
+            GroupPolicy.EVERYTHING -> Verdict.Pass
+            GroupPolicy.NEVER -> Verdict.Reject("group chat ignored by policy")
+            GroupPolicy.ADDRESSED_TO_ME ->
+                if (input.mention.forMe) {
+                    Verdict.Pass
+                } else {
+                    Verdict.Reject(
+                        "group message not addressed to you",
+                        if (input.mention.namesSomeoneElse) "names someone else" else "no mention of you",
+                    )
+                }
+        }
     }
 
     /**

@@ -26,6 +26,36 @@ data class Settings(
     // -- capture -----------------------------------------------------------
     val allowedPackages: Set<String> = PreFilter.DEFAULT_ALLOWED_PACKAGES,
     val captureNotifications: Boolean = true,
+
+    // -- who you are, and what to do about group chats ---------------------
+
+    /**
+     * What people call you in a chat: your first name, a nickname, your work
+     * handle, your number.
+     *
+     * Used twice. The pre-filter checks group messages against it, and the
+     * extraction prompt is told it - which is the more important of the two.
+     * Asked to judge whether "Rishabh bhai update de dena" is aimed at the
+     * reader with no idea who the reader is, a model tuned for recall says yes,
+     * and that is why colleagues' requests to each other arrived as tasks with
+     * high confidence.
+     */
+    val ownNames: Set<String> = emptySet(),
+
+    /**
+     * Defaults to ADDRESSED_TO_ME, but stands down to EVERYTHING until
+     * [ownNames] has something in it - see PreFilter.resolveGroupPolicy. So a
+     * phone that has never been told its owner's name behaves exactly as it
+     * did before.
+     */
+    val groupPolicy: PreFilter.GroupPolicy = PreFilter.GroupPolicy.ADDRESSED_TO_ME,
+
+    /** Groups where everything is read, whatever [groupPolicy] says. */
+    val groupsAlwaysWatch: Set<String> = emptySet(),
+
+    /** Groups that are never read at all. */
+    val groupsNeverWatch: Set<String> = emptySet(),
+
     val captureCalls: Boolean = true,
     val minCallDurationSeconds: Long = 15,
 

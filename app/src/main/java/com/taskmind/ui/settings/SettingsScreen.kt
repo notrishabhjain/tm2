@@ -38,6 +38,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Gesture
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Science
@@ -134,6 +135,8 @@ fun SettingsScreen(
                 SettingsPage.CAPTURE ->
                     CaptureSection(settings, ui, viewModel) { dirLauncher.launch(null) }
 
+                SettingsPage.GROUPS -> GroupSection(settings, viewModel)
+
                 SettingsPage.PROVIDERS -> {
                     LlmSection(settings, ui, viewModel)
                     AsrSection(settings, ui, viewModel)
@@ -206,6 +209,11 @@ enum class SettingsPage(val title: String, val summary: String, val icon: ImageV
         "What to watch",
         "Apps, calls, minimum call length, recordings folder",
         Icons.Outlined.Visibility,
+    ),
+    GROUPS(
+        "Your name and group chats",
+        "Stop colleagues' requests to each other becoming your tasks",
+        Icons.Outlined.Groups,
     ),
     PROVIDERS(
         "AI providers",

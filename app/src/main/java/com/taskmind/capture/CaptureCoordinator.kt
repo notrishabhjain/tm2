@@ -2,6 +2,7 @@ package com.taskmind.capture
 
 import com.taskmind.core.CaptureState
 import com.taskmind.core.LogLevel
+import com.taskmind.core.Mention
 import com.taskmind.core.NotificationResolver
 import com.taskmind.core.PreFilter
 import com.taskmind.core.SourceRef
@@ -84,6 +85,20 @@ class CaptureCoordinator(
             return Outcome.Unusable
         }
 
+        // Who the message names, worked out once and used twice: the group
+        // rule below decides whether to read it at all, and the same answer is
+        // handed to the model later so it can tell whether the ask is aimed at
+        // the user. Scanning is pure string work and costs nothing.
+        val mention = Mention.scan(resolved.messageText, settings.ownNames)
+        val groupPolicy = PreFilter.resolveGroupPolicy(
+            isGroup = resolved.isGroup,
+            groupName = resolved.groupName,
+            chosen = settings.groupPolicy,
+            ownNames = settings.ownNames,
+            alwaysWatch = settings.groupsAlwaysWatch,
+            neverWatch = settings.groupsNeverWatch,
+        )
+
         val verdict = PreFilter.evaluate(
             PreFilter.Input(
                 packageName = fields.packageName,
@@ -102,6 +117,9 @@ class CaptureCoordinator(
                 // that this function can complete inside onNotificationPosted.
                 fingerprintSeen = false,
                 ownPackageName = ownPackageName,
+                isGroup = resolved.isGroup,
+                groupPolicy = groupPolicy,
+                mention = mention,
             ),
         )
         if (verdict is PreFilter.Verdict.Reject) {

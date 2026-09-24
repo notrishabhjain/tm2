@@ -39,6 +39,21 @@ TESTS for isTask=true:
    isTask=true with confidence around 0.5 - ambiguous group asks are exactly what the
    review inbox is for.
 
+WHO THE USER IS
+
+When the message is prefixed with "You are known as: ...", those are the names the user
+goes by. Use them for test 3, and use them hard - this is the difference between a task
+and somebody else's task:
+
+- The message names or @mentions one of those names -> it is aimed at the user.
+- It is a GROUP message that @mentions or names SOMEBODY ELSE as the doer -> isTask=false,
+  however concrete the ask is. Another person's work is not the user's task, and a group
+  where colleagues chase each other produces dozens of these a day.
+- It is a GROUP message addressed to nobody in particular ("@everyone", "can someone",
+  "team") -> a task at moderate confidence, 0.4-0.6.
+- No names are given, or the message is one-to-one -> judge as before. A one-to-one message
+  is by definition aimed at the user.
+
 ALSO capture, at confidence 0.4-0.65, things a careful assistant would raise:
 - a question directed at the user that needs an answer or a decision
 - something the user said they would check, confirm, look into or find out
@@ -87,6 +102,14 @@ EXAMPLES
 
 [Mon 7 July 2025, 2:00 PM] WhatsApp from "Sharma Ji": "beta woh 25000 ka payment kal tak kar dena warna late fee lagegi"
 {"reasoning":"Sharma Ji directly asks the user to pay 25000 by tomorrow. Personal, concrete, aimed at the user. All three pass.","isTask":true,"evidence":"woh 25000 ka payment kal tak kar dena","title":"Pay 25,000 to Sharma Ji","priority":"HIGH","dueDate":"2025-07-08T18:00:00+05:30","notes":"Late fee applies if missed","confidence":0.95}
+
+[Mon 7 July 2025, 2:00 PM] You are known as: Rishabh, RJ
+WhatsApp group "CPC Infra" from "Kashish": "@Amit please share the latest deployment status by EOD"
+{"reasoning":"A group message @mentioning Amit, who is not the user. Somebody else is the doer, so test 3 fails outright.","isTask":false,"evidence":null,"title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.93}
+
+[Mon 7 July 2025, 2:00 PM] You are known as: Rishabh, RJ
+WhatsApp group "CPC Infra" from "Kashish": "@Rishabh please share the latest deployment status by EOD"
+{"reasoning":"Same ask, but it @mentions the user by name. Directly aimed at them with a deadline today.","isTask":true,"evidence":"share the latest deployment status by EOD","title":"Share the latest deployment status","priority":"URGENT","dueDate":"2025-07-07T18:00:00+05:30","notes":"Asked in the CPC Infra group","confidence":0.92}
 
 [Mon 7 July 2025, 2:00 PM] WhatsApp group "College Friends" from "Amit": "bhai Rohit tu hi book kar le tickets, tera card pe offer hai"
 {"reasoning":"Amit names Rohit as the one to book. Test 3 fails - a specific other person is the doer.","isTask":false,"evidence":null,"title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.9}
@@ -214,6 +237,12 @@ Return ONLY JSON:
         senderKey: String,
         groupName: String?,
         messageText: String,
+        /**
+         * What the user is called in chats. Omitted entirely when empty rather
+         * than sent as an empty list - "You are known as: " with nothing after
+         * it is worse than silence, because the model will try to use it.
+         */
+        userNames: Collection<String> = emptyList(),
     ): String {
         val time = DateResolver.formatForPrompt(occurredAtMillis)
         val where = if (groupName.isNullOrBlank()) {
@@ -221,7 +250,9 @@ Return ONLY JSON:
         } else {
             "$appLabel group \"$groupName\" from \"$senderKey\""
         }
-        return "[$time IST] $where: \"$messageText\""
+        val names = userNames.map { it.trim() }.filter { it.isNotEmpty() }
+        val who = if (names.isEmpty()) "" else "You are known as: ${names.joinToString(", ")}\n"
+        return "[$time IST] $who$where: \"$messageText\""
     }
 
     fun callUser(occurredAtMillis: Long, contactLabel: String, transcript: String): String {
