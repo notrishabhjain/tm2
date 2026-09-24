@@ -261,10 +261,8 @@ class RetentionWorker(context: Context, params: WorkerParameters) : CoroutineWor
             // a real commitment being able to disappear for good.
             if (settings.reviewExpiryDays > 0) {
                 val stale = System.currentTimeMillis() - settings.reviewExpiryDays * DAY_MILLIS
-                val dao = container.database.reviewItemDao()
-                val count = dao.countPendingOlderThan(stale)
+                val count = container.taskRepository.dismissStaleReviewItems(stale)
                 if (count > 0) {
-                    dao.expirePending(stale)
                     container.logger.write(
                         Stage.SYSTEM,
                         LogLevel.INFO,

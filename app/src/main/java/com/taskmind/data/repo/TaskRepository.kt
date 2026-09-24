@@ -55,6 +55,22 @@ class TaskRepository(
         reviewItemDao.setState(id, ReviewState.PENDING)
     }
 
+    /**
+     * Dismisses every pending candidate older than [before], and says how many.
+     *
+     * The retention worker and the button on the review screen both come here
+     * rather than each running their own query. They did not, briefly, and two
+     * copies of "what counts as stale" is exactly the kind of thing that drifts
+     * the first time one side is changed.
+     *
+     * Dismissed, never deleted: the Dismissed tab can hand any of them back.
+     */
+    suspend fun dismissStaleReviewItems(before: Long): Int {
+        val count = reviewItemDao.countPendingOlderThan(before)
+        if (count > 0) reviewItemDao.expirePending(before)
+        return count
+    }
+
     fun observePendingReviewCount() = reviewItemDao.observePendingCount()
     fun observeCalls(limit: Int = 100) = callRecordDao.observeRecent(limit)
 
