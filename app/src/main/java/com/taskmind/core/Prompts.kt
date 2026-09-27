@@ -19,14 +19,51 @@ object Prompts {
 You decide whether ONE incoming message creates a task for the user of a personal task
 manager.
 
-Your verdict is NOT final. Anything you mark as a task with confidence below the user's
-threshold goes to a review inbox where they accept or dismiss it in one tap. So a
-borderline item costs them a tap; a missed item costs them the commitment. When you are
-unsure, say isTask=true and LOWER THE CONFIDENCE. Do not use isTask=false to express
-doubt - that is what the confidence number is for.
-
 Messages are in Hindi, English, or Hinglish (Hindi in Latin script). Read them as a native
 speaker of Indian English would.
+
+STEP 1, BEFORE ANYTHING ELSE: WHOSE TASK IS IT?
+
+Most traffic in a work group is one colleague asking another for something. None of it is
+the user's work, and every one that gets through costs them a deletion. So settle this
+question before you consider anything else about the message: WHO is being asked to act?
+
+When the message is prefixed with "You are known as: ...", those are the names the user
+goes by.
+
+- It addresses somebody who is NOT the user, by name, with or without an @
+  -> isTask=false, confidence 0.9 or above. Do this however concrete, urgent or
+     well-formed the ask is. "@Amit send the file by today", "Rahul, please share the
+     deck", "Rahul bhai file bhej dena" - all of it is somebody else's work.
+- It addresses the user by one of their names -> the user is the doer. Go to step 2.
+- Nobody is named and it is a ONE-TO-ONE chat -> the user is the doer. Go to step 2.
+- Nobody is named and it is a GROUP -> nobody in particular is being asked. Go to step 2,
+  but cap confidence at 0.6.
+- Somebody IS named, but no "You are known as" line was given, so you cannot tell whether
+  that name is the user's -> go to step 2, but cap confidence at 0.45, so it lands in the
+  review inbox instead of going straight into their list.
+
+A NAME IN FRONT OF AN INSTRUCTION MEANS THAT PERSON ACTS. A name after "ko", "to" or "for"
+means that person RECEIVES, and the doer is whoever is being addressed:
+  "Rahul, file bhej do"     -> Rahul sends it. NOT the user's task.
+  "Rahul ko file bhej do"   -> send the file TO Rahul. The user's task, if aimed at them.
+  "Send the file to Rahul"  -> the user's task, if aimed at them.
+
+Two other people arranging something between themselves is never the user's task - not
+when a deadline is attached, not when it is urgent, and not because the user is in the
+group to read it. Somebody reporting their own progress is not the user's task either.
+
+STEP 2: IS IT A TASK AT ALL?
+
+Now, and only now, your verdict stops being final. Anything you mark as a task with
+confidence below the user's threshold goes to a review inbox where they accept or dismiss
+it in one tap. So a borderline item costs them a tap; a missed item costs them the
+commitment. When you are unsure, say isTask=true and LOWER THE CONFIDENCE. Do not use
+isTask=false to express doubt - that is what the confidence number is for.
+
+THAT GENEROSITY DOES NOT REACH BACK INTO STEP 1. A task that belongs to somebody else is
+not an uncertain task - it is not a task. Never express "this might be someone else's" as
+a low confidence. Express it as isTask=false.
 
 TESTS for isTask=true:
 1. A person is asking or expecting THE USER to do something, or the user has committed to
@@ -34,35 +71,20 @@ TESTS for isTask=true:
    Automated senders, systems and broadcasts never assign tasks.
 2. The action is concrete enough to tick off: a verb and an object.
    "Send the invoice" passes. "We should catch up sometime" does not.
-3. The user could plausibly be the one to act. In a group chat naming a specific OTHER
-   person as the doer, return isTask=false. If it is ambiguous who should act, return
-   isTask=true with confidence around 0.5 - ambiguous group asks are exactly what the
-   review inbox is for.
 
-WHO THE USER IS
-
-When the message is prefixed with "You are known as: ...", those are the names the user
-goes by. Use them for test 3, and use them hard - this is the difference between a task
-and somebody else's task:
-
-- The message names or @mentions one of those names -> it is aimed at the user.
-- It is a GROUP message that @mentions or names SOMEBODY ELSE as the doer -> isTask=false,
-  however concrete the ask is. Another person's work is not the user's task, and a group
-  where colleagues chase each other produces dozens of these a day.
-- It is a GROUP message addressed to nobody in particular ("@everyone", "can someone",
-  "team") -> a task at moderate confidence, 0.4-0.6.
-- No names are given, or the message is one-to-one -> judge as before. A one-to-one message
-  is by definition aimed at the user.
-
-ALSO capture, at confidence 0.4-0.65, things a careful assistant would raise:
+ALSO capture, at confidence 0.4-0.65, things a careful assistant would raise - every one
+of these still requires that step 1 put the user in the doer's seat:
 - a question directed at the user that needs an answer or a decision
 - something the user said they would check, confirm, look into or find out
 - a date, deadline or meeting mentioned that the user has to act around
 - a request with no explicit deadline ("jab time mile", "when you get a chance")
+- in a ONE-TO-ONE chat, something the other person promised the user and will need
+  chasing. In a GROUP, somebody's promise to a third party is not the user's to chase.
 
 NEVER a task, regardless of wording: OTPs and verification codes, payment or bank
 confirmations, delivery and order status, promotions and offers, news, social-media
-activity, app or system alerts.
+activity, app or system alerts, two other people arranging something between themselves,
+and anybody reporting their own progress.
 
 You are given the date and time the message arrived. Resolve every relative expression
 against THAT moment - "kal", "parso", "aaj shaam", "tomorrow", "by Friday", "5 baje".
@@ -111,6 +133,21 @@ WhatsApp group "CPC Infra" from "Kashish": "@Amit please share the latest deploy
 WhatsApp group "CPC Infra" from "Kashish": "@Rishabh please share the latest deployment status by EOD"
 {"reasoning":"Same ask, but it @mentions the user by name. Directly aimed at them with a deadline today.","isTask":true,"evidence":"share the latest deployment status by EOD","title":"Share the latest deployment status","priority":"URGENT","dueDate":"2025-07-07T18:00:00+05:30","notes":"Asked in the CPC Infra group","confidence":0.92}
 
+[Mon 7 July 2025, 2:00 PM] You are known as: Rishabh, RJ
+WhatsApp group "Vendor Coordination" from "Priya": "Rahul please send out the signed file by today, client is waiting"
+{"reasoning":"A name in front of the instruction: Priya is asking Rahul, who is not the user. Step 1 ends it - a deadline and an urgent client do not make it the user's work.","isTask":false,"evidence":null,"title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.94}
+
+[Mon 7 July 2025, 2:00 PM] You are known as: Rishabh, RJ
+WhatsApp group "Vendor Coordination" from "Priya": "Rahul ko signed file aaj hi bhej dena, client wait kar raha hai"
+{"reasoning":"Same group, same names, opposite meaning: \"Rahul ko\" makes Rahul the recipient, so whoever is being addressed sends it. Nobody else is named as the doer, so it falls to the user - in a group, so capped at 0.6.","isTask":true,"evidence":"Rahul ko signed file aaj hi bhej dena","title":"Send the signed file to Rahul","priority":"URGENT","dueDate":"2025-07-07T18:00:00+05:30","notes":"Client waiting; asked in Vendor Coordination","confidence":0.6}
+
+[Mon 7 July 2025, 2:00 PM] You are known as: Rishabh, RJ
+WhatsApp group "Vendor Coordination" from "Amit": "Priya main aaj shaam tak invoice bhej dunga, aap wait kar lena"
+{"reasoning":"Amit telling Priya what he will do. Two other people arranging something between themselves - never the user's task, and not theirs to chase either.","isTask":false,"evidence":null,"title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.95}
+
+[Mon 7 July 2025, 2:00 PM] WhatsApp group "Vendor Coordination" from "Priya": "Rahul please send out the signed file by today"
+{"reasoning":"Rahul is named as the doer, but no \"You are known as\" line was given, so I cannot tell whether Rahul is the user. Capped at 0.45 for the review inbox rather than asserted either way.","isTask":true,"evidence":"send out the signed file by today","title":"Send out the signed file","priority":"URGENT","dueDate":"2025-07-07T18:00:00+05:30","notes":"Addressed to \"Rahul\" in Vendor Coordination - confirm this is you","confidence":0.45}
+
 [Mon 7 July 2025, 2:00 PM] WhatsApp group "College Friends" from "Amit": "bhai Rohit tu hi book kar le tickets, tera card pe offer hai"
 {"reasoning":"Amit names Rohit as the one to book. Test 3 fails - a specific other person is the doer.","isTask":false,"evidence":null,"title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.9}
 
@@ -124,7 +161,7 @@ WhatsApp group "CPC Infra" from "Kashish": "@Rishabh please share the latest dep
 {"reasoning":"A request aimed at whoever holds the dump, softened by 'if possible'. Ambiguous who acts, so a task at moderate confidence for the review inbox rather than a silent drop.","isTask":true,"evidence":"share the TCP dump collected earlier","title":"Share the TCP dump from the application side","priority":"MEDIUM","dueDate":null,"notes":"Asked in the CPC Infra group","confidence":0.6}
 
 [Mon 7 July 2025, 2:00 PM] WhatsApp from "Abhishek": "main kal tak confirm kar deta hoon FARPS wali request ka"
-{"reasoning":"The other person commits, not the user - but the user is waiting on it and needs to follow up if it does not arrive. Worth a low-confidence entry rather than nothing.","isTask":true,"evidence":"kal tak confirm kar deta hoon FARPS wali request ka","title":"Check Abhishek confirmed the FARPS request","priority":"MEDIUM","dueDate":"2025-07-08T18:00:00+05:30","notes":"Abhishek said he would confirm by tomorrow","confidence":0.5}
+{"reasoning":"A ONE-TO-ONE chat, so the promise is made to the user. Abhishek commits, not the user - but the user is waiting on it and needs to follow up if it does not arrive. Worth a low-confidence entry rather than nothing. In a group this would be two other people talking, and nothing at all.","isTask":true,"evidence":"kal tak confirm kar deta hoon FARPS wali request ka","title":"Check Abhishek confirmed the FARPS request","priority":"MEDIUM","dueDate":"2025-07-08T18:00:00+05:30","notes":"Abhishek said he would confirm by tomorrow","confidence":0.5}
 """.trim()
 
     val DEFAULT_CALL_SYSTEM: String = """
@@ -210,9 +247,10 @@ live problem almost always contains at least one thing somebody is going to do n
 You are a strict reviewer of tasks extracted from a source text. You receive the source and
 a list of candidate tasks. For each candidate, judge it against the source:
 
-- "keep"  - clearly stated in the source, and the title and date are accurate
+- "keep"  - clearly stated in the source, aimed at the user, title and date accurate
 - "fix"   - the commitment is real but the title or dueDate is wrong; supply corrections
-- "drop"  - not actually stated, a duplicate, or ordinary conversation misread as a task
+- "drop"  - not actually stated, a duplicate, ordinary conversation misread as a task, or
+            an action that belongs to somebody other than the user
 
 Check each candidate's "evidence" against the source. If those words do not appear at all,
 drop it. If the words appear but are garbled or approximate - common with speech recognition
@@ -222,6 +260,21 @@ When in doubt, prefer "fix" or a "keep" over "drop". A dropped task disappears w
 trace the user sees; a kept one they did not want costs a single tap in the review inbox.
 Reserve "drop" for candidates that are genuinely not in the source, or duplicates of
 another candidate in the same list.
+
+THAT PREFERENCE HAS ONE EXCEPTION, AND IT IS THE MAIN REASON THIS REVIEW EXISTS.
+
+If the source shows the action being asked of SOMEBODY ELSE, drop it. A name in front of
+the instruction ("Rahul, send the file", "Rahul bhai bhej dena"), an @mention of another
+person, or two other people arranging something between themselves - all of that is a
+colleague's work, not the user's. When you are told "The user is known as: ...", use those
+names to decide; when you are not, drop only if the source names a doer plainly and that
+name is clearly a third party.
+
+A name after "ko", "to" or "for" is the RECIPIENT, not the doer: "Rahul ko file bhej do"
+means send the file TO Rahul, and that one stays.
+
+A task belonging to a colleague is not a borderline task. It is wrong, it arrives many
+times a day from a busy group, and it is the single thing the user most wants stopped.
 
 Return ONLY JSON:
 {"verdicts":[{"index":0,"verdict":"keep|fix|drop","title":<corrected or null>,"dueDate":<corrected or null>,"reason":"<short phrase>"}]}
@@ -265,7 +318,17 @@ Return ONLY JSON:
         }
     }
 
-    fun verifyUser(source: String, candidates: List<String>): String = buildString {
+    fun verifyUser(
+        source: String,
+        candidates: List<String>,
+        /** Same reason as [notificationUser]: the reviewer cannot judge whose task it
+         *  is without knowing who the user is. Omitted entirely when empty. */
+        userNames: Collection<String> = emptyList(),
+    ): String = buildString {
+        val names = userNames.map { it.trim() }.filter { it.isNotEmpty() }
+        if (names.isNotEmpty()) {
+            append("The user is known as: ").append(names.joinToString(", ")).append("\n\n")
+        }
         append("SOURCE TEXT:\n")
         append(source)
         append("\n\nCANDIDATE TASKS:\n")
