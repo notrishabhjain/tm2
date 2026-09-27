@@ -105,6 +105,17 @@ fun StatusScreen(
                 }
             }
 
+            if (!state.ownNamesSet) {
+                SectionCard(
+                    title = "TaskMind does not know your name",
+                    subtitle = "Until it does, every group message is read and the model cannot tell " +
+                        "whether an ask is aimed at you or at a colleague — so requests between other " +
+                        "people become your tasks.",
+                ) {
+                    Button(onClick = onOpenSettings) { Text("Add your name") }
+                }
+            }
+
             SectionCard(title = "Permissions", subtitle = "Re-checked every time you open this screen.") {
                 state.permissions.forEach { item ->
                     Row(

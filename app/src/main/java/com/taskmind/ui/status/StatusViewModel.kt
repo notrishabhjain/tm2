@@ -31,6 +31,15 @@ data class StatusUiState(
     val llmSummary: String = "",
     val asrSummary: String = "",
     val cloudConsent: Boolean = false,
+    /**
+     * Whether TaskMind has been told what the user is called.
+     *
+     * Surfaced here because without it the group filter stands down to "read
+     * everything", and a setting that quietly does nothing is worse than no
+     * setting - it is the difference between "the filter is not working" and
+     * "the filter has not been switched on".
+     */
+    val ownNamesSet: Boolean = true,
     val llmCallsToday: Int = 0,
     val llmBudget: Int = 0,
     val asrSecondsToday: Int = 0,
@@ -76,6 +85,7 @@ class StatusViewModel(private val container: AppContainer) : ViewModel() {
                 llmSummary = "${settings.llmModel} at ${settings.llmBaseUrl}",
                 asrSummary = "${settings.asrProvider.name.lowercase()} - ${settings.asrModel}",
                 cloudConsent = settings.cloudConsent,
+                ownNamesSet = settings.ownNames.any { it.isNotBlank() },
                 llmCallsToday = if (usage.dayKey == today) usage.llmCalls else 0,
                 llmBudget = settings.maxLlmCallsPerDay,
                 asrSecondsToday = if (usage.dayKey == today) usage.asrSeconds else 0,

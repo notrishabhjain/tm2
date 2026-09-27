@@ -25,7 +25,15 @@ interface TaskExtractor {
     suspend fun extractFromTranscript(input: TranscriptInput): AiResult<TranscriptExtraction>
 
     /** Spec 14.5. A no-op implementation is a legitimate one. */
-    suspend fun verify(source: String, candidates: List<ExtractedTask>): AiResult<List<Verdict>>
+    /**
+     * [userNames] defaults to empty so a caller that has none still compiles,
+     * but the reviewer's main job - dropping a colleague's task - needs them.
+     */
+    suspend fun verify(
+        source: String,
+        candidates: List<ExtractedTask>,
+        userNames: Set<String> = emptySet(),
+    ): AiResult<List<Verdict>>
 }
 
 data class MessageInput(
@@ -213,7 +221,11 @@ class CloudTaskExtractor(
         )
     }
 
-    override suspend fun verify(source: String, candidates: List<ExtractedTask>): AiResult<List<Verdict>> {
+    override suspend fun verify(
+        source: String,
+        candidates: List<ExtractedTask>,
+        userNames: Set<String>,
+    ): AiResult<List<Verdict>> {
         if (candidates.isEmpty()) return AiResult.Ok(emptyList())
         val config = configProvider()
         val rendered = candidates.map { c ->
@@ -223,7 +235,7 @@ class CloudTaskExtractor(
                 append(" | dueDate=").append(c.dueDateRaw ?: "null")
             }
         }
-        val user = Prompts.verifyUser(source, rendered)
+        val user = Prompts.verifyUser(source, rendered, userNames)
         val result = llm.complete(
             config = config,
             systemPrompt = promptProvider().verifySystem,

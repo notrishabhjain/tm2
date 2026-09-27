@@ -252,7 +252,7 @@ class ExtractionPipeline(
             return tasks
         }
 
-        val result = extractor.verify(source, tasks)
+        val result = extractor.verify(source, tasks, settings.ownNames)
         settingsRepository.recordLlmCall(todayKey, packageName)
 
         val verdicts = when (result) {
