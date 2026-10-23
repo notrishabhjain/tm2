@@ -131,7 +131,9 @@ class SettingsRepository(private val context: Context) {
             reviewExpiryDays = this[K.reviewExpiryDays] ?: d.reviewExpiryDays,
             retentionDays = this[K.retentionDays] ?: d.retentionDays,
             deleteRecordingsAfterTranscription = this[K.deleteRecordings] ?: d.deleteRecordingsAfterTranscription,
-            updateManifestUrl = this[K.updateManifestUrl] ?: d.updateManifestUrl,
+            // A blank stored value is the old "never filled in" state, not a
+            // choice to have no updates.
+            updateManifestUrl = this[K.updateManifestUrl]?.takeIf { it.isNotBlank() } ?: d.updateManifestUrl,
             autoCheckUpdates = this[K.autoCheckUpdates] ?: d.autoCheckUpdates,
             logLevelFilter = this[K.logLevelFilter] ?: d.logLevelFilter,
         )

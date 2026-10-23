@@ -26,9 +26,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.taskmind.core.SmartReminder
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -96,6 +101,9 @@ fun TaskDetailScreen(
     var newSubTask by remember { mutableStateOf("") }
     var editingNotes by remember { mutableStateOf<String?>(null) }
     var showOriginal by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<String?>(null) }
+    var editingWhen by remember { mutableStateOf(false) }
+    var muteOffer by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -107,9 +115,6 @@ fun TaskDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.archive(); onBack() }) {
-                        Icon(Icons.Outlined.Archive, contentDescription = "Archive")
-                    }
                     IconButton(onClick = { viewModel.delete(); onBack() }) {
                         Icon(Icons.Outlined.Delete, contentDescription = "Delete")
                     }
@@ -159,6 +164,8 @@ fun TaskDetailScreen(
                         .background(priorityColor, RoundedCornerShape(2.dp)),
                 )
                 Spacer(Modifier.width(Space.step))
+                // Tap to rename. Captured titles are the model's wording, and
+                // fixing one used to mean the web app or delete-and-retype.
                 Text(
                     task.title,
                     style = MaterialTheme.typography.titleLarge,
@@ -168,7 +175,18 @@ fun TaskDetailScreen(
                     } else {
                         MaterialTheme.colorScheme.onSurface
                     },
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClickLabel = "Rename") { renaming = task.title },
                 )
+                IconButton(onClick = { renaming = task.title }) {
+                    Icon(
+                        Icons.Outlined.Edit,
+                        contentDescription = "Rename",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
 
             Spacer(Modifier.height(Space.snug))
@@ -197,6 +215,18 @@ fun TaskDetailScreen(
                 Text(if (done) "Reopen" else "Mark complete")
             }
 
+            // Captured tasks can be wrong about whose they are. Saying so is
+            // a delete plus, for a group, the chance to stop reading it.
+            if (task.sourceType != SourceType.MANUAL && !done) {
+                TextButton(
+                    onClick = {
+                        viewModel.notMine { group ->
+                            if (group == null) onBack() else muteOffer = group
+                        }
+                    },
+                ) { Text("Not my task") }
+            }
+
             // Snooze reads as a modifier on the due date, so it sits with it
             // rather than in a section of its own.
             if (!done) {
@@ -218,8 +248,26 @@ fun TaskDetailScreen(
 
             // -- the facts ---------------------------------------------------
             Rule()
-            Fact("Due", DateFormats.due(task.dueAt), if (overdue) MaterialTheme.colorScheme.error else null)
-            task.reminderAt?.let { Fact("Reminder", DateFormats.full(it)) }
+            // The date and the reminder are one tappable block: changing when
+            // something is due is the edit people make most.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClickLabel = "Change date and reminder") { editingWhen = true },
+            ) {
+                Fact(
+                    "Due",
+                    task.dueAt?.let { DateFormats.dueLong(it) } ?: "No date - tap to set one",
+                    if (overdue) MaterialTheme.colorScheme.error else null,
+                )
+                Fact("Reminder", task.reminderAt?.let { DateFormats.full(it) } ?: "None")
+                Text(
+                    "Change",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(vertical = Space.tight),
+                )
+            }
             Recurrence.describe(task.recurrenceRule)?.let { Fact("Repeats", it) }
             task.completedAt?.let { Fact("Completed", DateFormats.full(it)) }
             Fact("Created", DateFormats.full(task.createdAt))
@@ -453,6 +501,129 @@ fun TaskDetailScreen(
                         modifier = Modifier.padding(top = Space.snug),
                     )
                 }
+            }
+        }
+    }
+
+    muteOffer?.let { group ->
+        AlertDialog(
+            onDismissRequest = {
+                muteOffer = null
+                onBack()
+            },
+            title = { Text("Removed") },
+            text = { Text("Stop creating tasks from the group \"$group\"? You can undo this in Settings → You and your chats.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.muteGroup(group)
+                    muteOffer = null
+                    onBack()
+                }) { Text("Stop watching") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    muteOffer = null
+                    onBack()
+                }) { Text("Just this one") }
+            },
+        )
+    }
+
+    val task = state.task
+    if (task != null) {
+        renaming?.let { draft ->
+            AlertDialog(
+                onDismissRequest = { renaming = null },
+                title = { Text("Rename task") },
+                text = {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { renaming = it },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.rename(draft)
+                            renaming = null
+                        },
+                        enabled = draft.isNotBlank(),
+                    ) { Text("Save") }
+                },
+                dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+            )
+        }
+
+        if (editingWhen) {
+            WhenSheet(
+                dueAt = task.dueAt,
+                reminderAt = task.reminderAt,
+                onDismiss = { editingWhen = false },
+                onSave = { due, reminder ->
+                    viewModel.setWhen(due, reminder)
+                    editingWhen = false
+                },
+            )
+        }
+    }
+}
+
+/** The task's date, time and reminder, edited in a sheet over the task. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WhenSheet(
+    dueAt: Long?,
+    reminderAt: Long?,
+    onDismiss: () -> Unit,
+    onSave: (Long?, Long?) -> Unit,
+) {
+    val now = System.currentTimeMillis()
+    var due by remember { mutableStateOf(dueAt) }
+    var choice by remember { mutableStateOf(SmartReminder.describe(reminderAt, dueAt, now)) }
+    // An existing reminder that no choice describes - set by a snooze, say -
+    // is kept as it is unless the person touches the reminder row.
+    var touched by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.edge)
+                .padding(bottom = Space.section),
+        ) {
+            Text("When", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(Space.step))
+            WhenFields(
+                dueAt = due,
+                onDueAt = {
+                    due = it
+                    touched = true
+                },
+                reminder = choice,
+                onReminder = {
+                    choice = it
+                    touched = true
+                },
+            )
+            Spacer(Modifier.height(Space.step))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.snug)) {
+                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        val reminder = if (touched) {
+                            SmartReminder.resolve(choice, due, System.currentTimeMillis())
+                        } else {
+                            reminderAt
+                        }
+                        onSave(due, reminder)
+                    },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Save") }
             }
         }
     }

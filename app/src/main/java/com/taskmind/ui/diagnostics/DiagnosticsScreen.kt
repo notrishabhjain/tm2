@@ -159,7 +159,7 @@ fun DiagnosticsScreen(
                         Text(
                             "${report.missed.size} real request(s) were missed. That is the expensive " +
                                 "kind of error - try a stronger model, or lower the thresholds in " +
-                                "Settings -> Accuracy.",
+                                "Settings -> Advanced -> Accuracy.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )
@@ -167,7 +167,7 @@ fun DiagnosticsScreen(
                     if (report.invented.isNotEmpty()) {
                         Text(
                             "${report.invented.size} non-request(s) became tasks. Raise the " +
-                                "auto-create threshold in Settings -> Accuracy.",
+                                "auto-create threshold in Settings -> Advanced -> Accuracy.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )

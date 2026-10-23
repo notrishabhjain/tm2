@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskmind.prefs.UiPreferences
+import com.taskmind.reminders.DailyBrief
 import com.taskmind.reminders.OngoingReminder
 import com.taskmind.ui.components.LabeledSwitch
 import com.taskmind.ui.components.SectionCard
@@ -63,6 +64,34 @@ fun BehaviourSection() {
                 "including delete.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    SectionCard(
+        title = "Daily brief",
+        subtitle = "TaskMind speaks first, twice a day - and stays quiet when there is nothing to say.",
+    ) {
+        LabeledSwitch(
+            label = "Morning brief at 9:00",
+            checked = state.morningBrief,
+            onCheckedChange = { on ->
+                scope.launch {
+                    prefs.setMorningBrief(on)
+                    DailyBrief.schedule(context)
+                }
+            },
+            description = "What is due today, what is already late, and who you are waiting on.",
+        )
+        LabeledSwitch(
+            label = "Evening wrap-up at 19:00",
+            checked = state.eveningBrief,
+            onCheckedChange = { on ->
+                scope.launch {
+                    prefs.setEveningBrief(on)
+                    DailyBrief.schedule(context)
+                }
+            },
+            description = "What is still open today, with one button to move all of it to tomorrow.",
         )
     }
 

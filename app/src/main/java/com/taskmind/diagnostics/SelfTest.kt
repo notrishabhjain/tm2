@@ -381,7 +381,7 @@ class SelfTest(private val context: Context, private val container: AppContainer
             return@timedSuspend false to
                 "$summary. The $awaiting waiting for transcription need Wi-Fi: \"Upload call audio " +
                 "on Wi-Fi only\" is on and this phone is on mobile data. They will transcribe as " +
-                "soon as you are on Wi-Fi, or turn that setting off in Settings -> Daily limits."
+                "soon as you are on Wi-Fi, or turn that setting off in Settings -> Advanced -> Limits."
         }
         true to summary
     }

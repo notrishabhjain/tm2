@@ -28,7 +28,6 @@ class UiPreferences(private val context: Context) {
     /** What a swipe does to a task row. */
     enum class SwipeAction(val label: String) {
         COMPLETE("Complete"),
-        ARCHIVE("Archive"),
         DELETE("Delete"),
         SNOOZE("Snooze a day"),
         NONE("Nothing"),
@@ -38,15 +37,23 @@ class UiPreferences(private val context: Context) {
         val swipeRight = stringPreferencesKey("swipe_right")
         val swipeLeft = stringPreferencesKey("swipe_left")
         val ongoingReminder = booleanPreferencesKey("ongoing_reminder")
+        val morningBrief = booleanPreferencesKey("morning_brief")
+        val eveningBrief = booleanPreferencesKey("evening_brief")
     }
 
     data class State(
         /** Swiping left-to-right. Completing is the one people reach for. */
         val swipeRight: SwipeAction = SwipeAction.COMPLETE,
-        /** Right-to-left. Archive rather than delete: undoing a mis-swipe
-         *  should not depend on catching a snackbar in time. */
-        val swipeLeft: SwipeAction = SwipeAction.ARCHIVE,
+        /** Right-to-left. Snooze rather than delete: undoing a mis-swipe
+         *  should not depend on catching a snackbar in time. Archive used to
+         *  be the default; a stored "ARCHIVE" now falls back to this. */
+        val swipeLeft: SwipeAction = SwipeAction.SNOOZE,
         val ongoingReminder: Boolean = false,
+        /** 9:00 - today, late, waiting on. On by default: it is the twin
+         *  speaking first, and it stays silent when there is nothing to say. */
+        val morningBrief: Boolean = true,
+        /** 19:00 - what slipped, with one tap to move it to tomorrow. */
+        val eveningBrief: Boolean = true,
     )
 
     val state: Flow<State> = context.uiDataStore.data
@@ -54,8 +61,10 @@ class UiPreferences(private val context: Context) {
         .map { p ->
             State(
                 swipeRight = p[K.swipeRight].toAction(SwipeAction.COMPLETE),
-                swipeLeft = p[K.swipeLeft].toAction(SwipeAction.ARCHIVE),
+                swipeLeft = p[K.swipeLeft].toAction(SwipeAction.SNOOZE),
                 ongoingReminder = p[K.ongoingReminder] ?: false,
+                morningBrief = p[K.morningBrief] ?: true,
+                eveningBrief = p[K.eveningBrief] ?: true,
             )
         }
 
@@ -67,6 +76,14 @@ class UiPreferences(private val context: Context) {
 
     suspend fun setSwipeLeft(action: SwipeAction) {
         context.uiDataStore.edit { it[K.swipeLeft] = action.name }
+    }
+
+    suspend fun setMorningBrief(enabled: Boolean) {
+        context.uiDataStore.edit { it[K.morningBrief] = enabled }
+    }
+
+    suspend fun setEveningBrief(enabled: Boolean) {
+        context.uiDataStore.edit { it[K.eveningBrief] = enabled }
     }
 
     suspend fun setOngoingReminder(enabled: Boolean) {

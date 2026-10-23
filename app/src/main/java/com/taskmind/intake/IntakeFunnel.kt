@@ -4,6 +4,7 @@ import com.taskmind.core.DateResolver
 import com.taskmind.core.EvidenceMatcher
 import com.taskmind.core.LogLevel
 import com.taskmind.core.Normalize
+import com.taskmind.core.SmartReminder
 import com.taskmind.core.SourceType
 import com.taskmind.core.Stage
 
@@ -145,7 +146,10 @@ class IntakeFunnel(
             projectId = candidate.projectId,
             tags = candidate.tags,
             recurrenceRule = candidate.recurrenceRule,
-            reminderAt = candidate.reminderAt,
+            // A captured task is reminded automatically; a manual one gets
+            // exactly what the person chose, including no reminder at all.
+            reminderAt = candidate.reminderAt
+                ?: if (candidate.sourceType == SourceType.MANUAL) null else SmartReminder.forDue(resolved.dueAt, now),
             parentTaskId = candidate.parentTaskId,
             sourceType = candidate.sourceType,
             sourceRef = candidate.sourceRef,

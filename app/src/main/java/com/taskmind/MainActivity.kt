@@ -19,7 +19,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
+import androidx.navigation.NavType
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import androidx.navigation.compose.rememberNavController
 import androidx.fragment.app.FragmentActivity
 import com.taskmind.di.AppContainer
@@ -77,6 +79,10 @@ class MainActivity : FragmentActivity() {
 
         val container = AppContainer.get(this)
         val startRoute = intent?.getStringExtra(EXTRA_ROUTE)
+        // "Share to TaskMind" from any app: the text goes through the same
+        // task-finding as a pasted transcript. Capped, because a share can be
+        // an entire chat export.
+        val sharedText = sharedTextOf(intent)
 
         setContent {
             TaskMindTheme {
@@ -96,6 +102,9 @@ class MainActivity : FragmentActivity() {
                         TaskMindNavHost(
                             startOnboarding = needsOnboarding,
                             startRoute = startRoute,
+                            sharedText = sharedText,
+                            incoming = incoming,
+                            onIncomingHandled = { incoming = null },
                             onShareText = ::shareText,
                             onShareFile = ::shareFile,
                         )
@@ -114,6 +123,33 @@ class MainActivity : FragmentActivity() {
             )
         }
     }
+
+    /**
+     * A notification, the widget or a share, arriving while TaskMind is
+     * already running.
+     *
+     * The activity is singleTask, so these never reached onCreate: tapping a
+     * reminder with the app open in the background brought the app forward on
+     * whatever screen it was showing, not on the task. The destination is now
+     * handed to the navigation host, which goes there. A plain launcher tap
+     * carries neither, and is left alone.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val route = intent.getStringExtra(EXTRA_ROUTE)
+        val shared = sharedTextOf(intent)
+        if (route != null || shared != null) incoming = Incoming(route, shared)
+    }
+
+    /** A destination that arrived while the app was already open. */
+    private var incoming by mutableStateOf<Incoming?>(null)
+
+    private fun sharedTextOf(intent: Intent?): String? = intent
+        ?.takeIf { it.action == Intent.ACTION_SEND && it.type?.startsWith("text/") == true }
+        ?.getStringExtra(Intent.EXTRA_TEXT)
+        ?.takeIf { it.isNotBlank() }
+        ?.take(MAX_SHARED_CHARS)
 
     /**
      * Redraw the widget when leaving the app.
@@ -190,6 +226,11 @@ class MainActivity : FragmentActivity() {
 
     companion object {
         const val EXTRA_ROUTE = "com.taskmind.extra.ROUTE"
+
+        /** Opens the task list with the new-task sheet up - the widget's "+". */
+        const val ROUTE_NEW_TASK = "new"
+
+        private const val MAX_SHARED_CHARS = 20_000
     }
 }
 
@@ -200,6 +241,7 @@ object Routes {
     const val REVIEW = "review"
     const val STATUS = "status"
     const val SETTINGS = "settings"
+    const val SETTINGS_PAGE = "settings?page={page}"
     const val LOG = "log"
     const val CALLS = "calls"
     const val IMPORT = "import"
@@ -210,6 +252,7 @@ object Routes {
     const val RECORDINGS = "recordings"
 
     fun taskDetail(id: String) = "task/$id"
+    fun settingsPage(page: String) = "settings?page=$page"
 }
 
 /**
@@ -251,18 +294,50 @@ private fun TopLevel(
 fun TaskMindNavHost(
     startOnboarding: Boolean,
     startRoute: String?,
+    sharedText: String? = null,
+    incoming: Incoming? = null,
+    onIncomingHandled: () -> Unit = {},
     onShareText: (String, String) -> Unit,
     onShareFile: (File) -> Unit,
     navController: NavHostController = rememberNavController(),
 ) {
     val start = when {
         startOnboarding -> Routes.ONBOARDING
+        sharedText != null -> Routes.IMPORT
         startRoute == "status" -> Routes.STATUS
         startRoute == "review" -> Routes.REVIEW
         // The widget opens a specific task. Matched by prefix rather than
         // listed, because the id is part of the route.
         startRoute != null && startRoute.startsWith("task/") -> startRoute
         else -> Routes.TASKS
+    }
+
+    // What the Import screen shows: the text shared at start-up, or later.
+    var shared by remember { mutableStateOf(sharedText) }
+    // The widget's "+" asks for the new-task sheet; the list clears this once
+    // it has opened it, so coming back to the list does not open it again.
+    var wantNewTask by remember { mutableStateOf(startRoute == MainActivity.ROUTE_NEW_TASK) }
+
+    // Links that arrive while the app is already open (it is singleTask, so
+    // they never pass through the start destination above).
+    LaunchedEffect(incoming) {
+        val next = incoming ?: return@LaunchedEffect
+        val route = next.route
+        when {
+            next.sharedText != null -> {
+                shared = next.sharedText
+                navController.navigate(Routes.IMPORT) { launchSingleTop = true }
+            }
+            route == MainActivity.ROUTE_NEW_TASK -> {
+                wantNewTask = true
+                navController.navigate(Routes.TASKS) { launchSingleTop = true }
+            }
+            route == "status" -> navController.navigate(Routes.STATUS)
+            route == "review" -> navController.navigate(Routes.REVIEW) { launchSingleTop = true }
+            route == "tasks" -> navController.navigate(Routes.TASKS) { launchSingleTop = true }
+            route != null && route.startsWith("task/") -> navController.navigate(route)
+        }
+        onIncomingHandled()
     }
 
     NavHost(navController = navController, startDestination = start) {
@@ -290,6 +365,9 @@ fun TaskMindNavHost(
                     onOpenReview = { navController.navigate(Routes.REVIEW) },
                     onOpenCalls = { navController.navigate(Routes.CALLS) },
                     onOpenImport = { navController.navigate(Routes.IMPORT) },
+                    onOpenNameSettings = { navController.navigate(Routes.settingsPage("YOU")) },
+                    startWithEditor = wantNewTask,
+                    onEditorRequestHandled = { wantNewTask = false },
                 )
             }
         }
@@ -325,7 +403,16 @@ fun TaskMindNavHost(
             )
         }
 
-        composable(Routes.SETTINGS) {
+        composable(
+            Routes.SETTINGS_PAGE,
+            arguments = listOf(
+                navArgument("page") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) { backStackEntry ->
             val vm: SettingsViewModel = viewModel(factory = AppViewModels.factory)
             TopLevel(MainTab.SETTINGS, navController) {
             SettingsScreen(
@@ -337,6 +424,10 @@ fun TaskMindNavHost(
                 onOpenHowItWorks = { navController.navigate(Routes.HOW_IT_WORKS) },
                 onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
                 onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
+                onOpenStatus = { navController.navigate(Routes.STATUS) },
+                onOpenCalls = { navController.navigate(Routes.CALLS) },
+                onOpenImport = { navController.navigate(Routes.IMPORT) },
+                initialPage = backStackEntry.arguments?.getString("page"),
             )
             }
         }
@@ -395,19 +486,33 @@ fun TaskMindNavHost(
 
         composable(Routes.CALLS) {
             val vm: CallsViewModel = viewModel(factory = AppViewModels.factory)
-            TopLevel(MainTab.CALLS, navController) {
-                CallsScreen(
-                    viewModel = vm,
-                    onBack = { navController.popBackStack() },
-                    onOpenImport = { navController.navigate(Routes.IMPORT) },
-                    onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
-                )
-            }
+            CallsScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onOpenImport = { navController.navigate(Routes.IMPORT) },
+                onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
+            )
         }
 
         composable(Routes.IMPORT) {
             val vm: ImportViewModel = viewModel(factory = AppViewModels.factory)
-            ImportTranscriptScreen(viewModel = vm, onBack = { navController.popBackStack() })
+            ImportTranscriptScreen(
+                viewModel = vm,
+                onBack = {
+                    // Arriving from a share there is nothing behind this
+                    // screen, so back lands on the task list instead of a
+                    // blank one.
+                    if (navController.previousBackStackEntry != null) {
+                        navController.popBackStack()
+                    } else {
+                        navController.navigate(Routes.TASKS) { popUpTo(Routes.IMPORT) { inclusive = true } }
+                    }
+                },
+                initialText = shared,
+            )
         }
     }
 }
+
+/** A route or shared text delivered to an already-running activity. */
+data class Incoming(val route: String?, val sharedText: String?, val at: Long = System.nanoTime())

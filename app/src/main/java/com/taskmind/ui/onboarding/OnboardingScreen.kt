@@ -5,6 +5,17 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -92,6 +103,7 @@ fun OnboardingScreen(
             ) {
                 when (state.step) {
                     OnboardingStep.WELCOME -> WelcomeStep(state, viewModel)
+                    OnboardingStep.NAME -> NameStep(state.names, viewModel::setNames)
                     OnboardingStep.PROVIDERS -> ProvidersStep(onOpenSettings)
                     OnboardingStep.NOTIFICATION_ACCESS -> PermissionStep(
                         item = state.permissions.firstOrNull { it.key == "notification_listener" },
@@ -320,4 +332,61 @@ private fun DoneStep() {
             "log behind it records every step of every capture.",
         style = MaterialTheme.typography.bodyLarge,
     )
+}
+
+/**
+ * Who "me" is, in the words people actually use in chats.
+ *
+ * Several names are normal: a first name, a nickname, the work handle, the
+ * short form colleagues use. Each one is a chip; tapping it removes it.
+ */
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun NameStep(names: Set<String>, onNames: (Set<String>) -> Unit) {
+    var draft by remember { mutableStateOf("") }
+    Text("What do people call you in chats?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+    Spacer(Modifier.height(12.dp))
+    Text(
+        "In a group, TaskMind only turns a message into a task when it is aimed at you - your name, " +
+            "an @mention, or everyone. To know that, it needs the names people use for you. Add as many " +
+            "as you like: first name, nickname, the short form colleagues use.",
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    Spacer(Modifier.height(16.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            label = { Text("A name") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        TextButton(
+            onClick = {
+                onNames(names + draft.trim())
+                draft = ""
+            },
+            enabled = draft.trim().length >= 2,
+        ) { Text("Add") }
+    }
+    Spacer(Modifier.height(12.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        names.sorted().forEach { name ->
+            InputChip(
+                selected = false,
+                onClick = { onNames(names - name) },
+                label = { Text(name) },
+                trailingIcon = { Icon(Icons.Outlined.Close, contentDescription = "Remove $name") },
+            )
+        }
+    }
+    if (names.isEmpty()) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "You can skip this, but until a name is set every group message is read as if it might be for you.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }

@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -35,6 +37,9 @@ data class TaskListUiState(
     val projects: List<ProjectEntity> = emptyList(),
     val tags: List<TagEntity> = emptyList(),
     val pendingReviewCount: Int = 0,
+    /** Whether the user has told the app what they are called. Defaults to
+     *  true so the banner never flashes up while settings are loading. */
+    val ownNamesSet: Boolean = true,
     val selection: Set<String> = emptySet(),
     val searching: Boolean = false,
     /** Tags the app worked out for itself, commonest first. */
@@ -80,6 +85,12 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             profiles.state.collect { p ->
                 filters.update { it.copy(profile = p.viewing, profileBook = p.book) }
             }
+        }
+        viewModelScope.launch {
+            container.settingsRepository.settings
+                .map { s -> s.ownNames.any { it.isNotBlank() } }
+                .distinctUntilChanged()
+                .collect { set -> filters.update { it.copy(ownNamesSet = set) } }
         }
     }
 
@@ -245,7 +256,6 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
         when (action) {
             UiPreferences.SwipeAction.COMPLETE ->
                 if (task.status == TaskStatus.COMPLETED) reopen(task) else complete(task)
-            UiPreferences.SwipeAction.ARCHIVE -> archive(task)
             UiPreferences.SwipeAction.DELETE -> delete(task)
             UiPreferences.SwipeAction.SNOOZE -> snooze(task)
             UiPreferences.SwipeAction.NONE -> Unit
@@ -265,15 +275,6 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             container.taskRepository.setDueAt(task.id, target)
             _undo.value = UndoAction("Snoozed \"${task.title.take(30)}\"") {
                 container.taskRepository.setDueAt(task.id, previous)
-            }
-        }
-    }
-
-    fun archive(task: TaskEntity) {
-        viewModelScope.launch {
-            container.taskRepository.archive(task.id)
-            offerUndo("Archived \"${task.title.take(40)}\"") {
-                container.taskRepository.unarchive(task.id)
             }
         }
     }
@@ -316,18 +317,6 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun bulkArchive() {
-        val ids = filters.value.selection.toList()
-        if (ids.isEmpty()) return
-        viewModelScope.launch {
-            container.taskRepository.bulkSetStatus(ids, TaskStatus.ARCHIVED)
-            clearSelection()
-            offerUndo("Archived ${ids.size} tasks") {
-                container.taskRepository.bulkSetStatus(ids, TaskStatus.ACTIVE)
-            }
-        }
-    }
-
     fun bulkDelete() {
         val ids = filters.value.selection.toList()
         if (ids.isEmpty()) return
@@ -347,10 +336,6 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             container.taskRepository.bulkSetPriority(ids, priority)
             clearSelection()
         }
-    }
-
-    fun createProject(name: String) {
-        viewModelScope.launch { container.taskRepository.createProject(name) }
     }
 
     private fun offerUndo(message: String, action: suspend () -> Unit) {

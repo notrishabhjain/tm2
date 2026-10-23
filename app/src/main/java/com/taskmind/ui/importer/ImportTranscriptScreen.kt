@@ -51,12 +51,18 @@ import com.taskmind.ui.components.SectionCard
 fun ImportTranscriptScreen(
     viewModel: ImportViewModel,
     onBack: () -> Unit,
+    /** Text shared into TaskMind from another app, used instead of the clipboard. */
+    initialText: String? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(Unit) { viewModel.readClipboard(context) }
+    // Keyed on the text, so a second share while this screen is open replaces
+    // the first rather than being ignored.
+    LaunchedEffect(initialText) {
+        if (initialText.isNullOrBlank()) viewModel.readClipboard(context) else viewModel.setText(initialText)
+    }
     LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(message)

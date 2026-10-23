@@ -22,12 +22,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Sort
@@ -58,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -106,6 +107,10 @@ fun TaskListScreen(
     onOpenReview: () -> Unit,
     onOpenCalls: () -> Unit,
     onOpenImport: () -> Unit,
+    onOpenNameSettings: () -> Unit = onOpenSettings,
+    /** Opened from the widget's "+": open the new-task sheet. */
+    startWithEditor: Boolean = false,
+    onEditorRequestHandled: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val undo by viewModel.undo.collectAsStateWithLifecycle()
@@ -115,7 +120,13 @@ fun TaskListScreen(
     val context = LocalContext.current
     val uiPrefs = remember(context) { UiPreferences(context) }
     val ui by uiPrefs.state.collectAsStateWithLifecycle(initialValue = UiPreferences.State())
-    var showEditor by remember { mutableStateOf(false) }
+    var showEditor by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(startWithEditor) {
+        if (startWithEditor) {
+            showEditor = true
+            onEditorRequestHandled()
+        }
+    }
     var showSortMenu by remember { mutableStateOf(false) }
 
     // Spec 16: undo for every destructive action, via snackbar.
@@ -137,7 +148,6 @@ fun TaskListScreen(
                     count = state.selection.size,
                     onClear = viewModel::clearSelection,
                     onComplete = viewModel::bulkComplete,
-                    onArchive = viewModel::bulkArchive,
                     onDelete = viewModel::bulkDelete,
                 )
             } else {
@@ -220,11 +230,13 @@ fun TaskListScreen(
                 )
             }
 
-            // The review inbox earns a permanent place at the top of the list
-            // rather than a badge somewhere in a menu: an item waiting for a
-            // decision is the most time-sensitive thing the app holds.
-            if (state.pendingReviewCount > 0) {
-                ReviewBanner(count = state.pendingReviewCount, onClick = onOpenReview)
+            // The one setting that changes what gets captured. Without a name
+            // the group filter cannot tell a request to you from one between
+            // two colleagues, so it is asked for here, where it will be seen,
+            // rather than on a settings page nobody opens. The review inbox
+            // used to hold this spot; the Review tab's badge already says it.
+            if (!state.ownNamesSet) {
+                NameBanner(onClick = onOpenNameSettings)
             }
 
             ProfileChips(selected = state.profile, onSelect = viewModel::setProfile)
@@ -337,10 +349,9 @@ fun TaskListScreen(
 
     if (showEditor) {
         TaskEditorSheet(
-            projects = state.projects,
             onDismiss = { showEditor = false },
-            onSave = { title, notes, dueAt, priority, projectId, tags, reminderAt, rule ->
-                viewModel.createTask(title, notes, dueAt, priority, projectId, tags, reminderAt, rule)
+            onSave = { title, notes, dueAt, priority, tags, reminderAt, rule ->
+                viewModel.createTask(title, notes, dueAt, priority, null, tags, reminderAt, rule)
                 showEditor = false
             },
         )
@@ -583,14 +594,14 @@ private fun BundleHeading(group: TaskBundles.Group, onCompleteAll: () -> Unit) {
 }
 
 /**
- * The one thing on this screen allowed to look like a call to action.
+ * Asks for the user's name until it has one.
  *
- * Items awaiting approval used to sit behind a badge in an overflow menu,
- * which is where things go to be forgotten.
+ * The only banner on this screen: everything about group chats depends on it,
+ * and it was previously a card on a Status screen nothing in the app linked to.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReviewBanner(count: Int, onClick: () -> Unit) {
+private fun NameBanner(onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(Radius.card),
@@ -604,20 +615,20 @@ private fun ReviewBanner(count: Int, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                Icons.Outlined.Inbox,
+                Icons.Outlined.Person,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
             )
             Spacer(Modifier.width(Space.step))
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = if (count == 1) "1 item needs your approval" else "$count items need your approval",
+                    "Tell TaskMind your name",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    "Tap to accept or dismiss",
+                    "So requests between other people in a group stop becoming your tasks.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
                 )
@@ -632,7 +643,6 @@ private fun SelectionBar(
     count: Int,
     onClear: () -> Unit,
     onComplete: () -> Unit,
-    onArchive: () -> Unit,
     onDelete: () -> Unit,
 ) {
     TopAppBar(
@@ -645,9 +655,6 @@ private fun SelectionBar(
         actions = {
             IconButton(onClick = onComplete) {
                 Icon(Icons.Outlined.DoneAll, contentDescription = "Complete selected")
-            }
-            IconButton(onClick = onArchive) {
-                Icon(Icons.Outlined.Archive, contentDescription = "Archive selected")
             }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Outlined.Delete, contentDescription = "Delete selected")

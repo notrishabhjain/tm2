@@ -158,6 +158,7 @@ class TasksWidget : AppWidgetProvider() {
             for (slot in 0 until SLOTS) setViewVisibility(ROWS[slot], View.GONE)
             if (WidgetPaging.scrolling(context)) bindList(context, this, widgetId)
             setOnClickPendingIntent(R.id.widget_title, openApp(context, Routes.TASKS))
+            setOnClickPendingIntent(R.id.widget_add, openApp(context, MainActivity.ROUTE_NEW_TASK))
         }
 
     private fun render(context: Context, snapshot: WidgetData.Snapshot, widgetId: Int): RemoteViews {
@@ -182,6 +183,8 @@ class TasksWidget : AppWidgetProvider() {
         }
 
         views.setOnClickPendingIntent(R.id.widget_title, openApp(context, Routes.TASKS))
+        // The one thing a home-screen list could not do before: add to it.
+        views.setOnClickPendingIntent(R.id.widget_add, openApp(context, MainActivity.ROUTE_NEW_TASK))
         views.setOnClickPendingIntent(R.id.widget_summary, openApp(context, Routes.TASKS))
         views.setOnClickPendingIntent(R.id.widget_empty, openApp(context, Routes.TASKS))
 

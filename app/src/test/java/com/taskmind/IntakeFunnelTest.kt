@@ -145,6 +145,37 @@ class IntakeFunnelTest {
     }
 
     /**
+     * A captured task with a deadline reminds you without being asked.
+     *
+     * Before this, the AI set a due date and nothing else, so nothing ever
+     * fired. The candidate is due "tomorrow" with no time (18:00 IST), so the
+     * reminder lands at 09:00 IST that morning.
+     */
+    @Test
+    fun `a captured task with a due date gets a reminder`() = runTest {
+        val h = Harness()
+        h.funnel.submit(notificationCandidate())
+        val expected = ZonedDateTime.parse("2025-07-08T09:00:00+05:30").toInstant().toEpochMilli()
+        assertEquals(expected, h.sink.tasks.single().reminderAt)
+    }
+
+    @Test
+    fun `a manual task gets only the reminder it was given`() = runTest {
+        val h = Harness()
+        h.funnel.submit(
+            notificationCandidate().copy(
+                sourceType = SourceType.MANUAL,
+                evidence = null,
+                confidence = null,
+                sourceRef = null,
+                rawCaptureId = null,
+                sourceText = "",
+            ),
+        )
+        assertNull(h.sink.tasks.single().reminderAt)
+    }
+
+    /**
      * Failure mode 5: persist first, mark second. A capture may only be marked
      * processed once the task it produced actually exists.
      */

@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
  */
 enum class OnboardingStep(val title: String) {
     WELCOME("What TaskMind does"),
+    NAME("What people call you"),
     PROVIDERS("AI provider setup"),
     NOTIFICATION_ACCESS("Notification access"),
     APPS("Which apps to watch"),
@@ -35,6 +36,7 @@ data class OnboardingUiState(
     val callRecordingSeen: Boolean? = null,
     val checkingRecordings: Boolean = false,
     val finished: Boolean = false,
+    val names: Set<String> = emptySet(),
 ) {
     val steps: List<OnboardingStep>
         get() = OnboardingStep.entries.filter { it != OnboardingStep.AUTOSTART || isXiaomi }
@@ -48,8 +50,22 @@ class OnboardingViewModel(private val container: AppContainer) : ViewModel() {
     init {
         refresh()
         viewModelScope.launch {
-            _state.value = _state.value.copy(consent = container.settingsRepository.current().cloudConsent)
+            val settings = container.settingsRepository.current()
+            _state.value = _state.value.copy(consent = settings.cloudConsent, names = settings.ownNames)
         }
+    }
+
+    /**
+     * The names the group filter and the model compare messages against.
+     *
+     * Asked during setup because everything about group chats depends on it:
+     * without it the filter stands down and the model is asked whether
+     * "Rahul, file bhej do" means you with nothing to compare "Rahul" against.
+     */
+    fun setNames(names: Set<String>) {
+        val clean = names.map { it.trim() }.filter { it.length >= 2 }.toSet()
+        _state.value = _state.value.copy(names = clean)
+        viewModelScope.launch { container.settingsRepository.setOwnNames(clean) }
     }
 
     fun refresh() {

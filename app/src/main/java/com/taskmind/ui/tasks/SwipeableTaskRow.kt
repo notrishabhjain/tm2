@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -100,13 +99,12 @@ private fun SwipeBackground(action: SwipeAction?, alignment: Alignment) {
     val colour = when (action) {
         SwipeAction.COMPLETE -> MaterialTheme.colorScheme.primaryContainer
         SwipeAction.DELETE -> MaterialTheme.colorScheme.errorContainer
-        SwipeAction.ARCHIVE, SwipeAction.SNOOZE -> MaterialTheme.colorScheme.secondaryContainer
+        SwipeAction.SNOOZE -> MaterialTheme.colorScheme.secondaryContainer
         SwipeAction.NONE, null -> Color.Transparent
     }
     val icon: ImageVector? = when (action) {
         SwipeAction.COMPLETE -> Icons.Filled.Check
         SwipeAction.DELETE -> Icons.Outlined.Delete
-        SwipeAction.ARCHIVE -> Icons.Outlined.Archive
         SwipeAction.SNOOZE -> Icons.Outlined.Snooze
         SwipeAction.NONE, null -> null
     }
