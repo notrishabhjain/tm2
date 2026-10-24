@@ -1,5 +1,8 @@
 package com.taskmind.ui.settings
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,8 +24,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskmind.prefs.UiPreferences
+import com.taskmind.reminders.CalendarToday
 import com.taskmind.reminders.DailyBrief
-import com.taskmind.reminders.OngoingReminder
 import com.taskmind.ui.components.LabeledSwitch
 import com.taskmind.ui.components.SectionCard
 import com.taskmind.widget.TasksWidget
@@ -44,6 +47,11 @@ fun BehaviourSection() {
     val scope = rememberCoroutineScope()
     val prefs = remember(context) { UiPreferences(context) }
     val state by prefs.state.collectAsStateWithLifecycle(initialValue = UiPreferences.State())
+    // Asked for only when the switch is turned on, and the switch only turns
+    // on if it is granted.
+    val calendarPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) scope.launch { prefs.setCalendarInBrief(true) }
+    }
 
     SectionCard(
         title = "Swipe on a task",
@@ -69,7 +77,8 @@ fun BehaviourSection() {
 
     SectionCard(
         title = "Daily brief",
-        subtitle = "TaskMind speaks first, twice a day - and stays quiet when there is nothing to say.",
+        subtitle = "TaskMind speaks first, twice a day - and stays quiet when there is nothing to say. " +
+            "This replaces the standing \"due today\" notification.",
     ) {
         LabeledSwitch(
             label = "Morning brief at 9:00",
@@ -93,31 +102,28 @@ fun BehaviourSection() {
             },
             description = "What is still open today, with one button to move all of it to tomorrow.",
         )
-    }
-
-    SectionCard(
-        title = "Standing reminder",
-        subtitle = "A notification that stays in your shade listing what is overdue or due today.",
-    ) {
         LabeledSwitch(
-            label = "Keep today's tasks in the notification shade",
-            checked = state.ongoingReminder,
+            label = "Weekly review on Sunday at 18:00",
+            checked = state.weeklyReview,
             onCheckedChange = { on ->
                 scope.launch {
-                    prefs.setOngoingReminder(on)
-                    if (on) Scheduler.enqueueOngoingReminder(context) else OngoingReminder.cancel(context)
+                    prefs.setWeeklyReview(on)
+                    DailyBrief.schedule(context)
                 }
             },
-            description = "Silent, and refreshed every hour and whenever you leave the app.",
+            description = "What got done, what has been open longest, and who asks the most.",
         )
-
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "It disappears on its own when nothing is due. On Android 14 and later the system " +
-                "allows any notification to be swiped away whatever the app asks - if you dismiss " +
-                "it, it returns at the next refresh rather than staying gone.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        LabeledSwitch(
+            label = "Today's meetings in the morning brief",
+            checked = state.calendarInBrief && CalendarToday.granted(context),
+            onCheckedChange = { on ->
+                if (on && !CalendarToday.granted(context)) {
+                    calendarPermission.launch(Manifest.permission.READ_CALENDAR)
+                } else {
+                    scope.launch { prefs.setCalendarInBrief(on) }
+                }
+            },
+            description = "Reads your calendar on the phone for that one notification. Nothing is stored or sent.",
         )
     }
 

@@ -39,6 +39,17 @@ class BriefTest {
         assertEquals(listOf("Pay rent", "Call bank", "Send deck"), e.lines)
     }
 
+    @Test fun `meetings lead the morning and count on their own`() {
+        val m = Brief.compose(
+            Brief.Kind.MORNING,
+            emptyList(),
+            nine,
+            listOf(Brief.Meeting(ist("2026-10-23T11:00"), "Vendor sync"), Brief.Meeting(null, "Diwali leave")),
+        )!!
+        assertEquals("2 meetings", m.title)
+        assertEquals(listOf("All day  Meeting: Diwali leave", "11:00  Meeting: Vendor sync"), m.lines)
+    }
+
     @Test fun `nothing to say means no message`() {
         val clear = listOf(Brief.Item("Plan offsite", ist("2026-10-30T18:00"), waitingOn = false))
         assertNull(Brief.compose(Brief.Kind.MORNING, clear, nine))

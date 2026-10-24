@@ -25,6 +25,8 @@ import androidx.navigation.navArgument
 import androidx.navigation.compose.rememberNavController
 import androidx.fragment.app.FragmentActivity
 import com.taskmind.di.AppContainer
+import com.taskmind.ui.ask.AskScreen
+import com.taskmind.ui.ask.AskViewModel
 import com.taskmind.security.AppLock
 import com.taskmind.security.LockGate
 import com.taskmind.widget.TasksWidget
@@ -186,9 +188,6 @@ class MainActivity : FragmentActivity() {
         // phone is most likely to still have a network. The worker is a no-op
         // when sync is off or nothing has changed.
         Scheduler.enqueueSync(this)
-        // Leaving the app is when tasks have most likely just changed, so the
-        // standing reminder is rebuilt here rather than waiting for the hour.
-        Scheduler.enqueueOngoingReminder(this)
     }
 
     /** Log and data exports leave through the share sheet, not a file path. */
@@ -250,9 +249,11 @@ object Routes {
     const val HOW_IT_WORKS = "how_it_works"
     const val DIAGNOSTICS = "diagnostics"
     const val RECORDINGS = "recordings"
+    const val ASK = "ask?q={q}"
 
     fun taskDetail(id: String) = "task/$id"
     fun settingsPage(page: String) = "settings?page=$page"
+    fun ask(question: String) = "ask?q=${android.net.Uri.encode(question)}"
 }
 
 /**
@@ -366,6 +367,7 @@ fun TaskMindNavHost(
                     onOpenCalls = { navController.navigate(Routes.CALLS) },
                     onOpenImport = { navController.navigate(Routes.IMPORT) },
                     onOpenNameSettings = { navController.navigate(Routes.settingsPage("YOU")) },
+                    onAsk = { question -> navController.navigate(Routes.ask(question)) },
                     startWithEditor = wantNewTask,
                     onEditorRequestHandled = { wantNewTask = false },
                 )
@@ -400,6 +402,9 @@ fun TaskMindNavHost(
                 onOpenModelCalls = { navController.navigate(Routes.MODEL_CALLS) },
                 onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
                 onShareText = onShareText,
+                onOpenHowItWorks = { navController.navigate(Routes.HOW_IT_WORKS) },
+                onOpenPrompts = { navController.navigate(Routes.PROMPTS) },
+                onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
             )
         }
 
@@ -491,6 +496,25 @@ fun TaskMindNavHost(
                 onBack = { navController.popBackStack() },
                 onOpenImport = { navController.navigate(Routes.IMPORT) },
                 onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
+            )
+        }
+
+        composable(
+            Routes.ASK,
+            arguments = listOf(
+                navArgument("q") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) { backStackEntry ->
+            val vm: AskViewModel = viewModel(factory = AppViewModels.factory)
+            AskScreen(
+                viewModel = vm,
+                initialQuestion = backStackEntry.arguments?.getString("q"),
+                onBack = { navController.popBackStack() },
+                onOpenTask = { id -> navController.navigate(Routes.taskDetail(id)) },
             )
         }
 

@@ -35,29 +35,44 @@ object Brief {
     private const val MAX_LINES = 5
     private val TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
 
-    /** [active] must be the active tasks only. */
-    fun compose(kind: Kind, active: List<Item>, now: Long): Message? = when (kind) {
-        Kind.MORNING -> morning(active, now)
-        Kind.EVENING -> evening(active, now)
-    }
+    /** A calendar event today. [start] is null for an all-day event. */
+    data class Meeting(val start: Long?, val title: String)
 
-    private fun morning(active: List<Item>, now: Long): Message? {
+    /**
+     * [active] must be the active tasks only. [meetings] are today's calendar
+     * events, read only when the person turned that on; the morning uses
+     * them, the evening does not.
+     */
+    fun compose(kind: Kind, active: List<Item>, now: Long, meetings: List<Meeting> = emptyList()): Message? =
+        when (kind) {
+            Kind.MORNING -> morning(active, now, meetings)
+            Kind.EVENING -> evening(active, now)
+        }
+
+    private fun morning(active: List<Item>, now: Long, meetings: List<Meeting>): Message? {
         val startOfToday = DateResolver.startOfDay(now)
         val endOfToday = DateResolver.endOfDay(now)
         val overdue = active.filter { it.dueAt != null && it.dueAt < startOfToday }
         val today = active.filter { it.dueAt != null && it.dueAt in startOfToday..endOfToday }
             .sortedBy { it.dueAt }
         val waiting = active.count { it.waitingOn }
-        if (overdue.isEmpty() && today.isEmpty() && waiting == 0) return null
+        if (overdue.isEmpty() && today.isEmpty() && waiting == 0 && meetings.isEmpty()) return null
 
         val title = listOfNotNull(
+            meetings.size.takeIf { it > 0 }?.let { if (it == 1) "1 meeting" else "$it meetings" },
             today.size.takeIf { it > 0 }?.let { "$it due today" },
             overdue.size.takeIf { it > 0 }?.let { "$it overdue" },
             waiting.takeIf { it > 0 }?.let { "waiting on $it" },
         ).joinToString(", ").replaceFirstChar { it.uppercase() }
 
-        val lines = (overdue.sortedBy { it.dueAt }.map { "Late: ${it.title}" } + today.map { line(it) })
-            .take(MAX_LINES)
+        // Meetings first: they are fixed in time, so the day is planned
+        // around them.
+        val meetingLines = meetings.sortedBy { it.start ?: 0L }.map { m ->
+            val at = m.start?.let { Instant.ofEpochMilli(it).atZone(DateResolver.IST).format(TIME) } ?: "All day"
+            "$at  Meeting: ${m.title}"
+        }
+        val lines = (meetingLines + overdue.sortedBy { it.dueAt }.map { "Late: ${it.title}" } + today.map { line(it) })
+            .take(MAX_LINES + 2)
         return Message(title, lines, slipped = 0)
     }
 

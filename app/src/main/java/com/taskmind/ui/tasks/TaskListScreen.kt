@@ -4,6 +4,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,7 +30,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DoneAll
@@ -30,14 +37,10 @@ import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Sort
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskmind.core.Priority
+import com.taskmind.core.WeeklyReview
 import com.taskmind.core.TaskStatus
 import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.ui.components.DateFormats
@@ -111,6 +115,8 @@ fun TaskListScreen(
     /** Opened from the widget's "+": open the new-task sheet. */
     startWithEditor: Boolean = false,
     onEditorRequestHandled: () -> Unit = {},
+    /** Ask the task list a question in words (Ask TaskMind). */
+    onAsk: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val undo by viewModel.undo.collectAsStateWithLifecycle()
@@ -127,7 +133,7 @@ fun TaskListScreen(
             onEditorRequestHandled()
         }
     }
-    var showSortMenu by remember { mutableStateOf(false) }
+    var showFilters by remember { mutableStateOf(false) }
 
     // Spec 16: undo for every destructive action, via snackbar.
     LaunchedEffect(undo) {
@@ -160,40 +166,14 @@ fun TaskListScreen(
                         IconButton(onClick = { viewModel.setSearching(!state.searching) }) {
                             Icon(Icons.Outlined.Search, contentDescription = "Search tasks")
                         }
-                        Box {
-                            IconButton(onClick = { showSortMenu = true }) {
-                                Icon(Icons.Outlined.Sort, contentDescription = "Sort and group")
-                            }
-                            DropdownMenu(showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                                SortMode.entries.forEach { mode ->
-                                    DropdownMenuItem(
-                                        text = { Text(mode.label) },
-                                        onClick = {
-                                            viewModel.setSort(mode)
-                                            showSortMenu = false
-                                        },
-                                        trailingIcon = {
-                                            if (state.sort == mode) {
-                                                Icon(Icons.Outlined.CheckCircle, contentDescription = null)
-                                            }
-                                        },
-                                    )
-                                }
-                                HorizontalDivider()
-                                GroupMode.entries.forEach { mode ->
-                                    DropdownMenuItem(
-                                        text = { Text(mode.label) },
-                                        onClick = {
-                                            viewModel.setGroup(mode)
-                                            showSortMenu = false
-                                        },
-                                        trailingIcon = {
-                                            if (state.group == mode) {
-                                                Icon(Icons.Outlined.CheckCircle, contentDescription = null)
-                                            }
-                                        },
-                                    )
-                                }
+                        // Sort, group, work/personal and tags all live in one
+                        // sheet behind this button. They used to be three rows
+                        // of chips stacked above the first task.
+                        IconButton(onClick = { showFilters = true }) {
+                            BadgedBox(
+                                badge = { if (state.profile != null || state.tag != null) Badge() },
+                            ) {
+                                Icon(Icons.Outlined.Tune, contentDescription = "Filter, sort and group")
                             }
                         }
                     },
@@ -228,6 +208,14 @@ fun TaskListScreen(
                         viewModel.setSearching(false)
                     },
                 )
+                // Search matches words; a question needs reading. Once the
+                // query looks like a question, offer to ask it instead.
+                if (looksLikeQuestion(state.query)) {
+                    TextButton(
+                        onClick = { onAsk(state.query.trim()) },
+                        modifier = Modifier.padding(horizontal = Space.step),
+                    ) { Text("Ask TaskMind: \u201c${state.query.trim().take(40)}\u201d") }
+                }
             }
 
             // The one setting that changes what gets captured. Without a name
@@ -239,15 +227,17 @@ fun TaskListScreen(
                 NameBanner(onClick = onOpenNameSettings)
             }
 
-            ProfileChips(selected = state.profile, onSelect = viewModel::setProfile)
-
             ViewChips(state = state, onSelect = viewModel::setView)
 
-            TagChips(
-                tags = state.tagCloud,
-                selected = state.tag,
-                onSelect = viewModel::setTag,
+            // Only what is actually narrowing the list, each with its own x.
+            ActiveFilters(
+                profile = state.profile,
+                tag = state.tag,
+                onClearProfile = { viewModel.setProfile(null) },
+                onClearTag = { viewModel.setTag(null) },
             )
+
+            state.week?.let { WeekCard(it) }
 
             if (state.tasks.isEmpty()) {
                 Empty(
@@ -330,10 +320,13 @@ fun TaskListScreen(
                             // find out, and it is the thing a flat list buries.
                             for ((section, rows) in TaskFilters.agenda(state.tasks, System.currentTimeMillis())) {
                                 item(key = "section-${section.name}") {
+                                    val overdueSection = section == TaskFilters.AgendaSection.OVERDUE
                                     SectionHeading(
                                         label = section.label,
                                         count = rows.size,
-                                        urgent = section == TaskFilters.AgendaSection.OVERDUE,
+                                        urgent = overdueSection,
+                                        action = if (overdueSection) "Move to today" else null,
+                                        onAction = { viewModel.moveToToday(rows) },
                                     )
                                 }
                                 taskRows(rows)
@@ -345,6 +338,17 @@ fun TaskListScreen(
                 }
             }
         }
+    }
+
+    if (showFilters) {
+        FilterSheet(
+            state = state,
+            onDismiss = { showFilters = false },
+            onProfile = viewModel::setProfile,
+            onSort = viewModel::setSort,
+            onGroup = viewModel::setGroup,
+            onTag = viewModel::setTag,
+        )
     }
 
     if (showEditor) {
@@ -438,8 +442,13 @@ private fun TaskRow(
                 // Alpha - WhatsApp". The same information, but each part is
                 // separately readable and separately searchable, which is the
                 // point of deriving them at all.
+                // One chip: who it is from. The date already says when, and
+                // the app, the source and the topic are on the task's own
+                // screen - three chips per row was most of the list's noise.
                 val autoTags = remember(task.id, task.title, task.sourceLabel) {
-                    TaskFilters.autoTags(task).take(3)
+                    TaskFilters.autoTags(task)
+                        .filter { it.kind == AutoTagger.Kind.PERSON || it.kind == AutoTagger.Kind.GROUP }
+                        .take(1)
                 }
                 if (task.dueAt != null || autoTags.isNotEmpty()) {
                     Spacer(Modifier.height(Space.tight))
@@ -469,34 +478,119 @@ private fun TaskRow(
 }
 
 /**
- * The tag filter row.
+ * Everything that narrows or orders the list, in one place.
  *
- * Only tags the app worked out itself, and only ones that actually occur -
- * an empty row is hidden rather than shown with nothing in it. Tapping the
- * selected tag again clears the filter, so there is no separate "clear"
- * control to find.
+ * Profile, sort, grouping and tags were a sort menu plus three rows of chips
+ * permanently above the list - on a phone, a third of the screen before the
+ * first task. They change rarely, so they live here; the list shows only what
+ * is currently switched on (see [ActiveFilters]).
  */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun FilterSheet(
+    state: TaskListUiState,
+    onDismiss: () -> Unit,
+    onProfile: (Profile?) -> Unit,
+    onSort: (SortMode) -> Unit,
+    onGroup: (GroupMode) -> Unit,
+    onTag: (String?) -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.edge)
+                .padding(bottom = Space.section),
+        ) {
+            SheetLabel("Show")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.snug)) {
+                FilterChip(selected = state.profile == null, onClick = { onProfile(null) }, label = { Text("Everything") })
+                Profile.entries.forEach { profile ->
+                    FilterChip(
+                        selected = state.profile == profile,
+                        onClick = { onProfile(if (state.profile == profile) null else profile) },
+                        label = { Text(profile.label) },
+                    )
+                }
+            }
+
+            SheetLabel("Sort by")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.snug)) {
+                SortMode.entries.forEach { mode ->
+                    FilterChip(selected = state.sort == mode, onClick = { onSort(mode) }, label = { Text(mode.label) })
+                }
+            }
+
+            SheetLabel("Group")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.snug)) {
+                GroupMode.entries.forEach { mode ->
+                    FilterChip(selected = state.group == mode, onClick = { onGroup(mode) }, label = { Text(mode.label) })
+                }
+            }
+
+            // Only tags the app worked out itself, and only ones that occur in
+            // this view - a tag outlives its last task by not a second.
+            if (state.tagCloud.isNotEmpty()) {
+                SheetLabel("People, groups and topics")
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(Space.snug),
+                    verticalArrangement = Arrangement.spacedBy(Space.tight),
+                ) {
+                    state.tagCloud.forEach { tag ->
+                        val isOn = state.tag?.equals(tag.value, ignoreCase = true) == true
+                        FilterChip(
+                            selected = isOn,
+                            onClick = { onTag(if (isOn) null else tag.value) },
+                            label = { Text(tag.value) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SheetLabel(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = Space.step, bottom = Space.tight),
+    )
+}
+
+/** The filters currently narrowing the list, each removable in one tap. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TagChips(
-    tags: List<AutoTagger.Tag>,
-    selected: String?,
-    onSelect: (String?) -> Unit,
+private fun ActiveFilters(
+    profile: Profile?,
+    tag: String?,
+    onClearProfile: () -> Unit,
+    onClearTag: () -> Unit,
 ) {
-    if (tags.isEmpty()) return
+    if (profile == null && tag == null) return
     Row(
         Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = Space.step, vertical = Space.tight),
+            .padding(horizontal = Space.step),
         horizontalArrangement = Arrangement.spacedBy(Space.snug),
     ) {
-        tags.forEach { tag ->
-            val isOn = selected?.equals(tag.value, ignoreCase = true) == true
-            FilterChip(
-                selected = isOn,
-                onClick = { onSelect(if (isOn) null else tag.value) },
-                label = { Text(tag.value) },
+        profile?.let {
+            InputChip(
+                selected = true,
+                onClick = onClearProfile,
+                label = { Text(it.label) },
+                trailingIcon = { Icon(Icons.Outlined.Close, contentDescription = "Show everything", modifier = Modifier.size(16.dp)) },
+            )
+        }
+        tag?.let {
+            InputChip(
+                selected = true,
+                onClick = onClearTag,
+                label = { Text(it) },
+                trailingIcon = { Icon(Icons.Outlined.Close, contentDescription = "Clear filter", modifier = Modifier.size(16.dp)) },
             )
         }
     }
@@ -527,7 +621,13 @@ private fun priorityColor(priority: Priority, overdue: Boolean): Color = when {
 }
 
 @Composable
-private fun SectionHeading(label: String, count: Int, urgent: Boolean) {
+private fun SectionHeading(
+    label: String,
+    count: Int,
+    urgent: Boolean,
+    action: String? = null,
+    onAction: () -> Unit = {},
+) {
     val color = if (urgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         Modifier
@@ -543,6 +643,10 @@ private fun SectionHeading(label: String, count: Int, urgent: Boolean) {
         )
         Spacer(Modifier.width(Space.snug))
         CountPill(count, color)
+        if (action != null) {
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onAction) { Text(action) }
+        }
     }
 }
 
@@ -637,6 +741,26 @@ private fun NameBanner(onClick: () -> Unit) {
     }
 }
 
+/** The last seven days, at the top of the Done view. */
+@Composable
+private fun WeekCard(week: WeeklyReview.Summary) {
+    Surface(
+        shape = RoundedCornerShape(Radius.card),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Space.edge, vertical = Space.snug),
+    ) {
+        Column(Modifier.padding(Space.edge)) {
+            Text("This week", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(week.headline, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+            week.lines().forEach { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SelectionBar(
@@ -672,7 +796,7 @@ private fun SearchField(query: String, onQuery: (String) -> Unit, onClose: () ->
     TextField(
         value = query,
         onValueChange = onQuery,
-        placeholder = { Text("Search titles and notes") },
+        placeholder = { Text("Search, or ask a question") },
         singleLine = true,
         leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
         trailingIcon = {
@@ -689,37 +813,6 @@ private fun SearchField(query: String, onQuery: (String) -> Unit, onClose: () ->
             .fillMaxWidth()
             .padding(horizontal = Space.edge, vertical = Space.snug),
     )
-}
-
-/**
- * Work, personal, or everything.
- *
- * Shown only once something has actually been classified - a switch between
- * two identical lists is furniture. Settings -> People and chats is where the
- * classifying happens, and the row appears the moment the first name is sorted.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ProfileChips(selected: Profile?, onSelect: (Profile?) -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(start = Space.step, end = Space.step, top = Space.snug),
-        horizontalArrangement = Arrangement.spacedBy(Space.snug),
-    ) {
-        FilterChip(
-            selected = selected == null,
-            onClick = { onSelect(null) },
-            label = { Text("Everything") },
-        )
-        Profile.entries.forEach { profile ->
-            FilterChip(
-                selected = selected == profile,
-                onClick = { onSelect(if (selected == profile) null else profile) },
-                label = { Text(profile.label) },
-            )
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -741,4 +834,10 @@ private fun ViewChips(state: TaskListUiState, onSelect: (TaskView) -> Unit) {
             )
         }
     }
+}
+
+/** Three words or more, or a question mark: worth offering to ask. */
+private fun looksLikeQuestion(query: String): Boolean {
+    val q = query.trim()
+    return q.endsWith("?") || q.split(Regex("\\s+")).size >= 3
 }

@@ -1,5 +1,6 @@
 package com.taskmind.ui.review
 
+import com.taskmind.data.repo.ReviewEdit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskmind.data.db.entity.ReviewItemEntity
@@ -74,6 +75,14 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             container.taskRepository.acceptReviewItem(item.id)
             _message.value = "Added \"${item.title.take(40)}\""
+        }
+    }
+
+    /** Accepts the item with the person's corrections. */
+    fun acceptEdited(item: ReviewItemEntity, edit: ReviewEdit) {
+        viewModelScope.launch {
+            container.taskRepository.acceptReviewItem(item.id, edit)
+            _message.value = "Added \"${edit.title.take(40)}\""
         }
     }
 

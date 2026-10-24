@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import com.taskmind.MainActivity
 import com.taskmind.R
 import com.taskmind.core.Brief
+import com.taskmind.core.WeeklyReview
 import com.taskmind.intake.TaskCreatedNotifier
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -318,6 +319,22 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         postSafely(id, builder.build())
     }
 
+    /** Sunday's look back at the week. */
+    fun postWeekly(summary: WeeklyReview.Summary) {
+        if (!canPost()) return
+        val style = NotificationCompat.InboxStyle().setBigContentTitle(summary.headline)
+        summary.lines().forEach { style.addLine(it) }
+        val notification = NotificationCompat.Builder(context, CHANNEL_BRIEF)
+            .setSmallIcon(R.drawable.ic_stat_taskmind)
+            .setContentTitle("Your week")
+            .setContentText(summary.headline)
+            .setStyle(style)
+            .setContentIntent(contentIntent(ROUTE_TASKS))
+            .setAutoCancel(true)
+            .build()
+        postSafely(ID_WEEKLY, notification)
+    }
+
     /** One button on a task notification, routed to [TaskActionReceiver]. */
     private fun taskAction(action: String, taskId: String, notificationId: Int, label: String): NotificationCompat.Action {
         val intent = Intent(context, TaskActionReceiver::class.java)
@@ -380,6 +397,7 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         const val ID_TEST = 1004
         const val ID_BRIEF_MORNING = 1005
         const val ID_BRIEF_EVENING = 1006
+        const val ID_WEEKLY = 1007
         const val ID_UPDATE = 1002
         const val ID_FOREGROUND_WORKER = 1101
         const val ID_FOREGROUND_RESIDENCY = 1102

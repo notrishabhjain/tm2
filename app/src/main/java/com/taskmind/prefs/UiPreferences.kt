@@ -39,6 +39,8 @@ class UiPreferences(private val context: Context) {
         val ongoingReminder = booleanPreferencesKey("ongoing_reminder")
         val morningBrief = booleanPreferencesKey("morning_brief")
         val eveningBrief = booleanPreferencesKey("evening_brief")
+        val weeklyReview = booleanPreferencesKey("weekly_review")
+        val calendarInBrief = booleanPreferencesKey("calendar_in_brief")
     }
 
     data class State(
@@ -54,6 +56,11 @@ class UiPreferences(private val context: Context) {
         val morningBrief: Boolean = true,
         /** 19:00 - what slipped, with one tap to move it to tomorrow. */
         val eveningBrief: Boolean = true,
+        /** Sunday 18:00 - done, new, oldest open, who asks most. */
+        val weeklyReview: Boolean = true,
+        /** Today's meetings at the top of the morning brief. Off until the
+         *  person turns it on and grants the calendar permission. */
+        val calendarInBrief: Boolean = false,
     )
 
     val state: Flow<State> = context.uiDataStore.data
@@ -65,6 +72,8 @@ class UiPreferences(private val context: Context) {
                 ongoingReminder = p[K.ongoingReminder] ?: false,
                 morningBrief = p[K.morningBrief] ?: true,
                 eveningBrief = p[K.eveningBrief] ?: true,
+                weeklyReview = p[K.weeklyReview] ?: true,
+                calendarInBrief = p[K.calendarInBrief] ?: false,
             )
         }
 
@@ -80,6 +89,14 @@ class UiPreferences(private val context: Context) {
 
     suspend fun setMorningBrief(enabled: Boolean) {
         context.uiDataStore.edit { it[K.morningBrief] = enabled }
+    }
+
+    suspend fun setWeeklyReview(enabled: Boolean) {
+        context.uiDataStore.edit { it[K.weeklyReview] = enabled }
+    }
+
+    suspend fun setCalendarInBrief(enabled: Boolean) {
+        context.uiDataStore.edit { it[K.calendarInBrief] = enabled }
     }
 
     suspend fun setEveningBrief(enabled: Boolean) {

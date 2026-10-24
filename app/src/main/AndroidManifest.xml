@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Optional, asked for only when "Today's meetings in the morning brief"
+         is switched on. Read on the phone for that one notification. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
 
     <!-- Voice notes only. Requested the first time the mic button is
          pressed, never at launch, and the app records nothing on its
@@ -40,6 +43,13 @@
     <uses-permission
         android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
         tools:ignore="BatteryLife" />
+
+    <!-- Android 11+ hides other apps unless they are named. These are the
+         chat apps a task can be opened back into. -->
+    <queries>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+    </queries>
 
     <application
         android:name=".TaskMindApp"
