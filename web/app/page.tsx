@@ -203,7 +203,11 @@ function Dashboard({ email }: { email: string }) {
   }, [tasks, search, tag]);
 
   const active = useMemo(() => visible.filter((t) => t.status === "ACTIVE"), [visible]);
-  const done = useMemo(() => visible.filter((t) => t.status === "COMPLETED"), [visible]);
+  // Archived tasks predate archive being removed; they count as done.
+  const done = useMemo(
+    () => visible.filter((t) => t.status === "COMPLETED" || t.status === "ARCHIVED"),
+    [visible],
+  );
 
   /**
    * The tasks the tag row is allowed to describe: whatever this page is
@@ -215,7 +219,10 @@ function Dashboard({ email }: { email: string }) {
    * filter that can only ever return an empty list.
    */
   const scope = useMemo(
-    () => tasks.filter((t) => t.status === "ACTIVE" || (showDone && t.status === "COMPLETED")),
+    () =>
+      tasks.filter(
+        (t) => t.status === "ACTIVE" || (showDone && (t.status === "COMPLETED" || t.status === "ARCHIVED")),
+      ),
     [tasks, showDone],
   );
 
@@ -543,9 +550,6 @@ function TaskRow({ task, mutate }: { task: Task; mutate: Mutate }) {
           <div className="actions">
             <button className="btn" onClick={() => setEditing(true)}>
               Edit
-            </button>
-            <button className="btn" onClick={() => void mutate(() => patchTask(task.id, { status: "ARCHIVED" }))}>
-              Archive
             </button>
             <button
               className="btn danger"

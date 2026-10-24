@@ -1,6 +1,7 @@
 package com.taskmind.ui.tasks
 
 import com.taskmind.core.DateResolver
+import com.taskmind.core.WaitingOn
 import com.taskmind.core.Priority
 import com.taskmind.core.TaskStatus
 import com.taskmind.data.db.entity.TaskEntity
@@ -8,49 +9,38 @@ import com.taskmind.tagging.AutoTagger
 
 /** Spec 16 - the views. Every one of them has an empty state. */
 enum class TaskView(val label: String, val emptyTitle: String, val emptyBody: String) {
-    /**
-     * Everything that needs attention, in one scroll.
-     *
-     * The separate Today / Upcoming / Overdue chips each answered one question
-     * and hid the other two, so knowing what was actually on meant tapping
-     * through all three. This is the default now: overdue first, because that
-     * is what a person opens the app to find out.
-     */
     AGENDA(
         "Agenda",
         "Nothing on",
         "Overdue, today and upcoming tasks appear here together. Anything captured from a " +
             "message or a call lands here automatically.",
     ),
-    TODAY(
-        "Today",
-        "Nothing due today",
-        "Tasks due today appear here. Anything captured from a message or a call lands here automatically.",
-    ),
-    UPCOMING(
-        "Upcoming",
-        "Nothing scheduled",
-        "Tasks with a due date later than today appear here.",
-    ),
-    OVERDUE(
-        "Overdue",
-        "Nothing overdue",
-        "Tasks past their due date appear here. An empty list is the good outcome.",
-    ),
     ALL(
         "All",
         "No tasks yet",
         "Add one with the button below, or let TaskMind find them in your messages and calls.",
     ),
-    COMPLETED(
-        "Completed",
-        "Nothing completed yet",
-        "Tasks you tick off appear here, newest first.",
+
+    /** Somebody else's move: promises made to you, things to chase. */
+    WAITING(
+        "Waiting on",
+        "Nobody owes you anything",
+        "When someone promises you something - \"I'll confirm by tomorrow\" - it lands here, " +
+            "so you know who to chase.",
     ),
-    ARCHIVED(
-        "Archived",
-        "Nothing archived",
-        "Archiving keeps a task out of the way without deleting it. Archived tasks appear here.",
+
+    /**
+     * Completed and archived together.
+     *
+     * Archive used to be its own state with its own view, sitting between
+     * Done and Delete. Nobody needs three ways to get a task off the list, so
+     * it is no longer offered - but tasks archived before that still exist,
+     * and they live here rather than nowhere.
+     */
+    COMPLETED(
+        "Done",
+        "Nothing done yet",
+        "Tasks you tick off appear here, newest first.",
     ),
 }
 
@@ -83,23 +73,15 @@ object TaskFilters {
      * or a tag outlives the last task carrying it.
      */
     fun scope(tasks: List<TaskEntity>, view: TaskView, now: Long): List<TaskEntity> {
-        val startOfToday = DateResolver.startOfDay(now)
-        val endOfToday = DateResolver.endOfDay(now)
         return tasks.filter { task ->
             when (view) {
                 // Everything active with a date, plus the undated, sectioned
                 // by AgendaSection below rather than filtered out here.
                 TaskView.AGENDA -> task.status == TaskStatus.ACTIVE
-                TaskView.TODAY ->
-                    task.status == TaskStatus.ACTIVE &&
-                        task.dueAt != null && task.dueAt in startOfToday..endOfToday
-                TaskView.UPCOMING ->
-                    task.status == TaskStatus.ACTIVE && task.dueAt != null && task.dueAt > endOfToday
-                TaskView.OVERDUE ->
-                    task.status == TaskStatus.ACTIVE && task.dueAt != null && task.dueAt < startOfToday
                 TaskView.ALL -> task.status == TaskStatus.ACTIVE
-                TaskView.COMPLETED -> task.status == TaskStatus.COMPLETED
-                TaskView.ARCHIVED -> task.status == TaskStatus.ARCHIVED
+                TaskView.WAITING -> task.status == TaskStatus.ACTIVE && WaitingOn.matches(task.title, task.tags)
+                TaskView.COMPLETED ->
+                    task.status == TaskStatus.COMPLETED || task.status == TaskStatus.ARCHIVED
             }
         }
     }

@@ -13,6 +13,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.taskmind.MainActivity
 import com.taskmind.R
+import com.taskmind.core.Brief
 import com.taskmind.intake.TaskCreatedNotifier
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -66,6 +67,11 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
             NotificationChannel(CHANNEL_SERVICE, "Background activity", NotificationManager.IMPORTANCE_MIN).apply {
                 description = "Shown only while TaskMind is doing bounded background work."
                 setShowBadge(false)
+            },
+        )
+        system.createNotificationChannel(
+            NotificationChannel(CHANNEL_BRIEF, "Daily brief", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "The morning brief and the evening wrap-up. Sent only when there is something in them."
             },
         )
         system.createNotificationChannel(
@@ -198,8 +204,12 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
             .setContentTitle("Task captured")
             .setContentText(title)
             .setStyle(NotificationCompat.BigTextStyle().bigText(title))
-            .setContentIntent(contentIntent(ROUTE_TASKS))
+            .setContentIntent(contentIntent("$ROUTE_TASK_DETAIL/$taskId"))
             .setAutoCancel(true)
+            // Only on a single capture: a burst summary names several tasks,
+            // and a button on it could not say which one it meant.
+            .addAction(taskAction(TaskActionReceiver.ACTION_DONE, taskId, ID_TASK_SUMMARY, "Done"))
+            .addAction(taskAction(TaskActionReceiver.ACTION_NOT_MINE, taskId, ID_TASK_SUMMARY, "Not mine"))
             .build()
         postSafely(ID_TASK_SUMMARY, notification)
     }
@@ -229,6 +239,7 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
 
     fun postReminder(taskId: String, title: String, notes: String?) {
         if (!canPost()) return
+        val id = nextId.incrementAndGet()
         val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
             .setSmallIcon(R.drawable.ic_stat_taskmind)
             .setContentTitle(title)
@@ -238,8 +249,90 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            .addAction(taskAction(TaskActionReceiver.ACTION_DONE, taskId, id, "Done"))
+            .addAction(taskAction(TaskActionReceiver.ACTION_SNOOZE_HOUR, taskId, id, "In 1 hour"))
+            .addAction(taskAction(TaskActionReceiver.ACTION_TOMORROW, taskId, id, "Tomorrow"))
             .build()
-        postSafely(nextId.incrementAndGet(), notification)
+        postSafely(id, notification)
+    }
+
+    /**
+     * Replaces a capture notification after "Not mine", offering to stop the
+     * group it came from. Silent: it answers a tap, it is not news.
+     */
+    fun offerGroupMute(notificationId: Int, group: String) {
+        if (!canPost()) return
+        val intent = Intent(context, TaskActionReceiver::class.java)
+            .setAction(TaskActionReceiver.ACTION_MUTE_GROUP)
+            .putExtra(TaskActionReceiver.EXTRA_GROUP, group)
+            .putExtra(TaskActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+        val mute = PendingIntent.getBroadcast(
+            context,
+            ("mute:$group").hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_TASKS)
+            .setSmallIcon(R.drawable.ic_stat_taskmind)
+            .setContentTitle("Removed")
+            .setContentText("Stop creating tasks from \"$group\"?")
+            .setSilent(true)
+            .setAutoCancel(true)
+            .setTimeoutAfter(MUTE_OFFER_TIMEOUT_MILLIS)
+            .addAction(NotificationCompat.Action(R.drawable.ic_stat_taskmind, "Stop watching this group", mute))
+            .build()
+        postSafely(notificationId, notification)
+    }
+
+    /**
+     * The morning brief or the evening wrap-up.
+     *
+     * The evening one carries the only button that acts on many tasks at
+     * once: everything still open today moves to tomorrow, so it becomes a
+     * plan instead of tomorrow's overdue list.
+     */
+    fun postBrief(kind: Brief.Kind, message: Brief.Message) {
+        if (!canPost()) return
+        val id = if (kind == Brief.Kind.MORNING) ID_BRIEF_MORNING else ID_BRIEF_EVENING
+        val style = NotificationCompat.InboxStyle().setBigContentTitle(message.title)
+        message.lines.forEach { style.addLine(it) }
+        val builder = NotificationCompat.Builder(context, CHANNEL_BRIEF)
+            .setSmallIcon(R.drawable.ic_stat_taskmind)
+            .setContentTitle(if (kind == Brief.Kind.MORNING) "Your day" else "Before you stop")
+            .setContentText(message.title)
+            .setStyle(style)
+            .setContentIntent(contentIntent(ROUTE_TASKS))
+            .setAutoCancel(true)
+        if (kind == Brief.Kind.EVENING && message.slipped > 0) {
+            val intent = Intent(context, TaskActionReceiver::class.java)
+                .setAction(TaskActionReceiver.ACTION_MOVE_SLIPPED)
+                .putExtra(TaskActionReceiver.EXTRA_NOTIFICATION_ID, id)
+            val move = PendingIntent.getBroadcast(
+                context,
+                ID_BRIEF_EVENING,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            builder.addAction(NotificationCompat.Action(R.drawable.ic_stat_taskmind, "Move all to tomorrow", move))
+        }
+        postSafely(id, builder.build())
+    }
+
+    /** One button on a task notification, routed to [TaskActionReceiver]. */
+    private fun taskAction(action: String, taskId: String, notificationId: Int, label: String): NotificationCompat.Action {
+        val intent = Intent(context, TaskActionReceiver::class.java)
+            .setAction(action)
+            .putExtra(TaskActionReceiver.EXTRA_TASK_ID, taskId)
+            .putExtra(TaskActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+        // Distinct per task and per button, or Android hands back one shared
+        // PendingIntent and every button does whatever was registered last.
+        val pending = PendingIntent.getBroadcast(
+            context,
+            ("$action:$taskId").hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Action(R.drawable.ic_stat_taskmind, label, pending)
     }
 
     fun postMandatoryUpdate(versionName: String) {
@@ -280,10 +373,13 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         const val CHANNEL_REMINDERS = "reminders"
         const val CHANNEL_SERVICE = "service"
         const val CHANNEL_UPDATES = "updates"
+        const val CHANNEL_BRIEF = "brief"
 
         const val ID_TASK_SUMMARY = 1001
         const val ID_REVIEW_SUMMARY = 1003
         const val ID_TEST = 1004
+        const val ID_BRIEF_MORNING = 1005
+        const val ID_BRIEF_EVENING = 1006
         const val ID_UPDATE = 1002
         const val ID_FOREGROUND_WORKER = 1101
         const val ID_FOREGROUND_RESIDENCY = 1102
@@ -294,5 +390,6 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         const val ROUTE_TASK_DETAIL = "task"
 
         private const val SUMMARY_WINDOW_MILLIS = 5 * 60 * 1000L
+        private const val MUTE_OFFER_TIMEOUT_MILLIS = 2 * 60 * 1000L
     }
 }

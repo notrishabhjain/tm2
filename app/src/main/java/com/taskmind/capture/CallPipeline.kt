@@ -63,7 +63,7 @@ class CallPipeline(
                 Stage.CALL,
                 LogLevel.WARN,
                 "call capture is switched off - no call will become a task",
-                "Settings -> What to watch -> turn on call capture. (trigger=$reason)",
+                "Settings -> Calls -> turn on call capture. (trigger=$reason)",
             )
             return@withContext 0
         }
@@ -72,7 +72,7 @@ class CallPipeline(
                 Stage.CALL,
                 LogLevel.WARN,
                 "cloud processing not consented - no call will become a task",
-                "Settings -> Privacy -> allow sending text to the model. (trigger=$reason)",
+                "Settings -> Privacy and security -> allow sending text to the model. (trigger=$reason)",
             )
             return@withContext 0
         }

@@ -1,5 +1,9 @@
 package com.taskmind.ui.tasks
 
+import com.taskmind.core.LogLevel
+import com.taskmind.core.PreFilter
+import com.taskmind.core.Stage
+import com.taskmind.tagging.AutoTagger
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskmind.core.Priority
@@ -104,6 +108,27 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
         save(task.copy(priority = priority))
     }
 
+    /**
+     * Renames the task. The dedup key stays as it was: it records what the
+     * source said, and renaming a captured task must not let the same message
+     * create it a second time.
+     */
+    fun rename(title: String) {
+        val task = _state.value.task ?: return
+        val clean = title.trim()
+        if (clean.isEmpty() || clean == task.title) return
+        save(task.copy(title = clean))
+    }
+
+    /** Due date and reminder together, in one write. */
+    fun setWhen(dueAt: Long?, reminderAt: Long?) {
+        val task = _state.value.task ?: return
+        viewModelScope.launch {
+            container.taskRepository.update(task.copy(dueAt = dueAt, reminderAt = reminderAt))
+            Scheduler.scheduleNextReminder(container.context, container)
+        }
+    }
+
     fun setDueAt(dueAt: Long?) {
         val task = _state.value.task ?: return
         viewModelScope.launch { container.taskRepository.setDueAt(task.id, dueAt) }
@@ -136,9 +161,26 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.taskRepository.reopen(task.id) }
     }
 
-    fun archive() {
+    /**
+     * "This is not my task": removes it and reports the group it came from,
+     * so the screen can offer to stop reading that group. The offer is a
+     * question, never automatic - one misread message does not make a whole
+     * group noise.
+     */
+    fun notMine(onRemoved: (group: String?) -> Unit) {
         val task = _state.value.task ?: return
-        viewModelScope.launch { container.taskRepository.archive(task.id) }
+        viewModelScope.launch {
+            container.taskRepository.delete(task.id)
+            container.logger.write(Stage.FUNNEL, LogLevel.INFO, "marked not mine", task.title)
+            onRemoved(AutoTagger.parseLabel(task.sourceType, task.sourceLabel).group?.takeIf { it.isNotBlank() })
+        }
+    }
+
+    fun muteGroup(group: String) {
+        viewModelScope.launch {
+            container.settingsRepository.setGroupOverride(group, PreFilter.GroupPolicy.NEVER)
+            container.logger.write(Stage.PREFILTER, LogLevel.INFO, "stopped watching group", group)
+        }
     }
 
     fun delete() {

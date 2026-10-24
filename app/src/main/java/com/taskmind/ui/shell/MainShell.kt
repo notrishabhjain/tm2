@@ -5,11 +5,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Inbox
-import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Inbox
-import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -24,7 +22,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
- * The four places worth keeping one tap away.
+ * The three places worth keeping one tap away.
+ *
+ * Calls used to be a fourth. Once call capture works it is somewhere you look
+ * occasionally, so it lives under Settings -> Calls, and the bar holds only
+ * what you use every day.
  *
  * Everything used to hang off an overflow menu on the task screen, which is
  * the "hard to find" complaint in one sentence: a menu is where you look when
@@ -40,14 +42,13 @@ enum class MainTab(
 ) {
     TASKS("tasks", "Tasks", Icons.Filled.Checklist, Icons.Outlined.Checklist),
     REVIEW("review", "Review", Icons.Filled.Inbox, Icons.Outlined.Inbox),
-    CALLS("calls", "Calls", Icons.Filled.Phone, Icons.Outlined.Phone),
     SETTINGS("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 
 /**
  * Wraps a top-level destination with the navigation bar.
  *
- * Only the four tabs use this. A pushed screen - a task, a sub-page of
+ * Only the tabs use this. A pushed screen - a task, a sub-page of
  * settings - keeps a back arrow and no bar, so "deeper" always looks
  * different from "elsewhere".
  */

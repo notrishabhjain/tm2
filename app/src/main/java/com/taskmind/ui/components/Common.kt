@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.taskmind.core.DateResolver
+import com.taskmind.core.SmartReminder
 import com.taskmind.core.Priority
 import com.taskmind.ui.theme.PriorityStyle
 import java.time.Instant
@@ -226,20 +227,30 @@ object DateFormats {
     private val dayMonthYear = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
     private val timeOnly = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
     private val full = DateTimeFormatter.ofPattern("EEE d MMM yyyy, HH:mm", Locale.ENGLISH)
+    private val weekdayDayMonth = DateTimeFormatter.ofPattern("EEE d MMM", Locale.ENGLISH)
 
     fun due(millis: Long?, now: Long = System.currentTimeMillis()): String {
         if (millis == null) return "No date"
         val zoned = Instant.ofEpochMilli(millis).atZone(DateResolver.IST)
         val today = Instant.ofEpochMilli(now).atZone(DateResolver.IST).toLocalDate()
         val date = zoned.toLocalDate()
-        val time = zoned.format(timeOnly)
+        // A task due on a day rather than at a time is stored at the 18:00
+        // default; printing "18:00" on it claims a precision nobody gave.
+        val time = if (SmartReminder.isDateOnly(millis)) "" else " " + zoned.format(timeOnly)
         return when {
-            date == today -> "Today $time"
-            date == today.plusDays(1) -> "Tomorrow $time"
-            date == today.minusDays(1) -> "Yesterday $time"
-            date.year == today.year -> "${zoned.format(dayMonth)} $time"
-            else -> "${zoned.format(dayMonthYear)} $time"
+            date == today -> "Today$time"
+            date == today.plusDays(1) -> "Tomorrow$time"
+            date == today.minusDays(1) -> "Yesterday$time"
+            date.year == today.year -> "${zoned.format(dayMonth)}$time"
+            else -> "${zoned.format(dayMonthYear)}$time"
         }
+    }
+
+    /** "Fri 24 Oct, 16:00", or "Fri 24 Oct" for a task due on a day. */
+    fun dueLong(millis: Long): String {
+        val zoned = Instant.ofEpochMilli(millis).atZone(DateResolver.IST)
+        val day = zoned.format(weekdayDayMonth)
+        return if (SmartReminder.isDateOnly(millis)) day else "$day, ${zoned.format(timeOnly)}"
     }
 
     fun full(millis: Long): String =

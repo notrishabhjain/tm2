@@ -313,9 +313,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { onReady(container.backupRepository.exportJson()) }
     }
 
-    fun exportCsv(onReady: (String) -> Unit) {
-        viewModelScope.launch { onReady(container.backupRepository.exportCsv()) }
-    }
 
     fun writeTo(uri: Uri, content: String) {
         viewModelScope.launch {

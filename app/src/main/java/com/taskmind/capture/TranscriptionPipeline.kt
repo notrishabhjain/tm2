@@ -78,7 +78,7 @@ class TranscriptionPipeline(
             return@withContext park(
                 capture,
                 "no transcription API key is set",
-                "Settings -> Providers -> add a key for the transcription provider.",
+                "Settings -> Advanced -> AI providers -> add a key for the transcription provider.",
             )
         }
 

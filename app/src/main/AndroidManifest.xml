@@ -63,6 +63,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- "Share to TaskMind": text from any app is read for tasks the
+                 same way a pasted transcript is. -->
+            <intent-filter android:label="@string/share_label">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <!-- Spec 10: the notification listener. Also the host process for the
@@ -169,6 +176,17 @@
 
         <receiver
             android:name=".update.UpdateInstallReceiver"
+            android:exported="false" />
+
+        <!-- Done / later / not mine on notifications. Not exported: only this
+             app's own PendingIntents can reach it. -->
+        <receiver
+            android:name=".notify.TaskActionReceiver"
+            android:exported="false" />
+
+        <!-- The 9:00 brief and the 19:00 wrap-up, armed by the app itself. -->
+        <receiver
+            android:name=".reminders.BriefReceiver"
             android:exported="false" />
 
         <provider

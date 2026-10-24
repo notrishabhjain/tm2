@@ -119,6 +119,18 @@ fun PromptScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    if (edited) {
+                        // The trap this warns about is real: v1.18.0 rewrote
+                        // the message prompt to stop colleagues' requests
+                        // becoming tasks, and nobody with an edited copy got it.
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "You are using your own version, so improvements to this prompt in app " +
+                                "updates do not reach you. Reset it to get the current built-in version.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                     Spacer(Modifier.height(10.dp))
                     Text(
                         text.lineSequence().take(4).joinToString("\n"),

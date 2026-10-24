@@ -11,8 +11,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -20,23 +18,22 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.taskmind.core.DateResolver
 import com.taskmind.core.Priority
+import com.taskmind.core.QuickAdd
 import com.taskmind.core.Recurrence
-import com.taskmind.data.db.entity.ProjectEntity
+import com.taskmind.core.SmartReminder
 import com.taskmind.ui.components.DateFormats
 import com.taskmind.ui.theme.PriorityStyle
-import java.time.Instant
 
 /**
  * Manual task entry (spec 16). Everything created here goes through the intake
@@ -45,14 +42,12 @@ import java.time.Instant
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskEditorSheet(
-    projects: List<ProjectEntity>,
     onDismiss: () -> Unit,
     onSave: (
         title: String,
         notes: String?,
         dueAt: Long?,
         priority: Priority,
-        projectId: String?,
         tags: List<String>,
         reminderAt: Long?,
         recurrenceRule: String?,
@@ -64,11 +59,14 @@ fun TaskEditorSheet(
     var notes by remember { mutableStateOf("") }
     var tagsText by remember { mutableStateOf("") }
     var priority by remember { mutableStateOf(Priority.MEDIUM) }
-    var projectId by remember { mutableStateOf<String?>(null) }
     var dueAt by remember { mutableStateOf<Long?>(null) }
-    var reminder by remember { mutableStateOf<Long?>(null) }
+    var reminder by remember { mutableStateOf(SmartReminder.Choice.SMART) }
     var recurrence by remember { mutableStateOf<String?>(null) }
-    var showDatePicker by remember { mutableStateOf(false) }
+    // Dates typed into the title ("call Rahul tomorrow 5pm") are read as the
+    // due date unless a date has been picked by hand or the reading refused.
+    var ignoreTyped by remember { mutableStateOf(false) }
+    val typed = remember(title) { QuickAdd.parse(title, System.currentTimeMillis()) }
+    val useTyped = !ignoreTyped && dueAt == null && typed.dueAt != null
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
@@ -85,9 +83,21 @@ fun TaskEditorSheet(
                 value = title,
                 onValueChange = { title = it },
                 label = { Text("What needs doing?") },
+                placeholder = { Text("e.g. Call Rahul tomorrow 5pm") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = false,
             )
+            if (useTyped) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Due ${DateFormats.dueLong(typed.dueAt!!)} - read from \"${typed.matched}\"",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { ignoreTyped = true }) { Text("Keep as text") }
+                }
+            }
             Spacer(Modifier.height(12.dp))
 
             OutlinedTextField(
@@ -111,40 +121,12 @@ fun TaskEditorSheet(
             }
             Spacer(Modifier.height(16.dp))
 
-            Text("Due", style = MaterialTheme.typography.labelLarge)
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FilterChip(
-                    selected = dueAt == null,
-                    onClick = { dueAt = null },
-                    label = { Text("No date") },
-                )
-                FilterChip(
-                    selected = dueAt != null && DateFormats.due(dueAt).startsWith("Today"),
-                    onClick = { dueAt = defaultTimeOn(0) },
-                    label = { Text("Today") },
-                )
-                FilterChip(
-                    selected = dueAt != null && DateFormats.due(dueAt).startsWith("Tomorrow"),
-                    onClick = { dueAt = defaultTimeOn(1) },
-                    label = { Text("Tomorrow") },
-                )
-                FilterChip(
-                    selected = false,
-                    onClick = { showDatePicker = true },
-                    label = { Text("Pick a date") },
-                )
-            }
-            if (dueAt != null) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Due ${DateFormats.full(dueAt!!)} IST",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            WhenFields(
+                dueAt = dueAt,
+                onDueAt = { dueAt = it },
+                reminder = reminder,
+                onReminder = { reminder = it },
+            )
             Spacer(Modifier.height(16.dp))
 
             Text("Repeats", style = MaterialTheme.typography.labelLarge)
@@ -162,38 +144,6 @@ fun TaskEditorSheet(
             }
             Spacer(Modifier.height(16.dp))
 
-            Text("Remind me", style = MaterialTheme.typography.labelLarge)
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FilterChip(selected = reminder == null, onClick = { reminder = null }, label = { Text("No reminder") })
-                FilterChip(
-                    selected = reminder != null,
-                    onClick = { reminder = (dueAt ?: defaultTimeOn(0)) - 60 * 60 * 1000 },
-                    label = { Text("1 hour before") },
-                )
-            }
-            Spacer(Modifier.height(16.dp))
-
-            if (projects.isNotEmpty()) {
-                Text("Project", style = MaterialTheme.typography.labelLarge)
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FilterChip(selected = projectId == null, onClick = { projectId = null }, label = { Text("None") })
-                    projects.forEach { project ->
-                        FilterChip(
-                            selected = projectId == project.id,
-                            onClick = { projectId = project.id },
-                            label = { Text(project.name) },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-            }
-
             OutlinedTextField(
                 value = tagsText,
                 onValueChange = { tagsText = it },
@@ -207,14 +157,15 @@ fun TaskEditorSheet(
                 TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
                 Button(
                     onClick = {
+                        val finalTitle = if (useTyped) typed.title.ifBlank { title.trim() } else title.trim()
+                        val finalDue = if (useTyped) typed.dueAt else dueAt
                         onSave(
-                            title.trim(),
+                            finalTitle,
                             notes.trim().ifBlank { null },
-                            dueAt,
+                            finalDue,
                             priority,
-                            projectId,
                             tagsText.split(',').map { it.trim() }.filter { it.isNotEmpty() },
-                            reminder,
+                            SmartReminder.resolve(reminder, finalDue, System.currentTimeMillis()),
                             recurrence,
                         )
                     },
@@ -226,38 +177,4 @@ fun TaskEditorSheet(
             }
         }
     }
-
-    if (showDatePicker) {
-        val pickerState = rememberDatePickerState(initialSelectedDateMillis = dueAt ?: System.currentTimeMillis())
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    pickerState.selectedDateMillis?.let { selected ->
-                        // The picker returns UTC midnight; a deadline with no
-                        // time means 18:00 IST (spec 14.1), so convert rather
-                        // than storing midnight UTC and drifting a day.
-                        val date = Instant.ofEpochMilli(selected).atZone(java.time.ZoneOffset.UTC).toLocalDate()
-                        dueAt = date.atTime(DateResolver.DEFAULT_HOUR, 0)
-                            .atZone(DateResolver.IST).toInstant().toEpochMilli()
-                    }
-                    showDatePicker = false
-                }) { Text("OK") }
-            },
-            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } },
-        ) {
-            DatePicker(state = pickerState)
-        }
-    }
 }
-
-/** Today or N days out, at the default 18:00 IST. */
-private fun defaultTimeOn(daysFromNow: Long): Long =
-    Instant.ofEpochMilli(System.currentTimeMillis())
-        .atZone(DateResolver.IST)
-        .toLocalDate()
-        .plusDays(daysFromNow)
-        .atTime(DateResolver.DEFAULT_HOUR, 0)
-        .atZone(DateResolver.IST)
-        .toInstant()
-        .toEpochMilli()

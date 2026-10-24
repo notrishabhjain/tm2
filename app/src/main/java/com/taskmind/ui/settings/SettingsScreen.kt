@@ -35,18 +35,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.Cloud
-import androidx.compose.material.icons.outlined.Devices
-import androidx.compose.material.icons.outlined.Gesture
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Science
-import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.taskmind.ui.design.Grouped
 import com.taskmind.ui.design.NavRow
@@ -84,6 +81,10 @@ fun SettingsScreen(
     onOpenDiagnostics: () -> Unit = {},
     onOpenRecordings: () -> Unit = {},
     onOpenHowItWorks: () -> Unit = {},
+    onOpenStatus: () -> Unit = {},
+    onOpenCalls: () -> Unit = {},
+    onOpenImport: () -> Unit = {},
+    initialPage: String? = null,
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -107,8 +108,14 @@ fun SettingsScreen(
     // Which sub-page is open, or null for the hub. Held here rather than in
     // the navigation graph because these pages are leaves of one screen, not
     // destinations anyone links to.
-    var page by remember { mutableStateOf<SettingsPage?>(null) }
-    BackHandler(enabled = page != null) { page = null }
+    var page by remember {
+        mutableStateOf(SettingsPage.entries.firstOrNull { it.name == initialPage })
+    }
+    // An advanced sub-page goes back to Advanced, everything else to the hub.
+    fun up() {
+        page = if (page?.advanced == true) SettingsPage.ADVANCED else null
+    }
+    BackHandler(enabled = page != null) { up() }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -116,7 +123,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text(page?.title ?: "Settings") },
                 navigationIcon = {
-                    IconButton(onClick = { if (page != null) page = null else onBack() }) {
+                    IconButton(onClick = { if (page != null) up() else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -131,14 +138,43 @@ fun SettingsScreen(
                 .padding(bottom = 48.dp),
         ) {
             when (page) {
-                null -> SettingsHub(onOpen = { page = it })
+                null -> SettingsHub(SettingsPage.entries.filter { !it.advanced }, onOpen = { page = it })
 
-                SettingsPage.CAPTURE ->
-                    CaptureSection(settings, ui, viewModel) { dirLauncher.launch(null) }
+                SettingsPage.YOU -> {
+                    GroupSection(settings, viewModel)
+                    HowManySection(settings, viewModel)
+                    MessageAppsSection(settings, ui, viewModel)
+                    ProfileSection()
+                }
 
-                SettingsPage.GROUPS -> GroupSection(settings, viewModel)
+                SettingsPage.CALLS ->
+                    CallCaptureSection(settings, viewModel, onOpenCalls, onOpenImport) { dirLauncher.launch(null) }
 
-                SettingsPage.PROFILES -> ProfileSection()
+                SettingsPage.REMINDERS -> BehaviourSection()
+
+                SettingsPage.PRIVACY -> {
+                    SecuritySection()
+                    PrivacySection(settings, viewModel)
+                    RetentionSection(settings, viewModel) { confirmErase = true }
+                    WebSyncSection()
+                    DataSection(viewModel, onShareText) {
+                        importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                    }
+                }
+
+                SettingsPage.ADVANCED -> {
+                    AdvancedNote()
+                    SettingsHub(SettingsPage.entries.filter { it.advanced }, onOpen = { page = it })
+                }
+
+                SettingsPage.HEALTH -> TransparencySection(
+                    onOpenStatus,
+                    onOpenHowItWorks,
+                    onOpenPrompts,
+                    onOpenModelCalls,
+                    onOpenDiagnostics,
+                    onOpenRecordings,
+                )
 
                 SettingsPage.PROVIDERS -> {
                     LlmSection(settings, ui, viewModel)
@@ -148,28 +184,6 @@ fun SettingsScreen(
                 SettingsPage.ACCURACY -> QualitySection(settings, viewModel)
 
                 SettingsPage.BUDGET -> BudgetSection(settings, viewModel)
-
-                SettingsPage.PRIVACY -> {
-                    PrivacySection(settings, viewModel)
-                    RetentionSection(settings, viewModel) { confirmErase = true }
-                    DataSection(viewModel, onShareText) {
-                        importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
-                    }
-                }
-
-                SettingsPage.SECURITY -> SecuritySection()
-
-                SettingsPage.TRANSPARENCY -> TransparencySection(
-                    onOpenHowItWorks,
-                    onOpenPrompts,
-                    onOpenModelCalls,
-                    onOpenDiagnostics,
-                    onOpenRecordings,
-                )
-
-                SettingsPage.BEHAVIOUR -> BehaviourSection()
-
-                SettingsPage.WEB -> WebSyncSection()
 
                 SettingsPage.ABOUT -> UpdateSection(settings, viewModel)
             }
@@ -200,90 +214,171 @@ fun SettingsScreen(
 }
 
 /**
- * The six places settings can take you.
+ * Where settings can take you: five pages, and the machinery behind one door.
  *
- * Ten sections on one scroll meant the only way to change a threshold was to
- * scroll past the model pickers, the budget sliders and the privacy controls
- * and hope to recognise it. A page per concern costs one tap and removes the
- * scrolling entirely.
+ * There used to be twelve, three of them about people (which apps, which
+ * groups, work or personal) on three different pages, and five of them tuning
+ * knobs for the AI pipeline that nobody needs day to day. The person-facing
+ * choices are now grouped by what they are about; the pipeline lives under
+ * Advanced, where it is one tap further away and out of the way.
  */
-enum class SettingsPage(val title: String, val summary: String, val icon: ImageVector) {
-    CAPTURE(
-        "What to watch",
-        "Apps, calls, minimum call length, recordings folder",
-        Icons.Outlined.Visibility,
-    ),
-    GROUPS(
-        "Your name and group chats",
-        "Stop colleagues' requests to each other becoming your tasks",
+enum class SettingsPage(
+    val title: String,
+    val summary: String,
+    val icon: ImageVector,
+    val advanced: Boolean = false,
+) {
+    YOU(
+        "You and your chats",
+        "Your name, group chats, which apps to read, work and personal",
         Icons.Outlined.Groups,
     ),
-    PROFILES(
-        "People and chats",
-        "Sort who is work and who is personal, and get two lists",
-        Icons.Outlined.People,
+    CALLS(
+        "Calls",
+        "Call capture, the recordings folder, and your recent calls",
+        Icons.Outlined.Call,
+    ),
+    REMINDERS(
+        "Reminders and look",
+        "Daily brief, the standing notification, swipes, widget and theme",
+        Icons.Outlined.NotificationsActive,
+    ),
+    PRIVACY(
+        "Privacy and security",
+        "App lock, what is kept and for how long, web access, export",
+        Icons.Outlined.Lock,
+    ),
+    ADVANCED(
+        "Advanced",
+        "AI providers, accuracy, limits, health checks and updates",
+        Icons.Outlined.Tune,
+    ),
+
+    HEALTH(
+        "Health and diagnostics",
+        "Is it working, how it decides, prompts, model calls, the log",
+        Icons.Outlined.Science,
+        advanced = true,
     ),
     PROVIDERS(
         "AI providers",
         "Keys, models and connection tests for text and speech",
         Icons.Outlined.Cloud,
+        advanced = true,
     ),
     ACCURACY(
         "Accuracy",
-        "How sure the app must be before it creates a task",
+        "The thresholds behind Fewer / Balanced / More",
         Icons.Outlined.Tune,
+        advanced = true,
     ),
     BUDGET(
         "Limits",
         "Daily caps on model calls and audio, and the network rule",
         Icons.Outlined.Speed,
-    ),
-    PRIVACY(
-        "Privacy and data",
-        "Consent, how long content is kept, export and erase",
-        Icons.Outlined.Lock,
-    ),
-    SECURITY(
-        "Lock and screenshots",
-        "Require your fingerprint, and keep TaskMind out of the app switcher",
-        Icons.Outlined.Shield,
-    ),
-    TRANSPARENCY(
-        "How it works",
-        "Prompts, model calls, recordings and the diagnostic report",
-        Icons.Outlined.Science,
-    ),
-    BEHAVIOUR(
-        "Appearance and gestures",
-        "Theme, swipe actions, the widget, and the standing notification",
-        Icons.Outlined.Gesture,
-    ),
-    WEB(
-        "Web access",
-        "Open your tasks in a browser on another device",
-        Icons.Outlined.Devices,
+        advanced = true,
     ),
     ABOUT(
         "Updates",
         "Version and automatic update checks",
         Icons.Outlined.Info,
+        advanced = true,
     ),
 }
 
 @Composable
-private fun SettingsHub(onOpen: (SettingsPage) -> Unit) {
+private fun SettingsHub(pages: List<SettingsPage>, onOpen: (SettingsPage) -> Unit) {
     Column(Modifier.padding(vertical = Space.snug)) {
         Grouped {
-            SettingsPage.entries.forEachIndexed { index, entry ->
+            pages.forEachIndexed { index, entry ->
                 NavRow(
                     title = entry.title,
                     supporting = entry.summary,
                     icon = entry.icon,
                     onClick = { onOpen(entry) },
                 )
-                if (index != SettingsPage.entries.lastIndex) RowDivider()
+                if (index != pages.lastIndex) RowDivider()
             }
         }
+    }
+}
+
+@Composable
+private fun AdvancedNote() {
+    Text(
+        "How the capture engine is set up and tuned. Nothing here needs changing for everyday " +
+            "use; the defaults are the tested ones.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = Space.edge, vertical = Space.snug),
+    )
+}
+
+/**
+ * The one accuracy question a person can actually answer.
+ *
+ * Five sliders ask about thresholds and grounding tolerances; this asks
+ * whether you want more tasks or fewer, and sets the two thresholds that
+ * decide it. The sliders are still under Advanced for anyone who wants them.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HowManySection(settings: Settings, viewModel: SettingsViewModel) {
+    SectionCard(
+        title = "How many tasks",
+        subtitle = "How sure TaskMind must be before something becomes a task.",
+    ) {
+        val current = AccuracyPreset.matching(settings.autoCreateThreshold, settings.reviewThreshold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AccuracyPreset.entries.forEach { preset ->
+                FilterChip(
+                    selected = current == preset,
+                    onClick = { viewModel.setThresholds(preset.autoCreate, preset.review) },
+                    label = { Text(preset.label) },
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            (current ?: AccuracyPreset.BALANCED).let {
+                if (current == null) "Custom thresholds are set under Advanced → Accuracy." else it.explanation
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** The three stances on the accuracy question, and the thresholds behind each. */
+enum class AccuracyPreset(
+    val label: String,
+    val autoCreate: Double,
+    val review: Double,
+    val explanation: String,
+) {
+    FEWER(
+        "Fewer",
+        0.85,
+        0.45,
+        "Only clear, direct asks become tasks. Borderline ones are dropped rather than queued.",
+    ),
+    BALANCED(
+        "Balanced",
+        0.75,
+        0.30,
+        "Clear asks become tasks; anything uncertain waits in Review for a one-tap decision.",
+    ),
+    MORE(
+        "More",
+        0.65,
+        0.25,
+        "Catches more, at the cost of more to dismiss. For weeks when missing something is worse.",
+    ),
+    ;
+
+    companion object {
+        fun matching(autoCreate: Double, review: Double): AccuracyPreset? =
+            entries.firstOrNull { kotlin.math.abs(it.autoCreate - autoCreate) < 0.005 && kotlin.math.abs(it.review - review) < 0.005 }
     }
 }
 
@@ -294,6 +389,7 @@ private fun SettingsHub(onOpen: (SettingsPage) -> Unit) {
  */
 @Composable
 private fun TransparencySection(
+    onOpenStatus: () -> Unit,
     onOpenHowItWorks: () -> Unit,
     onOpenPrompts: () -> Unit,
     onOpenModelCalls: () -> Unit,
@@ -304,7 +400,19 @@ private fun TransparencySection(
         title = "Look inside",
         subtitle = "Every rule, every prompt, and every request this app has made.",
     ) {
-        Button(onClick = onOpenHowItWorks, modifier = Modifier.fillMaxWidth()) {
+        // The status screen used to be reachable only from a background
+        // notification. It is the first stop when something seems wrong.
+        Button(onClick = onOpenStatus, modifier = Modifier.fillMaxWidth()) {
+            Text("Is it working?")
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Permissions, providers, the capture queue, and the latest log lines, on one screen.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(14.dp))
+        OutlinedButton(onClick = onOpenHowItWorks, modifier = Modifier.fillMaxWidth()) {
             Text("How TaskMind decides")
         }
         Spacer(Modifier.height(8.dp))
@@ -352,8 +460,8 @@ private fun TransparencySection(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "Run every stage end to end and see which one fails, or export one file with " +
-                "everything in it - settings, queue, model calls and the log.",
+            "Every call recording found since the cut-off line, and which of them have been " +
+                "transcribed.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -576,26 +684,19 @@ private fun AsrSection(settings: Settings, ui: SettingsUiState, viewModel: Setti
 }
 
 @Composable
-private fun CaptureSection(
+private fun MessageAppsSection(
     settings: Settings,
     ui: SettingsUiState,
     viewModel: SettingsViewModel,
-    onPickDirectory: () -> Unit,
 ) {
     SectionCard(
-        title = "What to watch",
-        subtitle = "An allow-list, not a deny-list: it is cheaper, and it makes cost predictable.",
+        title = "Which apps to read",
+        subtitle = "Only the apps switched on here are read. Everything else is ignored before it costs anything.",
     ) {
         LabeledSwitch(
             label = "Capture from messages",
             checked = settings.captureNotifications,
             onCheckedChange = viewModel::setCaptureNotifications,
-        )
-        LabeledSwitch(
-            label = "Capture from calls",
-            description = "TaskMind cannot record calls. It reads the recordings your phone app writes.",
-            checked = settings.captureCalls,
-            onCheckedChange = viewModel::setCaptureCalls,
         )
         Spacer(Modifier.height(12.dp))
         Text("Apps that have sent notifications", style = MaterialTheme.typography.labelLarge)
@@ -614,6 +715,38 @@ private fun CaptureSection(
                 checked = seen.packageName in settings.allowedPackages,
                 onCheckedChange = { allowed -> viewModel.togglePackage(seen.packageName, allowed) },
             )
+        }
+    }
+}
+
+/**
+ * Everything about calls, including the call list itself.
+ *
+ * The call list used to be a whole tab in the bottom bar. Once capture works
+ * it is something you check occasionally, not a place you live, so it moved
+ * here and the bar went back to the things you use every day.
+ */
+@Composable
+private fun CallCaptureSection(
+    settings: Settings,
+    viewModel: SettingsViewModel,
+    onOpenCalls: () -> Unit,
+    onOpenImport: () -> Unit,
+    onPickDirectory: () -> Unit,
+) {
+    SectionCard(
+        title = "Calls",
+        subtitle = "TaskMind cannot record calls. It reads the recordings your phone app writes.",
+    ) {
+        LabeledSwitch(
+            label = "Capture from calls",
+            checked = settings.captureCalls,
+            onCheckedChange = viewModel::setCaptureCalls,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onOpenCalls) { Text("Recent calls") }
+            OutlinedButton(onClick = onOpenImport) { Text("Paste a transcript") }
         }
 
         Spacer(Modifier.height(12.dp))
@@ -648,13 +781,7 @@ private fun CaptureSection(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = viewModel::startFreshFromNow) { Text("Ignore everything recorded so far") }
-        Text(
-            "Moves that line to right now. Use it if an old backlog has found its way into the queue.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        TextButton(onClick = viewModel::startFreshFromNow) { Text("Ignore everything recorded so far") }
     }
 }
 
@@ -809,28 +936,19 @@ private fun RetentionSection(settings: Settings, viewModel: SettingsViewModel, o
 
 @Composable
 private fun UpdateSection(settings: Settings, viewModel: SettingsViewModel) {
-    var url by remember(settings.updateManifestUrl) { mutableStateOf(settings.updateManifestUrl) }
     SectionCard(
         title = "Updates",
-        subtitle = "TaskMind is sideloaded, so it updates itself from a URL you control.",
+        subtitle = "TaskMind updates itself from its GitHub releases.",
     ) {
-        OutlinedTextField(
-            value = url,
-            onValueChange = { url = it },
-            label = { Text("Update manifest URL") },
-            placeholder = { Text("https://github.com/<owner>/<repo>/releases/latest/download/update.json") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-        )
-        Spacer(Modifier.height(8.dp))
-        Button(onClick = { viewModel.setUpdateManifestUrl(url) }) { Text("Save") }
+        KeyValueRow("Installed", "${com.taskmind.BuildConfig.APP_VERSION_NAME} (${com.taskmind.BuildConfig.APP_VERSION_CODE})")
         LabeledSwitch(
             label = "Check daily on Wi-Fi",
             checked = settings.autoCheckUpdates,
             onCheckedChange = viewModel::setAutoCheckUpdates,
         )
         Text(
-            "Downloads are verified against the checksum in the manifest before anything is installed.",
+            "Downloads are verified against the checksum in the release before anything is installed. " +
+                "Is it working? → Check for updates checks right now.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -844,16 +962,11 @@ private fun DataSection(
     onImport: () -> Unit,
 ) {
     SectionCard(title = "Your data") {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = { viewModel.exportJson { onShareText("taskmind-export.json", it) } }) {
-                Text("Export JSON")
-            }
-            OutlinedButton(onClick = { viewModel.exportCsv { onShareText("taskmind-export.csv", it) } }) {
-                Text("Export CSV")
-            }
+        OutlinedButton(onClick = { viewModel.exportJson { onShareText("taskmind-export.json", it) } }) {
+            Text("Export a backup")
         }
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = onImport) { Text("Import a JSON export") }
+        OutlinedButton(onClick = onImport) { Text("Restore from a backup") }
         Spacer(Modifier.height(8.dp))
         KeyValueRow("Imports", "go through the same checks as everything else, so duplicates are skipped")
     }

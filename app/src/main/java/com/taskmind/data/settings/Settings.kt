@@ -124,7 +124,11 @@ data class Settings(
     val deleteRecordingsAfterTranscription: Boolean = false,
 
     // -- self-update (spec 19) ---------------------------------------------
-    val updateManifestUrl: String = "",
+    /**
+     * Where updates come from. It was a text field the user had to fill in;
+     * it is always this project's GitHub releases, so it is now just that.
+     */
+    val updateManifestUrl: String = DEFAULT_UPDATE_MANIFEST_URL,
     val autoCheckUpdates: Boolean = true,
 
     // -- ui ----------------------------------------------------------------
@@ -139,6 +143,9 @@ data class Settings(
     )
 
     companion object {
+        const val DEFAULT_UPDATE_MANIFEST_URL =
+            "https://github.com/notrishabhjain/tm2/releases/latest/download/update.json"
+
         val DEFAULT = Settings()
 
         /** Spec 8.1 known-good presets, base URL prefilled. */
