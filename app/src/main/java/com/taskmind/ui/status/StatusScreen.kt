@@ -2,6 +2,8 @@ package com.taskmind.ui.status
 
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -50,7 +52,7 @@ import com.taskmind.ui.components.StatusPill
  * exactly which capability is unavailable and why. Principle 5: everything is
  * visible - when something does not work, this is where it says so.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun StatusScreen(
     viewModel: StatusViewModel,
@@ -60,6 +62,9 @@ fun StatusScreen(
     onOpenModelCalls: () -> Unit,
     onOpenDiagnostics: () -> Unit = {},
     onShareText: (String, String) -> Unit,
+    onOpenHowItWorks: () -> Unit = {},
+    onOpenPrompts: () -> Unit = {},
+    onOpenRecordings: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -76,7 +81,7 @@ fun StatusScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Status") },
+                title = { Text("Health") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -219,7 +224,13 @@ fun StatusScreen(
             }
 
             SectionCard(title = "Diagnostics", subtitle = "The self-test runs the real capture pipeline, end to end.") {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Every way of looking inside, from the one screen. These were
+                // spread across Status, a "How it works" settings page and
+                // three more screens, each linking to some of the others.
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Button(onClick = viewModel::runSelfTest, enabled = !state.running) {
                         if (state.running) {
                             CircularProgressIndicator(modifier = Modifier.height(16.dp), strokeWidth = 2.dp)
@@ -227,9 +238,12 @@ fun StatusScreen(
                         }
                         Text(if (state.running) "Running..." else "Run self-test")
                     }
+                    OutlinedButton(onClick = onOpenDiagnostics) { Text("Test and diagnose") }
                     OutlinedButton(onClick = onOpenLog) { Text("Activity log") }
                     OutlinedButton(onClick = onOpenModelCalls) { Text("Model calls") }
-                    OutlinedButton(onClick = onOpenDiagnostics) { Text("Test and diagnose") }
+                    OutlinedButton(onClick = onOpenHowItWorks) { Text("How it decides") }
+                    OutlinedButton(onClick = onOpenPrompts) { Text("Prompts") }
+                    OutlinedButton(onClick = onOpenRecordings) { Text("Recordings") }
                 }
 
                 state.selfTestReport?.let { report ->

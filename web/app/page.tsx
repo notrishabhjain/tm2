@@ -13,6 +13,7 @@ import {
   patchTask,
   type TaskPatch,
 } from "@/lib/mutations";
+import { bundles, isWaitingOn } from "@/lib/relate";
 import { due, fullDate, isOverdue, isToday, priorityLabel, relative } from "@/lib/format";
 
 const PRIORITIES: Priority[] = ["URGENT", "HIGH", "MEDIUM", "LOW"];
@@ -125,6 +126,10 @@ function Dashboard({ email }: { email: string }) {
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
   const [tag, setTag] = useState<string | null>(null);
+  // The tag row and the related grouping are both opt-in, so the page opens
+  // on the list rather than on a wall of chips.
+  const [showFilters, setShowFilters] = useState(false);
+  const [related, setRelated] = useState(false);
 
   const load = useCallback(async () => {
     const [t, r, q] = await Promise.all([
@@ -261,12 +266,18 @@ function Dashboard({ email }: { email: string }) {
   }, [scope, tag]);
 
   const groups = useMemo(() => {
-    const overdue = active.filter((t) => isOverdue(t.due_at));
-    const today = active.filter((t) => !isOverdue(t.due_at) && isToday(t.due_at));
-    const upcoming = active.filter((t) => t.due_at && !isOverdue(t.due_at) && !isToday(t.due_at));
-    const undated = active.filter((t) => !t.due_at);
-    return { overdue, today, upcoming, undated };
+    // Other people's moves get their own group, as on the phone, rather than
+    // sitting among the things you have to do.
+    const waiting = active.filter((t) => isWaitingOn(t));
+    const mine = active.filter((t) => !isWaitingOn(t));
+    const overdue = mine.filter((t) => isOverdue(t.due_at));
+    const today = mine.filter((t) => !isOverdue(t.due_at) && isToday(t.due_at));
+    const upcoming = mine.filter((t) => t.due_at && !isOverdue(t.due_at) && !isToday(t.due_at));
+    const undated = mine.filter((t) => !t.due_at);
+    return { overdue, today, upcoming, undated, waiting };
   }, [active]);
+
+  const grouped = useMemo(() => (related ? bundles(active) : null), [active, related]);
 
   const lastSync = useMemo(() => {
     const stamps = [...tasks, ...reviews].map((r) => r.synced_at).filter(Boolean);
@@ -313,7 +324,15 @@ function Dashboard({ email }: { email: string }) {
             placeholder="Search titles, notes, quotes, people, tags…"
             aria-label="Search tasks"
           />
-          {tagCloud.length > 0 && (
+          <div className="tagrow">
+            <button className={showFilters || tag ? "tagchip on" : "tagchip"} onClick={() => setShowFilters((v) => !v)}>
+              {tag ? `Filter: ${tag}` : "Filter by person or topic"}
+            </button>
+            <button className={related ? "tagchip on" : "tagchip"} onClick={() => setRelated((v) => !v)}>
+              Group related
+            </button>
+          </div>
+          {(showFilters || tag) && tagCloud.length > 0 && (
             <div className="tagrow">
               {tagCloud.map((t) => (
                 <button
@@ -386,10 +405,32 @@ function Dashboard({ email }: { email: string }) {
             )
           ) : (
             <>
-              <Group title="Overdue" alert items={groups.overdue} mutate={mutate} />
-              <Group title="Today" items={groups.today} mutate={mutate} />
-              <Group title="Upcoming" items={groups.upcoming} mutate={mutate} />
-              <Group title="No date" items={groups.undated} mutate={mutate} />
+              {grouped ? (
+                <>
+                  {grouped.bundles.map((b) => (
+                    <Group
+                      key={b.key}
+                      title={`${b.label} \u00b7 ${b.reason}`}
+                      items={b.tasks}
+                      mutate={mutate}
+                      onCompleteAll={() =>
+                        void mutate(() =>
+                          Promise.all(b.tasks.map((t) => patchTask(t.id, { status: "COMPLETED" }))).then(() => undefined),
+                        )
+                      }
+                    />
+                  ))}
+                  <Group title={grouped.bundles.length ? "On their own" : "Tasks"} items={grouped.loose} mutate={mutate} />
+                </>
+              ) : (
+                <>
+                  <Group title="Overdue" alert items={groups.overdue} mutate={mutate} />
+                  <Group title="Today" items={groups.today} mutate={mutate} />
+                  <Group title="Upcoming" items={groups.upcoming} mutate={mutate} />
+                  <Group title="No date" items={groups.undated} mutate={mutate} />
+                  <Group title="Waiting on others" items={groups.waiting} mutate={mutate} />
+                </>
+              )}
               {done.length > 0 && (
                 <>
                   <div className="group-head">
@@ -457,11 +498,14 @@ function Group({
   items,
   mutate,
   alert = false,
+  onCompleteAll,
 }: {
   title: string;
   items: Task[];
   mutate: Mutate;
   alert?: boolean;
+  /** For a bundle: tick everything in it off at once. */
+  onCompleteAll?: () => void;
 }) {
   if (items.length === 0) return null;
   return (
@@ -469,6 +513,11 @@ function Group({
       <div className={alert ? "group-head alert" : "group-head"}>
         {title}
         <span className="count">{items.length}</span>
+        {onCompleteAll && (
+          <button className="link" onClick={onCompleteAll}>
+            Complete all
+          </button>
+        )}
       </div>
       <div className="card">
         {items.map((t) => (

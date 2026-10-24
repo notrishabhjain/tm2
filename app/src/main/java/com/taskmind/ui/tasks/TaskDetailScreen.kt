@@ -34,6 +34,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.taskmind.core.SmartReminder
+import com.taskmind.contacts.ContactLookup
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -104,6 +106,7 @@ fun TaskDetailScreen(
     var renaming by remember { mutableStateOf<String?>(null) }
     var editingWhen by remember { mutableStateOf(false) }
     var muteOffer by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -215,34 +218,48 @@ fun TaskDetailScreen(
                 Text(if (done) "Reopen" else "Mark complete")
             }
 
-            // Captured tasks can be wrong about whose they are. Saying so is
-            // a delete plus, for a group, the chance to stop reading it.
-            if (task.sourceType != SourceType.MANUAL && !done) {
-                TextButton(
-                    onClick = {
-                        viewModel.notMine { group ->
-                            if (group == null) onBack() else muteOffer = group
-                        }
-                    },
-                ) { Text("Not my task") }
-            }
-
-            // Snooze reads as a modifier on the due date, so it sits with it
-            // rather than in a section of its own.
+            // Everything else you would do from here, in one wrapped row of
+            // quiet buttons: later, get back to the person, put it on the
+            // calendar, or say it is not yours. These used to be three
+            // separate rows, and the person-facing ones did not exist.
             if (!done) {
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(Space.tight),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Snooze",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    TextButton(onClick = { viewModel.snooze(HOUR) }) { Text("+1h") }
-                    TextButton(onClick = { viewModel.snooze(3 * HOUR) }) { Text("+3h") }
+                val contact = state.contact
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.tight)) {
+                    TextButton(onClick = { viewModel.snooze(HOUR) }) { Text("In 1 hour") }
                     TextButton(onClick = { viewModel.snooze(24 * HOUR) }) { Text("Tomorrow") }
+                    val number = contact?.number
+                    val firstName = contact?.person?.substringBefore(' ')
+                    if (number != null) {
+                        TextButton(onClick = { ContactLookup.dial(context, number) }) {
+                            Text(if (firstName != null) "Call $firstName" else "Call")
+                        }
+                        if (contact?.chatApp != null) {
+                            TextButton(onClick = { ContactLookup.whatsapp(context, number) }) { Text("WhatsApp") }
+                        }
+                    } else if (contact?.chatApp != null) {
+                        // A group, or a sender not in the phone book: the chat
+                        // cannot be linked to, but the app can be opened.
+                        TextButton(onClick = { ContactLookup.openApp(context, contact.chatApp) }) {
+                            Text("Open WhatsApp")
+                        }
+                    }
+                    task.dueAt?.let { due ->
+                        TextButton(onClick = { ContactLookup.addToCalendar(context, task.title, task.notes, due) }) {
+                            Text("Add to calendar")
+                        }
+                    }
+                    // Captured tasks can be wrong about whose they are. Saying
+                    // so is a delete plus, for a group, the chance to stop
+                    // reading it.
+                    if (task.sourceType != SourceType.MANUAL) {
+                        TextButton(
+                            onClick = {
+                                viewModel.notMine { group ->
+                                    if (group == null) onBack() else muteOffer = group
+                                }
+                            },
+                        ) { Text("Not mine") }
+                    }
                 }
             }
 
@@ -270,8 +287,6 @@ fun TaskDetailScreen(
             }
             Recurrence.describe(task.recurrenceRule)?.let { Fact("Repeats", it) }
             task.completedAt?.let { Fact("Completed", DateFormats.full(it)) }
-            Fact("Created", DateFormats.full(task.createdAt))
-            Fact("Updated", DateFormats.full(task.updatedAt))
 
             // -- priority ----------------------------------------------------
             Rule()
@@ -424,82 +439,85 @@ fun TaskDetailScreen(
                 }
             }
 
-            // -- provenance ---------------------------------------------------
-            if (task.sourceType != SourceType.MANUAL) {
+            // -- where it came from ---------------------------------------
+            // The quote stays in view: it is the reason the task exists. The
+            // rest - which engine, how confident, when it was captured, the
+            // original text - is for checking the app's work, so it folds
+            // away behind one line instead of filling the bottom half.
+            if (task.evidence != null) {
                 Rule()
                 Label("Where this came from")
-
-                task.evidence?.let { evidence ->
-                    Surface(
-                        shape = RoundedCornerShape(Radius.row),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(Modifier.padding(Space.step)) {
-                            Text(
-                                "“$evidence”",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontStyle = FontStyle.Italic,
-                            )
+                Surface(
+                    shape = RoundedCornerShape(Radius.row),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(Space.step)) {
+                        Text(
+                            "\u201c${task.evidence}\u201d",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontStyle = FontStyle.Italic,
+                        )
+                        task.sourceLabel?.takeIf { it.isNotBlank() }?.let { from ->
                             Spacer(Modifier.height(Space.tight))
                             Text(
-                                "The words that created this task, checked against the original " +
-                                    "before it was made.",
+                                from,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
-                    Spacer(Modifier.height(Space.snug))
                 }
+            }
 
-                Fact("Source", task.sourceType.name.lowercase())
-                task.sourceApp?.takeIf { it.isNotBlank() }?.let { Fact("App", it) }
-                task.sourceLabel?.takeIf { it.isNotBlank() }?.let { Fact("From", it) }
-                task.confidence?.let { Fact("Confidence", "%.0f%%".format(it * 100)) }
-                task.inferenceOrigin?.let { Fact("Engine", it) }
-                state.rawCapture?.let { Fact("Captured", "${DateFormats.full(it.occurredAt)} IST") }
-
-                val capture = state.rawCapture
-                if (capture?.rawText != null) {
-                    // Kept behind a tap: a transcript can be pages long, and
-                    // unfolding it by default is what made this screen endless.
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { showOriginal = !showOriginal }
-                            .heightIn(min = Touch.min),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+            Rule()
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { showOriginal = !showOriginal }
+                    .heightIn(min = Touch.min),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    if (showOriginal) "Fewer details" else "More details",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(Space.tight))
+                Icon(
+                    if (showOriginal) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            if (showOriginal) {
+                Fact("Created", DateFormats.full(task.createdAt))
+                Fact("Updated", DateFormats.full(task.updatedAt))
+                if (task.sourceType != SourceType.MANUAL) {
+                    Fact("Source", task.sourceType.name.lowercase())
+                    task.sourceApp?.takeIf { it.isNotBlank() }?.let { Fact("App", it) }
+                    task.confidence?.let { Fact("Confidence", "%.0f%%".format(it * 100)) }
+                    task.inferenceOrigin?.let { Fact("Engine", it) }
+                    state.rawCapture?.let { Fact("Captured", "${DateFormats.full(it.occurredAt)} IST") }
+                    val original = state.rawCapture?.rawText
+                    Spacer(Modifier.height(Space.snug))
+                    if (original != null) {
+                        Label("Original")
                         Text(
-                            if (showOriginal) "Hide original" else "Show original",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(Modifier.width(Space.tight))
-                        Icon(
-                            if (showOriginal) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    if (showOriginal) {
-                        Text(
-                            capture.rawText,
+                            original,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = Space.step),
                         )
+                    } else {
+                        Text(
+                            "The original message or transcript has been cleared by your retention " +
+                                "setting. The quote above is kept for good.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
-                } else {
-                    Text(
-                        "The original message or transcript has been cleared by your retention " +
-                            "setting. The quote above is kept for good.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = Space.snug),
-                    )
                 }
             }
         }

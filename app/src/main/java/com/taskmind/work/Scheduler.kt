@@ -118,29 +118,9 @@ object Scheduler {
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 5, TimeUnit.MINUTES)
                 .build(),
         )
-        // The standing reminder. Hourly so "due today" stops being true at a
-        // sensible time, and so an overdue task starts being marked as one
-        // without the app having been opened.
-        wm(context).enqueueUniquePeriodicWork(
-            WORK_ONGOING,
-            ExistingPeriodicWorkPolicy.KEEP,
-            PeriodicWorkRequestBuilder<OngoingReminderWorker>(1, TimeUnit.HOURS).build(),
-        )
-    }
-
-    /**
-     * Refreshes the standing "due today" notification now.
-     *
-     * No network constraint: it reads the local database and posts a
-     * notification, and waiting for Wi-Fi to tell someone a task is overdue
-     * would be absurd.
-     */
-    fun enqueueOngoingReminder(context: Context) {
-        wm(context).enqueueUniqueWork(
-            WORK_ONGOING + ".now",
-            ExistingWorkPolicy.REPLACE,
-            OneTimeWorkRequestBuilder<OngoingReminderWorker>().build(),
-        )
+        // The standing reminder was retired in favour of the daily brief;
+        // stop the hourly job an older version registered.
+        wm(context).cancelUniqueWork(WORK_ONGOING)
     }
 
     /**
@@ -174,7 +154,7 @@ object Scheduler {
      * for.
      */
     fun scheduledWorkNames(context: Context): List<String> =
-        listOf(WORK_MAINTENANCE, WORK_RETENTION, WORK_UPDATE, WORK_SYNC, WORK_ONGOING).filter { name ->
+        listOf(WORK_MAINTENANCE, WORK_RETENTION, WORK_UPDATE, WORK_SYNC).filter { name ->
             runCatching {
                 wm(context).getWorkInfosForUniqueWork(name).get()
                     .any { !it.state.isFinished }

@@ -1,5 +1,14 @@
 package com.taskmind.ui.review
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.taskmind.core.SmartReminder
+import com.taskmind.data.repo.ReviewEdit
+import com.taskmind.ui.tasks.WhenFields
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -143,6 +152,7 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
                         item = item,
                         showingDismissed = showingDismissed,
                         onAccept = { viewModel.accept(item) },
+                        onAcceptEdited = { edit -> viewModel.acceptEdited(item, edit) },
                         onDismiss = { viewModel.dismiss(item) },
                         onRestore = { viewModel.restore(item) },
                     )
@@ -200,20 +210,25 @@ private fun StaleBanner(count: Int, days: Int, onClear: () -> Unit) {
 }
 
 /**
- * One candidate, with everything that justifies it.
+ * One candidate: what it is, the words that prompted it, and the decision.
  *
- * The source text and the model's reasoning are both here on purpose: this
- * screen is where the app admits it is not sure, and a decision asked for
- * without showing the working is not a decision the user can actually make.
+ * The full source message and the model's reasoning are one tap away rather
+ * than always open. They are what you check when the quote is not enough,
+ * and with them always open, three cards filled the screen.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReviewCard(
     item: ReviewItemEntity,
     showingDismissed: Boolean,
     onAccept: () -> Unit,
+    onAcceptEdited: (ReviewEdit) -> Unit,
     onDismiss: () -> Unit,
     onRestore: () -> Unit,
 ) {
+    var showWhy by remember(item.id) { mutableStateOf(false) }
+    var editing by remember(item.id) { mutableStateOf(false) }
+
     Card(
         Modifier
             .fillMaxWidth()
@@ -234,17 +249,13 @@ private fun ReviewCard(
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                "${item.sourceLabel ?: item.sourceType.name} - ${DateFormats.full(item.occurredAt)}",
+                listOfNotNull(
+                    item.sourceLabel ?: item.sourceType.name.lowercase(),
+                    item.dueAt?.let { "due ${DateFormats.due(it).replaceFirstChar { c -> c.lowercase() }}" },
+                ).joinToString("  \u00b7  "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            item.dueAt?.let {
-                Text(
-                    "Due ${DateFormats.due(it)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
 
             item.evidence?.let { evidence ->
                 Spacer(Modifier.height(10.dp))
@@ -255,36 +266,117 @@ private fun ReviewCard(
                 )
             }
 
-            if (item.sourceText.isNotBlank()) {
-                Spacer(Modifier.height(10.dp))
-                Text("Source", style = MaterialTheme.typography.labelMedium)
-                Text(
-                    item.sourceText.take(600),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            if (item.sourceText.isNotBlank() || item.reasoning != null) {
+                TextButton(onClick = { showWhy = !showWhy }, contentPadding = PaddingValues(0.dp)) {
+                    Text(if (showWhy) "Hide the message" else "Show the message and why")
+                }
+                if (showWhy) {
+                    if (item.sourceText.isNotBlank()) {
+                        Text(
+                            item.sourceText.take(600),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    item.reasoning?.let { reasoning ->
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Why: $reasoning",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        "Captured ${DateFormats.full(item.occurredAt)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
             }
 
-            item.reasoning?.let { reasoning ->
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "Why: $reasoning",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (showingDismissed) {
+                    OutlinedButton(onClick = onRestore, modifier = Modifier.weight(1f)) { Text("Put back") }
+                } else {
+                    Button(onClick = onAccept, modifier = Modifier.weight(1f)) { Text("Add") }
+                    // Often the model is 90% right: the right task with a
+                    // clumsy title or the wrong day. Fixing it here beats
+                    // accepting and then editing, or dismissing and retyping.
+                    OutlinedButton(onClick = { editing = true }, modifier = Modifier.weight(1f)) { Text("Edit") }
+                    TextButton(onClick = onDismiss) { Text("Dismiss") }
+                }
             }
+        }
+    }
 
-            Spacer(Modifier.height(14.dp))
+    if (editing) {
+        EditAndAddSheet(
+            item = item,
+            onDismiss = { editing = false },
+            onAdd = { edit ->
+                editing = false
+                onAcceptEdited(edit)
+            },
+        )
+    }
+}
+
+/** Correct a candidate's title, date and reminder, then add it. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditAndAddSheet(
+    item: ReviewItemEntity,
+    onDismiss: () -> Unit,
+    onAdd: (ReviewEdit) -> Unit,
+) {
+    var title by remember { mutableStateOf(item.title) }
+    var due by remember { mutableStateOf(item.dueAt) }
+    var reminder by remember { mutableStateOf(SmartReminder.Choice.SMART) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp),
+        ) {
+            Text("Edit and add", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = { Text("Task") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(16.dp))
+            WhenFields(
+                dueAt = due,
+                onDueAt = { due = it },
+                reminder = reminder,
+                onReminder = { reminder = it },
+            )
+            Spacer(Modifier.height(20.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = onAccept, modifier = Modifier.weight(1f)) {
-                    Text("Add task")
-                }
-                OutlinedButton(
-                    onClick = if (showingDismissed) onRestore else onDismiss,
+                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        onAdd(
+                            ReviewEdit(
+                                title = title.trim(),
+                                dueAt = due,
+                                reminderAt = SmartReminder.resolve(reminder, due, System.currentTimeMillis()),
+                            ),
+                        )
+                    },
+                    enabled = title.isNotBlank(),
                     modifier = Modifier.weight(1f),
-                ) {
-                    Text(if (showingDismissed) "Put back" else "Dismiss")
-                }
+                ) { Text("Add task") }
             }
         }
     }

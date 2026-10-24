@@ -9,6 +9,7 @@ import com.taskmind.core.TaskStatus
 import com.taskmind.core.Stage
 import com.taskmind.di.AppContainer
 import com.taskmind.reminders.DailyBrief
+import com.taskmind.reminders.OngoingReminder
 import com.taskmind.work.Scheduler
 import com.taskmind.work.TaskChangeWatcher
 import kotlinx.coroutines.flow.first
@@ -35,7 +36,7 @@ class TaskMindApp : Application() {
         Scheduler.ensurePeriodicWork(this)
         Scheduler.ensureWatchdog(this)
 
-        // The widget, the web mirror, the standing notification and the next
+        // The widget, the web mirror and the next
         // reminder alarm all follow the task list from here on, whatever
         // changed it.
         TaskChangeWatcher.start(this, container)
@@ -52,6 +53,7 @@ class TaskMindApp : Application() {
             // Re-armed on every start, which includes after a reboot: the
             // boot receiver starts this process.
             runCatching { DailyBrief.schedule(this@TaskMindApp) }
+            OngoingReminder.cancel(this@TaskMindApp)
 
             val settings = container.settingsRepository.current()
             if (settings.cloudConsent && settings.captureCalls) {

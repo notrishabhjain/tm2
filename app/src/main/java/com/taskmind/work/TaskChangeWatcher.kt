@@ -15,11 +15,11 @@ import kotlinx.coroutines.launch
 /**
  * Everything that has to follow the task list, refreshed when the list changes.
  *
- * Before this, the widget, the web mirror and the standing notification were
+ * Before this, the widget and the web mirror were
  * refreshed when you LEFT the app - so a task captured from WhatsApp while the
  * app was closed did not reach the widget or the laptop until you next opened
  * TaskMind and closed it again, and a task ticked off in the browser stayed on
- * the home screen. One observer of the table fixes all three, wherever the
+ * the home screen. One observer of the table fixes both, wherever the
  * change came from: a capture, a notification button, the widget, the web.
  *
  * Debounced, because a burst (a bundle completed, a pull from the web applying
@@ -45,7 +45,6 @@ object TaskChangeWatcher {
                 .collect {
                     try {
                         TasksWidget.redrawAll(app)
-                        Scheduler.enqueueOngoingReminder(app)
                         // A no-op when web access is off.
                         Scheduler.enqueueSync(app)
                         Scheduler.scheduleNextReminder(app, container)

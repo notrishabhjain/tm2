@@ -10,6 +10,9 @@ import com.taskmind.core.LogLevel
 import com.taskmind.core.Stage
 import com.taskmind.core.TaskStatus
 import com.taskmind.core.WaitingOn
+import com.taskmind.core.WeeklyReview
+import com.taskmind.data.db.entity.TaskEntity
+import com.taskmind.tagging.AutoTagger
 import com.taskmind.di.AppContainer
 import com.taskmind.prefs.UiPreferences
 import kotlinx.coroutines.flow.first
@@ -38,7 +41,40 @@ object DailyBrief {
         val prefs = UiPreferences(app).current()
         arm(app, Brief.Kind.MORNING, prefs.morningBrief)
         arm(app, Brief.Kind.EVENING, prefs.eveningBrief)
+        armWeekly(app, prefs.weeklyReview)
     }
+
+    private fun armWeekly(context: Context, enabled: Boolean) {
+        val alarms = context.getSystemService(AlarmManager::class.java) ?: return
+        val pending = PendingIntent.getBroadcast(
+            context,
+            REQUEST_WEEKLY,
+            Intent(context, BriefReceiver::class.java)
+                .setAction(BriefReceiver.ACTION)
+                .putExtra(BriefReceiver.EXTRA_KIND, BriefReceiver.KIND_WEEKLY),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        if (!enabled) {
+            runCatching { alarms.cancel(pending) }
+            return
+        }
+        val at = WeeklyReview.nextSunday(WEEKLY_HOUR, System.currentTimeMillis())
+        runCatching { alarms.setWindow(AlarmManager.RTC_WAKEUP, at, WINDOW_MILLIS, pending) }
+    }
+
+    /** Composes and posts the Sunday review now, if the week had anything in it. */
+    suspend fun postWeekly(context: Context) {
+        val container = AppContainer.get(context)
+        val now = System.currentTimeMillis()
+        val summary = WeeklyReview.summarise(weeklyItems(container), now) ?: return
+        container.notifier.postWeekly(summary)
+    }
+
+    /** The task list as the weekly review reads it. Also used by the Done view. */
+    suspend fun weeklyItems(container: AppContainer): List<WeeklyReview.Item> =
+        container.taskRepository.observeTasks().first()
+            .filter { it.parentTaskId == null && it.status != TaskStatus.DELETED }
+            .map { it.toWeeklyItem() }
 
     private fun arm(context: Context, kind: Brief.Kind, enabled: Boolean) {
         val alarms = context.getSystemService(AlarmManager::class.java) ?: return
@@ -69,7 +105,12 @@ object DailyBrief {
         val items = container.taskRepository.observeTasks().first()
             .filter { it.status == TaskStatus.ACTIVE && it.parentTaskId == null }
             .map { Brief.Item(it.title, it.dueAt, WaitingOn.matches(it.title, it.tags)) }
-        val message = Brief.compose(kind, items, now)
+        val meetings = if (kind == Brief.Kind.MORNING && UiPreferences(context).current().calendarInBrief) {
+            CalendarToday.read(context, now)
+        } else {
+            emptyList()
+        }
+        val message = Brief.compose(kind, items, now, meetings)
         if (message == null) {
             container.logger.write(Stage.SYSTEM, LogLevel.DEBUG, "${kind.name.lowercase()} brief: nothing to say")
             return
@@ -79,23 +120,41 @@ object DailyBrief {
 
     private const val REQUEST_MORNING = 7101
     private const val REQUEST_EVENING = 7102
+    private const val REQUEST_WEEKLY = 7103
+
+    const val WEEKLY_HOUR = 18
+}
+
+/** One task as the weekly review sees it. */
+fun TaskEntity.toWeeklyItem(): WeeklyReview.Item {
+    val parsed = AutoTagger.parseLabel(sourceType, sourceLabel)
+    return WeeklyReview.Item(
+        title = title,
+        open = status == TaskStatus.ACTIVE,
+        createdAt = createdAt,
+        completedAt = completedAt,
+        from = parsed.group ?: parsed.person,
+    )
 }
 
 /** Fires a brief, then arms the next one. Not exported. */
 class BriefReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        val kind = intent.getStringExtra(EXTRA_KIND)
-            ?.let { name -> Brief.Kind.entries.firstOrNull { it.name == name } }
-            ?: return
+        val name = intent.getStringExtra(EXTRA_KIND) ?: return
+        val kind = Brief.Kind.entries.firstOrNull { it.name == name }
+        if (kind == null && name != KIND_WEEKLY) return
         val app = context.applicationContext
         val container = AppContainer.get(app)
         val pending = goAsync()
         container.applicationScope.launch {
             try {
                 val prefs = UiPreferences(app).current()
-                val enabled = if (kind == Brief.Kind.MORNING) prefs.morningBrief else prefs.eveningBrief
-                if (enabled) DailyBrief.post(app, kind)
+                when (kind) {
+                    null -> if (prefs.weeklyReview) DailyBrief.postWeekly(app)
+                    Brief.Kind.MORNING -> if (prefs.morningBrief) DailyBrief.post(app, kind)
+                    Brief.Kind.EVENING -> if (prefs.eveningBrief) DailyBrief.post(app, kind)
+                }
             } catch (t: Throwable) {
                 container.logger.write(Stage.SYSTEM, LogLevel.ERROR, "brief failed", t.toString())
             } finally {
@@ -108,5 +167,6 @@ class BriefReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION = "com.taskmind.action.BRIEF"
         const val EXTRA_KIND = "com.taskmind.extra.BRIEF_KIND"
+        const val KIND_WEEKLY = "WEEKLY"
     }
 }

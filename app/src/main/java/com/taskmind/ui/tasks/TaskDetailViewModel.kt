@@ -1,5 +1,9 @@
 package com.taskmind.ui.tasks
 
+import com.taskmind.contacts.ContactLookup
+import com.taskmind.core.SourceType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.taskmind.core.LogLevel
 import com.taskmind.core.PreFilter
 import com.taskmind.core.Stage
@@ -17,7 +21,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/** Who a task came from, and how to get back to them. */
+data class TaskContact(
+    /** The person, when the task names one. */
+    val person: String?,
+    /** The group, when it came from one. */
+    val group: String?,
+    /** A dialable number for [person], when the phone book has one. */
+    val number: String?,
+    /** The chat app it arrived through, when that is WhatsApp. */
+    val chatApp: String?,
+)
+
 data class TaskDetailUiState(
+    val contact: TaskContact? = null,
     val task: TaskEntity? = null,
     val subTasks: List<TaskEntity> = emptyList(),
     val rawCapture: RawCaptureEntity? = null,
@@ -49,6 +66,7 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 _state.value = _state.value.copy(
                     task = task,
+                    contact = contactFor(task),
                     loading = false,
                     notFound = false,
                     // Spec 6.3: after a retention purge this is null and the
@@ -83,6 +101,16 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
                 )
             }
         }
+    }
+
+    private suspend fun contactFor(task: TaskEntity): TaskContact? {
+        if (task.sourceType == SourceType.MANUAL) return null
+        val parsed = AutoTagger.parseLabel(task.sourceType, task.sourceLabel)
+        val person = parsed.person?.takeIf { it.isNotBlank() && !it.equals("Unknown", ignoreCase = true) }
+        val number = withContext(Dispatchers.IO) { ContactLookup.numberFor(container.context, person) }
+        val chatApp = task.sourceApp?.takeIf { it.startsWith("com.whatsapp") }
+        if (person == null && parsed.group == null) return null
+        return TaskContact(person = person, group = parsed.group, number = number, chatApp = chatApp)
     }
 
     /**

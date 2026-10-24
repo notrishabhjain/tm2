@@ -2,7 +2,12 @@ package com.taskmind.ui.tasks
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.taskmind.core.DateResolver
 import com.taskmind.core.Priority
+import com.taskmind.core.SmartReminder
+import com.taskmind.core.WeeklyReview
+import com.taskmind.reminders.toWeeklyItem
+import java.time.Instant
 import com.taskmind.core.TaskStatus
 import com.taskmind.data.db.entity.ProjectEntity
 import com.taskmind.data.db.entity.TagEntity
@@ -40,6 +45,8 @@ data class TaskListUiState(
     /** Whether the user has told the app what they are called. Defaults to
      *  true so the banner never flashes up while settings are loading. */
     val ownNamesSet: Boolean = true,
+    /** The last seven days, shown at the top of the Done view. */
+    val week: WeeklyReview.Summary? = null,
     val selection: Set<String> = emptySet(),
     val searching: Boolean = false,
     /** Tags the app worked out for itself, commonest first. */
@@ -176,6 +183,14 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             projects = projects,
             tags = tags,
             pendingReviewCount = reviewCount,
+            week = if (current.view == TaskView.COMPLETED) {
+                WeeklyReview.summarise(
+                    allTasks.filter { it.parentTaskId == null && it.status != TaskStatus.DELETED }.map { it.toWeeklyItem() },
+                    now,
+                )
+            } else {
+                null
+            },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TaskListUiState())
 
@@ -275,6 +290,34 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             container.taskRepository.setDueAt(task.id, target)
             _undo.value = UndoAction("Snoozed \"${task.title.take(30)}\"") {
                 container.taskRepository.setDueAt(task.id, previous)
+            }
+        }
+    }
+
+    /**
+     * Moves overdue tasks to today, keeping each one's time of day, with a
+     * fresh automatic reminder. One write per task, one undo for all.
+     *
+     * An overdue pile is a list of decisions nobody has made; this makes the
+     * commonest one ("still doing it, just today") a single tap.
+     */
+    fun moveToToday(tasks: List<TaskEntity>) {
+        if (tasks.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val todayStart = DateResolver.startOfDay(now)
+        viewModelScope.launch {
+            tasks.forEach { task ->
+                val due = task.dueAt ?: return@forEach
+                val moved = if (SmartReminder.isDateOnly(due)) {
+                    SmartReminder.withoutTime(todayStart)
+                } else {
+                    val local = Instant.ofEpochMilli(due).atZone(DateResolver.IST)
+                    SmartReminder.timed(todayStart, local.hour, local.minute)
+                }
+                container.taskRepository.update(task.copy(dueAt = moved, reminderAt = SmartReminder.forDue(moved, now)))
+            }
+            offerUndo("Moved ${tasks.size} to today") {
+                tasks.forEach { container.taskRepository.update(it) }
             }
         }
     }

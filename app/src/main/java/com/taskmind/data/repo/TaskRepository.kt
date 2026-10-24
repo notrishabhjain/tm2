@@ -4,6 +4,7 @@ import com.taskmind.core.LogLevel
 import com.taskmind.core.Priority
 import com.taskmind.core.Recurrence
 import com.taskmind.core.ReviewState
+import com.taskmind.core.SmartReminder
 import com.taskmind.core.SourceType
 import com.taskmind.core.Stage
 import com.taskmind.core.TaskStatus
@@ -248,11 +249,22 @@ class TaskRepository(
      * Spec 14.2: accepting a review item calls IntakeFunnel.submit() with
      * sourceType = REVIEW. It does NOT insert directly.
      */
-    suspend fun acceptReviewItem(id: String): IntakeResult? {
+    /**
+     * Turns a review item into a task, optionally as corrected by the person.
+     *
+     * [edited] carries their title, due date and reminder when they changed
+     * them before accepting; null accepts the item exactly as proposed.
+     */
+    suspend fun acceptReviewItem(id: String, edited: ReviewEdit? = null): IntakeResult? {
         val item = reviewItemDao.byId(id) ?: return null
+        val dueAt = if (edited != null) edited.dueAt else item.dueAt
+        // The due date is applied after creation (below), so the funnel never
+        // sees it and cannot give the task its automatic reminder. It is
+        // worked out here instead.
+        val reminderAt = if (edited != null) edited.reminderAt else SmartReminder.forDue(dueAt, System.currentTimeMillis())
         val result = funnel.submit(
             TaskCandidate(
-                title = item.title,
+                title = edited?.title?.takeIf { it.isNotBlank() } ?: item.title,
                 evidence = item.evidence,
                 priority = item.priority,
                 dueAtRaw = null,
@@ -268,10 +280,11 @@ class TaskRepository(
                 inferenceOrigin = item.inferenceOrigin,
                 sourceText = item.sourceText,
                 occurredAt = item.occurredAt,
+                reminderAt = reminderAt,
             ),
         )
         if (result is IntakeResult.Created) {
-            item.dueAt?.let { taskDao.setDueAt(result.taskId, it, System.currentTimeMillis()) }
+            dueAt?.let { taskDao.setDueAt(result.taskId, it, System.currentTimeMillis()) }
         }
         reviewItemDao.setState(id, ReviewState.ACCEPTED)
         return result
@@ -290,3 +303,6 @@ class TaskRepository(
 
     suspend fun totalTasks(): Int = taskDao.total()
 }
+
+/** What the person changed on a review item before accepting it. */
+data class ReviewEdit(val title: String, val dueAt: Long?, val reminderAt: Long?)

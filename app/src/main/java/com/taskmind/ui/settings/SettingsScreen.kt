@@ -164,17 +164,17 @@ fun SettingsScreen(
 
                 SettingsPage.ADVANCED -> {
                     AdvancedNote()
-                    SettingsHub(SettingsPage.entries.filter { it.advanced }, onOpen = { page = it })
+                    SettingsHub(
+                        SettingsPage.entries.filter { it.advanced },
+                        // Health is a screen of its own, not a page of links
+                        // to screens: one tap, not two.
+                        onOpen = { if (it == SettingsPage.HEALTH) onOpenStatus() else page = it },
+                    )
                 }
 
-                SettingsPage.HEALTH -> TransparencySection(
-                    onOpenStatus,
-                    onOpenHowItWorks,
-                    onOpenPrompts,
-                    onOpenModelCalls,
-                    onOpenDiagnostics,
-                    onOpenRecordings,
-                )
+                // Never shown as a page (see ADVANCED above); here for the
+                // `when` to be complete, and as a way back if it ever is.
+                SettingsPage.HEALTH -> SettingsHub(SettingsPage.entries.filter { it.advanced }, onOpen = { page = it })
 
                 SettingsPage.PROVIDERS -> {
                     LlmSection(settings, ui, viewModel)
@@ -240,7 +240,7 @@ enum class SettingsPage(
     ),
     REMINDERS(
         "Reminders and look",
-        "Daily brief, the standing notification, swipes, widget and theme",
+        "Daily brief, swipes, the widget and theme",
         Icons.Outlined.NotificationsActive,
     ),
     PRIVACY(
@@ -256,7 +256,7 @@ enum class SettingsPage(
 
     HEALTH(
         "Health and diagnostics",
-        "Is it working, how it decides, prompts, model calls, the log",
+        "Is it working? Self-test, the log, model calls, prompts and recordings",
         Icons.Outlined.Science,
         advanced = true,
     ),
@@ -379,92 +379,6 @@ enum class AccuracyPreset(
     companion object {
         fun matching(autoCreate: Double, review: Double): AccuracyPreset? =
             entries.firstOrNull { kotlin.math.abs(it.autoCreate - autoCreate) < 0.005 && kotlin.math.abs(it.review - review) < 0.005 }
-    }
-}
-
-/**
- * The app reads the user's messages and decides what becomes a task. These
- * three screens are how that stays accountable rather than magic, so they sit
- * at the top of settings instead of buried at the bottom.
- */
-@Composable
-private fun TransparencySection(
-    onOpenStatus: () -> Unit,
-    onOpenHowItWorks: () -> Unit,
-    onOpenPrompts: () -> Unit,
-    onOpenModelCalls: () -> Unit,
-    onOpenDiagnostics: () -> Unit,
-    onOpenRecordings: () -> Unit,
-) {
-    SectionCard(
-        title = "Look inside",
-        subtitle = "Every rule, every prompt, and every request this app has made.",
-    ) {
-        // The status screen used to be reachable only from a background
-        // notification. It is the first stop when something seems wrong.
-        Button(onClick = onOpenStatus, modifier = Modifier.fillMaxWidth()) {
-            Text("Is it working?")
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Permissions, providers, the capture queue, and the latest log lines, on one screen.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(14.dp))
-        OutlinedButton(onClick = onOpenHowItWorks, modifier = Modifier.fillMaxWidth()) {
-            Text("How TaskMind decides")
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Every filter, threshold and rule in plain language, showing the value each one is using " +
-                "right now.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(14.dp))
-        OutlinedButton(onClick = onOpenPrompts, modifier = Modifier.fillMaxWidth()) {
-            Text("Prompts — read and edit")
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "The exact instructions sent to the model. Editable, and every one can be reset.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(14.dp))
-        OutlinedButton(onClick = onOpenModelCalls, modifier = Modifier.fillMaxWidth()) {
-            Text("Model calls — what was sent and returned")
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "The last hundred requests, with the prompt, your data as it was sent, and the unedited " +
-                "reply. This is where a failing provider explains itself.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(14.dp))
-        OutlinedButton(onClick = onOpenDiagnostics, modifier = Modifier.fillMaxWidth()) {
-            Text("Test and diagnose")
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Run every stage end to end, push ten sample messages through task creation, or export " +
-                "one file with everything in it.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(14.dp))
-        OutlinedButton(onClick = onOpenRecordings, modifier = Modifier.fillMaxWidth()) {
-            Text("Recordings — choose what to transcribe")
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Every call recording found since the cut-off line, and which of them have been " +
-                "transcribed.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
