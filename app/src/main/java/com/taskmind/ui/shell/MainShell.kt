@@ -41,7 +41,7 @@ enum class MainTab(
     val icon: ImageVector,
 ) {
     TASKS("tasks", "Tasks", Icons.Filled.Checklist, Icons.Outlined.Checklist),
-    REVIEW("review", "Review", Icons.Filled.Inbox, Icons.Outlined.Inbox),
+    REVIEW("review", "Digest", Icons.Filled.Inbox, Icons.Outlined.Inbox),
     SETTINGS("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 

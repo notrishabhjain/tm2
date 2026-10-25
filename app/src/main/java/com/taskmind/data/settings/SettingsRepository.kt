@@ -14,6 +14,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.taskmind.core.AsrProvider
 import com.taskmind.core.PreFilter
+import com.taskmind.core.Prompts
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -42,6 +43,7 @@ class SettingsRepository(private val context: Context) {
 
         val allowedPackages = stringSetPreferencesKey("allowed_packages")
         val ownNames = stringSetPreferencesKey("own_names")
+        val aboutMe = stringPreferencesKey("about_me")
         val groupPolicy = stringPreferencesKey("group_policy")
         val groupsAlwaysWatch = stringSetPreferencesKey("groups_always_watch")
         val groupsNeverWatch = stringSetPreferencesKey("groups_never_watch")
@@ -108,6 +110,7 @@ class SettingsRepository(private val context: Context) {
             asrLanguage = this[K.asrLanguage] ?: d.asrLanguage,
             allowedPackages = this[K.allowedPackages] ?: d.allowedPackages,
             ownNames = this[K.ownNames] ?: d.ownNames,
+            aboutMe = this[K.aboutMe] ?: d.aboutMe,
             // A stored name that no longer matches an entry falls back rather
             // than crashing - a saved value can outlive the enum it came from.
             groupPolicy = PreFilter.GroupPolicy.byName(this[K.groupPolicy]) ?: d.groupPolicy,
@@ -118,8 +121,8 @@ class SettingsRepository(private val context: Context) {
             minCallDurationSeconds = this[K.minCallDuration] ?: d.minCallDurationSeconds,
             callRecordingDirUri = this[K.callRecordingDirUri] ?: d.callRecordingDirUri,
             recordingCutoffMillis = this[K.recordingCutoff] ?: d.recordingCutoffMillis,
-            autoCreateThreshold = this[K.autoCreateThreshold] ?: d.autoCreateThreshold,
-            reviewThreshold = this[K.reviewThreshold] ?: d.reviewThreshold,
+            autoCreateThreshold = upgradeThreshold(this[K.autoCreateThreshold], d.autoCreateThreshold, AUTO_UPGRADES),
+            reviewThreshold = upgradeThreshold(this[K.reviewThreshold], d.reviewThreshold, REVIEW_UPGRADES),
             notificationTolerance = this[K.notificationTolerance] ?: d.notificationTolerance,
             clipboardTolerance = this[K.clipboardTolerance] ?: d.clipboardTolerance,
             callTolerance = this[K.callTolerance] ?: d.callTolerance,
@@ -159,6 +162,9 @@ class SettingsRepository(private val context: Context) {
     suspend fun setAllowedPackages(packages: Set<String>) = edit { it[K.allowedPackages] = packages }
 
     /** Trimmed and de-duplicated here so the matcher never has to. */
+    /** The user's own words about their work, fed to every capture prompt. */
+    suspend fun setAboutMe(text: String) = edit { it[K.aboutMe] = text.trim().take(Prompts.MAX_ABOUT_ME) }
+
     suspend fun setOwnNames(names: Set<String>) = edit { prefs ->
         prefs[K.ownNames] = names.map { it.trim() }.filter { it.length >= 2 }.toSet()
     }
@@ -333,5 +339,27 @@ class SettingsRepository(private val context: Context) {
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.settingsDataStore.edit(block)
+    }
+
+    /**
+     * A threshold stored by an older version under one of its presets moves to
+     * this version's equivalent; a hand-tuned value is left alone.
+     *
+     * v1.21 raised the bar (the prompt now aims for real commitments only, with
+     * maybes in an evening digest), so 0.75 / 0.30 - the old "Balanced" - no
+     * longer means balanced. Without this, everyone who had ever tapped a
+     * preset would keep the old, cluttered behaviour and see "custom".
+     * Applied on every read, never written back; the old and new preset values
+     * do not overlap, so a value is never upgraded twice.
+     */
+    private fun upgradeThreshold(stored: Double?, default: Double, upgrades: Map<Double, Double>): Double {
+        if (stored == null) return default
+        return upgrades.entries.firstOrNull { kotlin.math.abs(it.key - stored) < 0.001 }?.value ?: stored
+    }
+
+    private companion object {
+        /** Old Fewer / Balanced / More -> new. */
+        val AUTO_UPGRADES = mapOf(0.85 to 0.90, 0.75 to 0.80, 0.65 to 0.70)
+        val REVIEW_UPGRADES = mapOf(0.45 to 0.60, 0.30 to 0.50, 0.25 to 0.40)
     }
 }

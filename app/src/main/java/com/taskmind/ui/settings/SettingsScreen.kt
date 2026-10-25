@@ -141,6 +141,7 @@ fun SettingsScreen(
                 null -> SettingsHub(SettingsPage.entries.filter { !it.advanced }, onOpen = { page = it })
 
                 SettingsPage.YOU -> {
+                    AboutMeSection(settings, viewModel)
                     GroupSection(settings, viewModel)
                     HowManySection(settings, viewModel)
                     MessageAppsSection(settings, ui, viewModel)
@@ -230,7 +231,7 @@ enum class SettingsPage(
 ) {
     YOU(
         "You and your chats",
-        "Your name, group chats, which apps to read, work and personal",
+        "About you, your name, group chats, apps to read, work and personal",
         Icons.Outlined.Groups,
     ),
     CALLS(
@@ -358,21 +359,21 @@ enum class AccuracyPreset(
 ) {
     FEWER(
         "Fewer",
-        0.85,
-        0.45,
-        "Only clear, direct asks become tasks. Borderline ones are dropped rather than queued.",
+        0.90,
+        0.60,
+        "Only unmistakable commitments become tasks; the digest holds just the strongest maybes.",
     ),
     BALANCED(
         "Balanced",
-        0.75,
-        0.30,
-        "Clear asks become tasks; anything uncertain waits in Review for a one-tap decision.",
+        0.80,
+        0.50,
+        "Real commitments become tasks; maybes wait in the evening digest for one look.",
     ),
     MORE(
         "More",
-        0.65,
-        0.25,
-        "Catches more, at the cost of more to dismiss. For weeks when missing something is worse.",
+        0.70,
+        0.40,
+        "Catches more, at the cost of a longer digest. For weeks when missing something is worse.",
     ),
     ;
 

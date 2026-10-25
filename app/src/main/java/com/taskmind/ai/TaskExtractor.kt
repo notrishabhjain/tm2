@@ -47,6 +47,8 @@ data class MessageInput(
     val sourceLabel: String? = null,
     /** What the user is called in chats, so the model can tell whose task this is. */
     val userNames: Set<String> = emptySet(),
+    /** The user's About me: role, key people, current work, what to ignore. */
+    val aboutMe: String = "",
 )
 
 data class TranscriptInput(
@@ -55,6 +57,7 @@ data class TranscriptInput(
     val occurredAt: Long,
     val rawCaptureId: String? = null,
     val sourceLabel: String? = null,
+    val aboutMe: String = "",
 )
 
 data class ExtractedTask(
@@ -123,6 +126,7 @@ class CloudTaskExtractor(
             groupName = input.groupName,
             messageText = input.text,
             userNames = input.userNames,
+            aboutMe = input.aboutMe,
         )
         val result = llm.complete(
             config = config,
@@ -172,7 +176,7 @@ class CloudTaskExtractor(
     override suspend fun extractFromTranscript(input: TranscriptInput): AiResult<TranscriptExtraction> {
         val config = configProvider()
         cachedOrigin = "cloud:${config.model}"
-        val user = Prompts.callUser(input.occurredAt, input.contactLabel, input.transcript)
+        val user = Prompts.callUser(input.occurredAt, input.contactLabel, input.transcript, input.aboutMe)
         val result = llm.complete(
             config = config,
             systemPrompt = promptProvider().callSystem,

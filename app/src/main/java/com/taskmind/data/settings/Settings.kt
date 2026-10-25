@@ -43,6 +43,14 @@ data class Settings(
     val ownNames: Set<String> = emptySet(),
 
     /**
+     * About ten lines in the user's own words: role, company, key people,
+     * current work, and what they never want tracked. Sent with every capture
+     * prompt, it is the single biggest lever on what counts as worth a task -
+     * the model otherwise judges relevance knowing nothing about the person.
+     */
+    val aboutMe: String = "",
+
+    /**
      * Defaults to ADDRESSED_TO_ME, but stands down to EVERYTHING until
      * [ownNames] has something in it - see PreFilter.resolveGroupPolicy. So a
      * phone that has never been told its owner's name behaves exactly as it
@@ -76,7 +84,12 @@ data class Settings(
     val recordingCutoffMillis: Long = 0L,
 
     // -- extraction quality (spec 13, 14.2) --------------------------------
-    val autoCreateThreshold: Double = 0.75,
+    /**
+     * Raised from 0.75 in v1.21, together with the prompt: the model now
+     * reserves 0.85+ for real commitments and puts maybes at 0.5-0.75, which
+     * go to the evening digest rather than the list.
+     */
+    val autoCreateThreshold: Double = 0.80,
 
     /**
      * Below this a candidate is discarded outright.
@@ -87,7 +100,7 @@ data class Settings(
      * borderline items, so a floor of 0.40 was throwing away exactly the
      * material this band was created to surface.
      */
-    val reviewThreshold: Double = 0.30,
+    val reviewThreshold: Double = 0.50,
     val notificationTolerance: Double = 0.90,
     val clipboardTolerance: Double = 0.85,
     val callTolerance: Double = 0.75,

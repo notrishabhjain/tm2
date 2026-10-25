@@ -92,7 +92,7 @@ fun BehaviourSection() {
             description = "What is due today, what is already late, and who you are waiting on.",
         )
         LabeledSwitch(
-            label = "Evening wrap-up at 19:00",
+            label = "Evening wrap-up and digest at 18:30",
             checked = state.eveningBrief,
             onCheckedChange = { on ->
                 scope.launch {
@@ -100,7 +100,8 @@ fun BehaviourSection() {
                     DailyBrief.schedule(context)
                 }
             },
-            description = "What is still open today, with one button to move all of it to tomorrow.",
+            description = "What is still open today, with one button to move all of it to tomorrow, " +
+                "and how many maybe-tasks are waiting for a keep or drop. Maybes no longer notify one by one.",
         )
         LabeledSwitch(
             label = "Weekly review on Sunday at 18:00",

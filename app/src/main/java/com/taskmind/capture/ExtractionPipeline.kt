@@ -120,8 +120,9 @@ class ExtractionPipeline(
 
         return when (capture.sourceType) {
             SourceType.NOTIFICATION ->
-                processMessage(capture, text, settings.verifyPass, settings.ownNames, now, todayKey)
-            SourceType.CALL, SourceType.CLIPBOARD -> processTranscript(capture, text, settings.verifyPass, now, todayKey)
+                processMessage(capture, text, settings.verifyPass, settings.ownNames, now, todayKey, settings.aboutMe)
+            SourceType.CALL, SourceType.CLIPBOARD ->
+                processTranscript(capture, text, settings.verifyPass, now, todayKey, settings.aboutMe)
             SourceType.MANUAL, SourceType.REVIEW -> {
                 rawCaptureDao.setState(capture.id, CaptureState.DONE)
                 Outcome.Done(0, 0, 0)
@@ -139,6 +140,7 @@ class ExtractionPipeline(
         userNames: Set<String>,
         now: Long,
         todayKey: String,
+        aboutMe: String,
     ): Outcome {
         val context = parseContext(capture.contextLabel)
         val input = MessageInput(
@@ -150,6 +152,7 @@ class ExtractionPipeline(
             rawCaptureId = capture.id,
             sourceLabel = capture.sourceLabel,
             userNames = userNames,
+            aboutMe = aboutMe,
         )
 
         logger.write(
@@ -191,6 +194,7 @@ class ExtractionPipeline(
         verifyPass: Boolean,
         now: Long,
         todayKey: String,
+        aboutMe: String,
     ): Outcome {
         val label = capture.sourceLabel ?: capture.contextLabel ?: "Unknown caller"
         logger.write(Stage.EXTRACT, LogLevel.DEBUG, "LLM call for transcript", "engine=${extractor.originLabel} label=$label")
@@ -202,6 +206,7 @@ class ExtractionPipeline(
                 occurredAt = capture.occurredAt,
                 rawCaptureId = capture.id,
                 sourceLabel = capture.sourceLabel,
+                aboutMe = aboutMe,
             ),
         )
         settingsRepository.recordLlmCall(todayKey, capture.sourceApp)

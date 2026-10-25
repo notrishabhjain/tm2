@@ -260,6 +260,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     // -- who you are, and group chats --------------------------------------
 
+    fun setAboutMe(text: String) {
+        viewModelScope.launch {
+            container.settingsRepository.setAboutMe(text)
+            _ui.value = _ui.value.copy(message = "Saved. TaskMind uses it from the next message.")
+        }
+    }
+
     fun setOwnNames(names: Set<String>) {
         viewModelScope.launch { container.settingsRepository.setOwnNames(names) }
     }

@@ -31,7 +31,9 @@ import kotlinx.coroutines.launch
 object DailyBrief {
 
     const val MORNING_HOUR = 9
-    const val EVENING_HOUR = 19
+    /** 18:30: the wrap-up and the digest of maybes, in one notification. */
+    const val EVENING_HOUR = 18
+    const val EVENING_MINUTE = 30
 
     private const val WINDOW_MILLIS = 10 * 60 * 1000L
 
@@ -83,8 +85,11 @@ object DailyBrief {
             runCatching { alarms.cancel(pending) }
             return
         }
-        val hour = if (kind == Brief.Kind.MORNING) MORNING_HOUR else EVENING_HOUR
-        val at = Brief.nextAt(hour, System.currentTimeMillis())
+        val at = if (kind == Brief.Kind.MORNING) {
+            Brief.nextAt(MORNING_HOUR, System.currentTimeMillis())
+        } else {
+            Brief.nextAt(EVENING_HOUR, System.currentTimeMillis(), EVENING_MINUTE)
+        }
         runCatching { alarms.setWindow(AlarmManager.RTC_WAKEUP, at, WINDOW_MILLIS, pending) }
     }
 
@@ -110,7 +115,12 @@ object DailyBrief {
         } else {
             emptyList()
         }
-        val message = Brief.compose(kind, items, now, meetings)
+        val maybes = if (kind == Brief.Kind.EVENING) {
+            container.taskRepository.observePendingReviewCount().first()
+        } else {
+            0
+        }
+        val message = Brief.compose(kind, items, now, meetings, maybes)
         if (message == null) {
             container.logger.write(Stage.SYSTEM, LogLevel.DEBUG, "${kind.name.lowercase()} brief: nothing to say")
             return

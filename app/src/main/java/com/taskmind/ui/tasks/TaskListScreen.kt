@@ -224,7 +224,18 @@ fun TaskListScreen(
             // rather than on a settings page nobody opens. The review inbox
             // used to hold this spot; the Review tab's badge already says it.
             if (!state.ownNamesSet) {
-                NameBanner(onClick = onOpenNameSettings)
+                NameBanner(
+                    title = "Tell TaskMind your name",
+                    body = "So requests between other people in a group stop becoming your tasks.",
+                    onClick = onOpenNameSettings,
+                )
+            } else if (!state.aboutMeSet) {
+                NameBanner(
+                    title = "Tell TaskMind about your work",
+                    body = "Ten lines on your role, key people and what to ignore - the biggest single " +
+                        "improvement to what becomes a task.",
+                    onClick = onOpenNameSettings,
+                )
             }
 
             ViewChips(state = state, onSelect = viewModel::setView)
@@ -705,7 +716,7 @@ private fun BundleHeading(group: TaskBundles.Group, onCompleteAll: () -> Unit) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NameBanner(onClick: () -> Unit) {
+private fun NameBanner(title: String, body: String, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(Radius.card),
@@ -726,13 +737,13 @@ private fun NameBanner(onClick: () -> Unit) {
             Spacer(Modifier.width(Space.step))
             Column(Modifier.weight(1f)) {
                 Text(
-                    "Tell TaskMind your name",
+                    title,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    "So requests between other people in a group stop becoming your tasks.",
+                    body,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
                 )

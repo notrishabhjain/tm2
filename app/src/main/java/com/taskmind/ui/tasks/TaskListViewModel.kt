@@ -45,6 +45,8 @@ data class TaskListUiState(
     /** Whether the user has told the app what they are called. Defaults to
      *  true so the banner never flashes up while settings are loading. */
     val ownNamesSet: Boolean = true,
+    /** Whether "About you" has been written. Same loading default as above. */
+    val aboutMeSet: Boolean = true,
     /** The last seven days, shown at the top of the Done view. */
     val week: WeeklyReview.Summary? = null,
     val selection: Set<String> = emptySet(),
@@ -95,9 +97,9 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
         }
         viewModelScope.launch {
             container.settingsRepository.settings
-                .map { s -> s.ownNames.any { it.isNotBlank() } }
+                .map { s -> s.ownNames.any { it.isNotBlank() } to s.aboutMe.isNotBlank() }
                 .distinctUntilChanged()
-                .collect { set -> filters.update { it.copy(ownNamesSet = set) } }
+                .collect { (names, about) -> filters.update { it.copy(ownNamesSet = names, aboutMeSet = about) } }
         }
     }
 
