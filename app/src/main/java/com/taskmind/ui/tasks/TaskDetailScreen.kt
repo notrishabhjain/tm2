@@ -64,7 +64,10 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.taskmind.core.ChatContext
+import com.taskmind.core.FollowUp
 import com.taskmind.core.Priority
+import com.taskmind.data.db.entity.ProjectEntity
 import com.taskmind.core.Recurrence
 import com.taskmind.core.SourceType
 import com.taskmind.core.TaskStatus
@@ -106,6 +109,7 @@ fun TaskDetailScreen(
     var renaming by remember { mutableStateOf<String?>(null) }
     var editingWhen by remember { mutableStateOf(false) }
     var muteOffer by remember { mutableStateOf<String?>(null) }
+    var pickingMatter by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     Scaffold(
@@ -204,7 +208,33 @@ fun TaskDetailScreen(
                 MetaChip(PriorityStyle.label(task.priority), color = priorityColor)
                 if (done) MetaChip("Completed", color = MaterialTheme.colorScheme.primary)
                 task.sourceLabel?.takeIf { it.isNotBlank() }?.let { MetaChip(it) }
-                task.tags.forEach { MetaChip("#$it") }
+                task.tags.filter { it != FollowUp.MAYBE_DONE_TAG }.forEach { MetaChip("#$it") }
+            }
+
+            // -- maybe done ------------------------------------------------
+            // A message suggested this has been taken care of. The app never
+            // closes a task on its own word; it asks, once, here.
+            if (state.maybeDone) {
+                Spacer(Modifier.height(Space.step))
+                Surface(
+                    shape = RoundedCornerShape(Radius.row),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(Space.step)) {
+                        Text("Maybe done?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        val why = task.notes?.lines()?.lastOrNull { it.endsWith("maybe done?") }?.removeSuffix(" - maybe done?")
+                        Text(
+                            why ?: "A later message suggests this has been taken care of.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(Space.snug)) {
+                            TextButton(onClick = { viewModel.complete() }) { Text("Mark done") }
+                            TextButton(onClick = { viewModel.stillOpen() }) { Text("Still open") }
+                        }
+                    }
+                }
             }
 
             // -- the one action worth a button -------------------------------
@@ -286,6 +316,13 @@ fun TaskDetailScreen(
                 )
             }
             Recurrence.describe(task.recurrenceRule)?.let { Fact("Repeats", it) }
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClickLabel = "Change matter") { pickingMatter = true },
+            ) {
+                Fact("Matter", state.matterName ?: "None - tap to file it under one")
+            }
             task.completedAt?.let { Fact("Completed", DateFormats.full(it)) }
 
             // -- priority ----------------------------------------------------
@@ -573,6 +610,22 @@ fun TaskDetailScreen(
             )
         }
 
+        if (pickingMatter) {
+            MatterSheet(
+                matters = state.matters,
+                currentId = task.projectId,
+                onDismiss = { pickingMatter = false },
+                onPick = {
+                    viewModel.setMatter(it)
+                    pickingMatter = false
+                },
+                onCreate = {
+                    viewModel.createMatter(it)
+                    pickingMatter = false
+                },
+            )
+        }
+
         if (editingWhen) {
             WhenSheet(
                 dueAt = task.dueAt,
@@ -646,6 +699,67 @@ private fun WhenSheet(
         }
     }
 }
+
+/**
+ * Which matter the task belongs to: an existing one, a new one, or none.
+ * The model files most captured tasks itself; this is for when it guessed
+ * wrong, or for a task typed by hand.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun MatterSheet(
+    matters: List<ProjectEntity>,
+    currentId: String?,
+    onDismiss: () -> Unit,
+    onPick: (String?) -> Unit,
+    onCreate: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.edge)
+                .padding(bottom = Space.section),
+        ) {
+            Text("Matter", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                "An ongoing piece of work - a project, a deal, a hire. Tasks under one are listed together.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(Space.step))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.snug)) {
+                FilterChip(selected = currentId == null, onClick = { onPick(null) }, label = { Text("None") })
+                matters.forEach { m ->
+                    FilterChip(selected = currentId == m.id, onClick = { onPick(m.id) }, label = { Text(m.name) })
+                }
+            }
+            Spacer(Modifier.height(Space.step))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.snug),
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(MAX_MATTER_NAME) },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("New matter") },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                )
+                TextButton(onClick = { onCreate(name) }, enabled = name.isNotBlank()) { Text("Add") }
+            }
+        }
+    }
+}
+
+private const val MAX_MATTER_NAME = ChatContext.MAX_MATTER_NAME
 
 private const val HOUR = 60 * 60 * 1000L
 

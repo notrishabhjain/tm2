@@ -97,6 +97,23 @@ current work say what matters to them. Anything they list as things to ignore is
 isTask=false. A request from someone they list as a key person deserves the benefit of the
 doubt; the same request from a stranger in a busy group does not.
 
+WHAT CAME BEFORE. The message may be preceded by up to three sections. Use them; they are
+how a short message like "ok send it", "any update?" or "Friday then" makes sense.
+- "Earlier in this chat" - the last few messages in the same conversation, oldest first.
+  They explain what the new message refers to. Judge only the NEW message: never make a task
+  out of an earlier line, and quote evidence only from the new message.
+- "The user's open tasks with this person or group" - numbered T1, T2 and so on. If the new
+  message is ABOUT one of them - a chase, a reminder, a new deadline, a changed detail - set
+  "updates" to its number ("T2"), keep isTask=true, and reuse that task's title. Never create
+  a second task for something already on the list. If the new message says one of them has
+  been taken care of ("received", "got it, thanks", "ho gaya", "payment mil gaya"), set
+  "doneHint" to its number, isTask=false, and put the words that say so in "evidence".
+- "Matters the user tracks" - numbered M1, M2. A matter is an ongoing piece of work: a
+  project, a deal, a hire, a case. When the task belongs to one, set "matter" to its number.
+  When it plainly belongs to ongoing work that is not listed, set "matter" to a new 2-4 word
+  name for it ("SRE hiring"). A one-off errand has no matter: null. Never number a task or
+  matter that is not in the list.
+
 You are given the date and time the message arrived. Resolve every relative expression
 against THAT moment - "kal", "parso", "aaj shaam", "tomorrow", "by Friday", "5 baje".
 "kal" as a deadline means the following day. If a date is given with no time, use 18:00.
@@ -116,11 +133,14 @@ Respond with ONLY this JSON, no markdown:
 {
   "reasoning": "<1-2 sentences: who wants what from whom, and which tests pass or fail>",
   "isTask": true|false,
-  "evidence": "<exact quote from the message, or null if isTask is false>",
+  "evidence": "<exact quote from the message; null if isTask is false, unless doneHint is set>",
   "title": "<imperative, <=60 chars, naming the concrete specifics, in English; null if not a task>",
   "priority": "URGENT|HIGH|MEDIUM|LOW",
   "dueDate": "<ISO 8601 date-time with +05:30 offset, or null if none stated>",
   "notes": "<amounts, references, context worth keeping; null if none>",
+  "updates": "<T number of the open task this message is about, or null>",
+  "doneHint": "<T number of an open task this message says is done, or null>",
+  "matter": "<M number, a new 2-4 word matter name, or null>",
   "confidence": <0.0-1.0. 0.85+ a real commitment, clearly the user's - it goes straight
                  onto their list; 0.5-0.75 a maybe worth one glance in the evening
                  digest; below 0.5 you would not mention it, so say isTask=false
@@ -182,6 +202,32 @@ WhatsApp from "Neha": "Rishabh are you joining the call at 4?"
 [Mon 7 July 2025, 2:00 PM] You are known as: Rishabh, RJ
 WhatsApp group "CPC Infra" from "Kashish": "FYI the deployment is done, Rishabh. Logs are in the shared folder"
 {"reasoning":"Mentions the user, but only to inform. Nothing is asked of them - an update, not a task.","isTask":false,"evidence":null,"title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.9}
+
+Earlier in this chat (oldest first):
+[Mon 11:02] Priya: PO draft attached, please sign and send back
+
+The user's open tasks with this person or group:
+T1. Sign and return the vendor PO to Priya (due Tue 8 Jul 18:00) [matter: Vendor PO]
+
+Matters the user tracks:
+M1. Vendor PO
+M2. SRE hiring
+
+[Mon 7 July 2025, 4:00 PM] WhatsApp from "Priya": "any update on the PO? need it by tomorrow 11 am latest"
+{"reasoning":"Priya is chasing T1, which is already on the list, and moves the deadline to tomorrow 11:00. An update to T1, not a second task.","isTask":true,"updates":"T1","doneHint":null,"matter":"M1","evidence":"need it by tomorrow 11 am latest","title":"Sign and return the vendor PO to Priya","priority":"URGENT","dueDate":"2025-07-08T11:00:00+05:30","notes":null,"confidence":0.9}
+
+The user's open tasks with this person or group:
+T1. Sign and return the vendor PO to Priya (due Tue 8 Jul 11:00) [matter: Vendor PO]
+
+[Tue 8 July 2025, 10:30 AM] WhatsApp from "Priya": "received the signed PO, thanks!"
+{"reasoning":"Priya confirms she has the signed PO, which is T1. Nothing new is asked; T1 looks done.","isTask":false,"updates":null,"doneHint":"T1","matter":null,"evidence":"received the signed PO","title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.9}
+
+Matters the user tracks:
+M1. Vendor PO
+
+[Mon 7 July 2025, 2:00 PM] You are known as: Rishabh, RJ
+WhatsApp from "Neha": "Rishabh can you send me the JD for the SRE opening by Thursday"
+{"reasoning":"Neha asks the user directly for the SRE job description by Thursday. A real commitment. It belongs to ongoing hiring work that is not a listed matter, so a new one.","isTask":true,"updates":null,"doneHint":null,"matter":"SRE hiring","evidence":"send me the JD for the SRE opening by Thursday","title":"Send Neha the JD for the SRE opening","priority":"HIGH","dueDate":"2025-07-10T18:00:00+05:30","notes":null,"confidence":0.92}
 """.trim()
 
     val DEFAULT_CALL_SYSTEM: String = """
@@ -217,6 +263,14 @@ CAPTURE, each as its own task:
 When the transcript is prefixed with "About the user:", use it to judge what matters to
 them, and leave out anything they list as things to ignore.
 
+WHAT IS ALREADY ON THE LIST. The transcript may be preceded by "The user's open tasks with
+this person or group", numbered T1, T2, and "Matters the user tracks", numbered M1, M2.
+- A commitment that is one of those open tasks again - chased, re-dated, changed - is NOT a
+  new task. Return it with "updates" set to its number and that task's title.
+- An open task the call says is already done goes in "done", with the words that say so.
+- When a task belongs to a listed matter, set "matter" to its number; when it plainly
+  belongs to ongoing work that is not listed, a new 2-4 word name; otherwise null.
+
 RULES:
 - Extract only what was ACTUALLY SPOKEN. Never invent an amount, name, date or recipient
   that is not in the transcript.
@@ -249,11 +303,14 @@ Return ONLY this JSON, no markdown:
       "dueDate": "<ISO 8601 with +05:30, resolved from the call date, or null>",
       "assignedToMe": <true if the user must act, false if the other party committed>,
       "notes": "<names, amounts, references; null if none>",
+      "updates": "<T number of the open task this is, or null>",
+      "matter": "<M number, a new 2-4 word matter name, or null>",
       "confidence": <0.0-1.0. 0.85+ clearly spoken, clearly committed; 0.5-0.8 a real
                      commitment with doubt about who or when, or audio that is hard to
                      read. Below 0.5, leave it out.>
     }
-  ]
+  ],
+  "done": [{"task": "<T number>", "evidence": "<exact transcript quote>"}]
 }
 
 Priority: URGENT = within 24h of the call, or urgent/ASAP/abhi/aaj tak. HIGH = 2-3 days, or
@@ -322,6 +379,8 @@ Return ONLY JSON:
         userNames: Collection<String> = emptyList(),
         /** The user's own description of their work and what to ignore. */
         aboutMe: String = "",
+        /** [ChatContext.render]: the chat so far, open tasks, matters. */
+        context: String = "",
     ): String {
         val time = DateResolver.formatForPrompt(occurredAtMillis)
         val where = if (groupName.isNullOrBlank()) {
@@ -331,13 +390,20 @@ Return ONLY JSON:
         }
         val names = userNames.map { it.trim() }.filter { it.isNotEmpty() }
         val who = if (names.isEmpty()) "" else "You are known as: ${names.joinToString(", ")}\n"
-        return aboutBlock(aboutMe) + "[$time IST] $who$where: \"$messageText\""
+        return aboutBlock(aboutMe) + context + "[$time IST] $who$where: \"$messageText\""
     }
 
-    fun callUser(occurredAtMillis: Long, contactLabel: String, transcript: String, aboutMe: String = ""): String {
+    fun callUser(
+        occurredAtMillis: Long,
+        contactLabel: String,
+        transcript: String,
+        aboutMe: String = "",
+        context: String = "",
+    ): String {
         val time = DateResolver.formatForPrompt(occurredAtMillis)
         return buildString {
             append(aboutBlock(aboutMe))
+            append(context)
             append("Call with ").append(contactLabel).append('\n')
             append("Call date and time: ").append(time).append(" IST\n\n")
             append("TRANSCRIPT:\n")

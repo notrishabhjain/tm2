@@ -19,6 +19,7 @@ import com.taskmind.core.AsrProvider
 import com.taskmind.data.db.TaskMindDatabase
 import com.taskmind.data.repo.ActivityLogger
 import com.taskmind.data.repo.BackupRepository
+import com.taskmind.data.repo.ChatMemory
 import com.taskmind.data.repo.RoomInferenceRecorder
 import com.taskmind.data.repo.RoomIntakePorts
 import com.taskmind.data.repo.TaskRepository
@@ -194,6 +195,14 @@ class AppContainer(context: Context) {
 
     val recordingFinder: RecordingFinder by lazy { RecordingFinder(appContext) }
 
+    val chatMemory: ChatMemory by lazy {
+        ChatMemory(
+            rawCaptureDao = database.rawCaptureDao(),
+            taskDao = database.taskDao(),
+            projectDao = database.projectDao(),
+        )
+    }
+
     val extractionPipeline: ExtractionPipeline by lazy {
         ExtractionPipeline(
             rawCaptureDao = database.rawCaptureDao(),
@@ -205,6 +214,7 @@ class AppContainer(context: Context) {
             logger = logger,
             hasLlmKey = { secretStore.hasLlmKey() },
             appLabelFor = ::appLabel,
+            memory = chatMemory,
         )
     }
 

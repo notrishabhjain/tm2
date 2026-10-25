@@ -127,7 +127,7 @@ class PromptsTest {
     @Test
     fun `an example that is not a task quotes nothing`() {
         examples().forEach { (line, obj) ->
-            if (obj.bool("isTask") == false) {
+            if (obj.bool("isTask") == false && obj.str("doneHint") == null) {
                 assertNull("a non-task example has evidence: ${line.take(70)}", obj.str("evidence"))
                 assertNull("a non-task example has a title: ${line.take(70)}", obj.str("title"))
             }
@@ -201,6 +201,47 @@ class PromptsTest {
         assertTrue(user.contains("The user is known as: Rishabh"))
         assertTrue(user.contains("SOURCE TEXT:"))
         assertEquals(true, user.contains("0. title=Do a thing"))
+    }
+
+    // -- context (v1.22) -------------------------------------------------------
+
+    @Test
+    fun `the prompts explain the context sections by the names they are sent under`() {
+        val block = ChatContext.block(
+            listOf(ChatContext.Line(1_751_875_200_000L, "Priya", "hi")),
+            listOf(ChatContext.OpenTask("a", "Send PO", null, null)),
+            listOf(ChatContext.Matter("m", "Vendor PO")),
+        )
+        val rendered = ChatContext.render(block)
+        listOf("Earlier in this chat", "The user's open tasks with this person or group", "Matters the user tracks")
+            .forEach { heading ->
+                assertTrue("context heading missing from render: $heading", rendered.contains(heading))
+                assertTrue("notification prompt does not explain: $heading", notification.contains(heading))
+            }
+        assertTrue(Prompts.DEFAULT_CALL_SYSTEM.contains("The user's open tasks with\nthis person or group"))
+    }
+
+    @Test
+    fun `examples show an update, a done hint and a new matter`() {
+        val ex = examples().map { it.second }
+        assertTrue(ex.any { it.str("updates") == "T1" && it.bool("isTask") == true })
+        assertTrue(ex.any { it.str("doneHint") == "T1" && it.bool("isTask") == false && it.str("evidence") != null })
+        assertTrue(ex.any { it.str("matter") == "SRE hiring" })
+    }
+
+    @Test
+    fun `the context goes between about-me and the message`() {
+        val user = Prompts.notificationUser(
+            occurredAtMillis = 1_751_875_200_000L,
+            appLabel = "WhatsApp",
+            senderKey = "Priya",
+            groupName = null,
+            messageText = "any update?",
+            aboutMe = "I run infra",
+            context = "Matters the user tracks:\nM1. Vendor PO\n\n",
+        )
+        assertTrue(user.indexOf("About the user") < user.indexOf("M1. Vendor PO"))
+        assertTrue(user.indexOf("M1. Vendor PO") < user.indexOf("any update?"))
     }
 
     @Test

@@ -77,6 +77,23 @@ interface RawCaptureDao {
     @Query("UPDATE raw_captures SET state = :state WHERE id = :id")
     suspend fun setState(id: String, state: CaptureState)
 
+    /**
+     * Earlier messages from the same app, newest first, for the chat context
+     * the model sees with a message. Filtered to the same conversation by the
+     * caller, which is why the limit is wider than the context itself.
+     */
+    @Query(
+        """
+        SELECT * FROM raw_captures
+        WHERE sourceType = 'NOTIFICATION' AND sourceApp = :app
+          AND occurredAt >= :from AND occurredAt <= :to
+          AND id != :excludeId AND rawText IS NOT NULL
+        ORDER BY occurredAt DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun recentFromApp(app: String, from: Long, to: Long, excludeId: String, limit: Int): List<RawCaptureEntity>
+
     @Query(
         """
         UPDATE raw_captures

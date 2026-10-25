@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskmind.core.Priority
 import com.taskmind.core.WeeklyReview
+import com.taskmind.core.FollowUp
 import com.taskmind.core.TaskStatus
 import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.ui.components.DateFormats
@@ -298,6 +299,24 @@ fun TaskListScreen(
                         }
                     }
 
+                    // Overdue first: that is what someone opens the app to
+                    // find out, and it is the thing a flat list buries.
+                    fun LazyListScope.agendaRows(tasks: List<TaskEntity>) {
+                        for ((section, rows) in TaskFilters.agenda(tasks, System.currentTimeMillis())) {
+                            item(key = "section-${section.name}") {
+                                val overdueSection = section == TaskFilters.AgendaSection.OVERDUE
+                                SectionHeading(
+                                    label = section.label,
+                                    count = rows.size,
+                                    urgent = overdueSection,
+                                    action = if (overdueSection) "Move to today" else null,
+                                    onAction = { viewModel.moveToToday(rows) },
+                                )
+                            }
+                            taskRows(rows)
+                        }
+                    }
+
                     when {
                         // Bundling wins over the agenda when it is on: the two
                         // answer different questions and stacking both would
@@ -326,23 +345,29 @@ fun TaskListScreen(
                             }
                         }
 
-                        state.view == TaskView.AGENDA -> {
-                            // Overdue first: that is what someone opens the app to
-                            // find out, and it is the thing a flat list buries.
-                            for ((section, rows) in TaskFilters.agenda(state.tasks, System.currentTimeMillis())) {
-                                item(key = "section-${section.name}") {
-                                    val overdueSection = section == TaskFilters.AgendaSection.OVERDUE
-                                    SectionHeading(
-                                        label = section.label,
-                                        count = rows.size,
-                                        urgent = overdueSection,
-                                        action = if (overdueSection) "Move to today" else null,
-                                        onAction = { viewModel.moveToToday(rows) },
-                                    )
+                        // Matters first, then everything else the way it would
+                        // have been shown anyway. With no matters yet this is
+                        // the ordinary agenda.
+                        state.group == GroupMode.MATTER && state.matters.isNotEmpty() -> {
+                            for (matter in state.matters) {
+                                item(key = "matter-${matter.id}") {
+                                    SectionHeading(label = matter.name, count = matter.tasks.size, urgent = false)
                                 }
-                                taskRows(rows)
+                                taskRows(matter.tasks)
+                            }
+                            if (state.unmattered.isNotEmpty()) {
+                                if (state.view == TaskView.AGENDA) {
+                                    agendaRows(state.unmattered)
+                                } else {
+                                    item(key = "section-no-matter") {
+                                        SectionHeading(label = "No matter yet", count = state.unmattered.size, urgent = false)
+                                    }
+                                    taskRows(state.unmattered)
+                                }
                             }
                         }
+
+                        state.view == TaskView.AGENDA -> agendaRows(state.tasks)
 
                         else -> taskRows(state.tasks)
                     }
@@ -461,7 +486,8 @@ private fun TaskRow(
                         .filter { it.kind == AutoTagger.Kind.PERSON || it.kind == AutoTagger.Kind.GROUP }
                         .take(1)
                 }
-                if (task.dueAt != null || autoTags.isNotEmpty()) {
+                val maybeDone = FollowUp.MAYBE_DONE_TAG in task.tags && !done
+                if (task.dueAt != null || autoTags.isNotEmpty() || maybeDone) {
                     Spacer(Modifier.height(Space.tight))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -480,6 +506,9 @@ private fun TaskRow(
                         }
                         autoTags.forEach { tag ->
                             MetaChip(text = tag.value.take(22), color = tagColor(tag.kind))
+                        }
+                        if (maybeDone) {
+                            MetaChip(text = "Maybe done?", color = MaterialTheme.colorScheme.secondary)
                         }
                     }
                 }

@@ -49,6 +49,8 @@ data class MessageInput(
     val userNames: Set<String> = emptySet(),
     /** The user's About me: role, key people, current work, what to ignore. */
     val aboutMe: String = "",
+    /** The rendered chat context: earlier messages, open tasks, matters. */
+    val context: String = "",
 )
 
 data class TranscriptInput(
@@ -58,6 +60,8 @@ data class TranscriptInput(
     val rawCaptureId: String? = null,
     val sourceLabel: String? = null,
     val aboutMe: String = "",
+    /** The rendered context: open tasks with this person, matters. */
+    val context: String = "",
 )
 
 data class ExtractedTask(
@@ -68,13 +72,22 @@ data class ExtractedTask(
     val notes: String?,
     val confidence: Double?,
     val assignedToMe: Boolean = true,
+    /** "T2": the open task this is about, rather than a new one. */
+    val updatesRef: String? = null,
+    /** "M1", a new matter name, or null. */
+    val matterRef: String? = null,
 )
+
+/** An open task the source says is done, with the words that say so. */
+data class DoneHint(val ref: String, val evidence: String?)
 
 data class MessageExtraction(
     val isTask: Boolean,
     val reasoning: String?,
     val task: ExtractedTask?,
     val tokens: Int?,
+    /** Set when the message says an open task has been taken care of. */
+    val done: DoneHint? = null,
 )
 
 data class TranscriptExtraction(
@@ -83,6 +96,7 @@ data class TranscriptExtraction(
     val topics: List<String>,
     val tasks: List<ExtractedTask>,
     val tokens: Int?,
+    val done: List<DoneHint> = emptyList(),
 )
 
 data class Verdict(
@@ -127,6 +141,7 @@ class CloudTaskExtractor(
             messageText = input.text,
             userNames = input.userNames,
             aboutMe = input.aboutMe,
+            context = input.context,
         )
         val result = llm.complete(
             config = config,
@@ -153,8 +168,9 @@ class CloudTaskExtractor(
 
         val isTask = obj.bool("isTask") ?: false
         val reasoning = obj.str("reasoning")
+        val done = obj.ref("doneHint")?.let { DoneHint(it, obj.str("evidence")) }
         if (!isTask) {
-            return AiResult.Ok(MessageExtraction(false, reasoning, null, completion.totalTokens))
+            return AiResult.Ok(MessageExtraction(false, reasoning, null, completion.totalTokens, done))
         }
 
         val title = obj.str("title")
@@ -169,6 +185,8 @@ class CloudTaskExtractor(
             dueDateRaw = obj.str("dueDate"),
             notes = obj.str("notes"),
             confidence = obj.dbl("confidence"),
+            updatesRef = obj.ref("updates"),
+            matterRef = obj.ref("matter"),
         )
         return AiResult.Ok(MessageExtraction(true, reasoning, task, completion.totalTokens))
     }
@@ -176,7 +194,7 @@ class CloudTaskExtractor(
     override suspend fun extractFromTranscript(input: TranscriptInput): AiResult<TranscriptExtraction> {
         val config = configProvider()
         cachedOrigin = "cloud:${config.model}"
-        val user = Prompts.callUser(input.occurredAt, input.contactLabel, input.transcript, input.aboutMe)
+        val user = Prompts.callUser(input.occurredAt, input.contactLabel, input.transcript, input.aboutMe, input.context)
         val result = llm.complete(
             config = config,
             systemPrompt = promptProvider().callSystem,
@@ -211,7 +229,13 @@ class CloudTaskExtractor(
                 notes = t.str("notes"),
                 confidence = t.dbl("confidence"),
                 assignedToMe = t.bool("assignedToMe") ?: true,
+                updatesRef = t.ref("updates"),
+                matterRef = t.ref("matter"),
             )
+        }
+        val done = ((obj["done"] as? JsonArray) ?: JsonArray(emptyList())).mapNotNull { element ->
+            val d = element as? JsonObject ?: return@mapNotNull null
+            DoneHint(d.ref("task") ?: return@mapNotNull null, d.str("evidence"))
         }
 
         return AiResult.Ok(
@@ -221,6 +245,7 @@ class CloudTaskExtractor(
                 topics = obj.strList("topics"),
                 tasks = tasks,
                 tokens = completion.totalTokens,
+                done = done,
             ),
         )
     }
@@ -270,3 +295,7 @@ class CloudTaskExtractor(
         }
     }
 }
+
+/** A reference field, with the model's ways of saying "none" read as none. */
+private fun JsonObject.ref(key: String): String? =
+    str(key)?.trim()?.takeUnless { it.isEmpty() || it.equals("null", true) || it.equals("none", true) }
