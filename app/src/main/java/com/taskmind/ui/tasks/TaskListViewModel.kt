@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 data class TaskListUiState(
     val view: TaskView = TaskView.AGENDA,
     val sort: SortMode = SortMode.DUE_DATE,
-    val group: GroupMode = GroupMode.NONE,
+    val group: GroupMode = GroupMode.MATTER,
     val query: String = "",
     val projectId: String? = null,
     val tag: String? = null,
@@ -70,8 +70,31 @@ data class TaskListUiState(
     val bundles: List<TaskBundles.Group> = emptyList(),
     /** What bundling left over. Equals [tasks] when bundling is off. */
     val unbundled: List<TaskEntity> = emptyList(),
+    /** Tasks by matter; empty unless [group] is MATTER and some task has one. */
+    val matters: List<MatterGroup> = emptyList(),
+    /** What is in no matter. Equals [tasks] when there are no matters to show. */
+    val unmattered: List<TaskEntity> = emptyList(),
 ) {
     val selectionMode: Boolean get() = selection.isNotEmpty()
+}
+
+/** One matter's open work, in the list's own order. */
+data class MatterGroup(val id: String, val name: String, val tasks: List<TaskEntity>)
+
+/**
+ * The visible tasks by matter. Matters with the soonest due work come first;
+ * a matter with nothing visible is not shown.
+ */
+internal fun groupByMatter(
+    tasks: List<TaskEntity>,
+    projects: List<ProjectEntity>,
+): Pair<List<MatterGroup>, List<TaskEntity>> {
+    val names = projects.associate { it.id to it.name }
+    val (filed, loose) = tasks.partition { it.projectId != null && it.projectId in names }
+    val groups = filed.groupBy { it.projectId!! }
+        .map { (id, rows) -> MatterGroup(id, names.getValue(id), rows) }
+        .sortedWith(compareBy<MatterGroup> { g -> g.tasks.mapNotNull { it.dueAt }.minOrNull() ?: Long.MAX_VALUE }.thenBy { it.name.lowercase() })
+    return groups to loose
 }
 
 /** A destructive action the user can take back (spec 16: undo for every one). */
@@ -170,12 +193,19 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
         } else {
             emptyList<TaskBundles.Group>() to visible
         }
+        val (matters, unmattered) = if (current.group == GroupMode.MATTER) {
+            groupByMatter(visible, projects)
+        } else {
+            emptyList<MatterGroup>() to visible
+        }
 
         current.copy(
             tag = liveTag,
             tasks = visible,
             bundles = bundles,
             unbundled = loose,
+            matters = matters,
+            unmattered = unmattered,
             counts = TaskFilters.counts(tasks, now),
             tagCloud = TaskFilters.tagCloud(scope, liveTag),
             allSubjects = TaskFilters.tagCloud(allTasks, limit = Int.MAX_VALUE)

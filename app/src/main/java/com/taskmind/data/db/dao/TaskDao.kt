@@ -32,6 +32,13 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun byId(id: String): TaskEntity?
 
+    /** Open captured tasks, newest first: what a new message may be about. */
+    @Query(
+        "SELECT * FROM tasks WHERE status = 'ACTIVE' AND parentTaskId IS NULL AND sourceLabel IS NOT NULL " +
+            "ORDER BY createdAt DESC LIMIT :limit",
+    )
+    suspend fun openCaptured(limit: Int): List<TaskEntity>
+
     @Query("SELECT * FROM tasks WHERE id = :id")
     fun observeById(id: String): Flow<TaskEntity?>
 

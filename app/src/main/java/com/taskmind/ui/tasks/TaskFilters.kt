@@ -59,6 +59,8 @@ enum class SortMode(val label: String) {
  * Bundling is the one grouping that shows something a sort cannot.
  */
 enum class GroupMode(val label: String) {
+    /** The default: work the model filed under a matter, then everything else as usual. */
+    MATTER("By matter"),
     NONE("Flat list"),
     RELATED("Group related"),
 }

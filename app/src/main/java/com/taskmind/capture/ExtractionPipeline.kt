@@ -2,12 +2,15 @@ package com.taskmind.capture
 
 import com.taskmind.ai.AiResult
 import com.taskmind.ai.errorText
+import com.taskmind.ai.DoneHint
 import com.taskmind.ai.ExtractedTask
 import com.taskmind.ai.MessageInput
 import com.taskmind.ai.TaskExtractor
 import com.taskmind.ai.TranscriptInput
 import com.taskmind.core.Backoff
 import com.taskmind.core.CaptureState
+import com.taskmind.core.ChatContext
+import com.taskmind.core.EvidenceMatcher
 import com.taskmind.core.DateResolver
 import com.taskmind.core.LogLevel
 import com.taskmind.core.SourceRef
@@ -19,12 +22,14 @@ import com.taskmind.data.db.dao.RawCaptureDao
 import com.taskmind.data.db.entity.FingerprintEntity
 import com.taskmind.data.db.entity.RawCaptureEntity
 import com.taskmind.data.repo.ActivityLogger
+import com.taskmind.data.repo.ChatMemory
 import com.taskmind.core.RateLimit
 import com.taskmind.data.settings.RuntimeStateStore
 import com.taskmind.data.settings.SettingsRepository
 import com.taskmind.intake.IntakeFunnel
 import com.taskmind.intake.IntakeResult
 import com.taskmind.intake.TaskCandidate
+import com.taskmind.tagging.AutoTagger
 
 /**
  * EXTRACT - the single most quality-critical stage (spec 5, 14).
@@ -44,10 +49,12 @@ class ExtractionPipeline(
     private val logger: ActivityLogger,
     private val hasLlmKey: () -> Boolean,
     private val appLabelFor: (String?) -> String,
+    /** The chat so far, open tasks and matters; null runs without context. */
+    private val memory: ChatMemory? = null,
 ) {
 
     sealed interface Outcome {
-        data class Done(val created: Int, val review: Int, val dropped: Int) : Outcome
+        data class Done(val created: Int, val review: Int, val dropped: Int, val updated: Int = 0) : Outcome
         data class Parked(val reason: String) : Outcome
         data class BudgetHeld(val reason: String) : Outcome
         data class Retry(val reason: String, val at: Long?) : Outcome
@@ -118,11 +125,12 @@ class ExtractionPipeline(
             fingerprintDao.insert(FingerprintEntity(fingerprint, now))
         }
 
+        val block = contextFor(capture)
         return when (capture.sourceType) {
             SourceType.NOTIFICATION ->
-                processMessage(capture, text, settings.verifyPass, settings.ownNames, now, todayKey, settings.aboutMe)
+                processMessage(capture, text, settings.verifyPass, settings.ownNames, now, todayKey, settings.aboutMe, block)
             SourceType.CALL, SourceType.CLIPBOARD ->
-                processTranscript(capture, text, settings.verifyPass, now, todayKey, settings.aboutMe)
+                processTranscript(capture, text, settings.verifyPass, now, todayKey, settings.aboutMe, block)
             SourceType.MANUAL, SourceType.REVIEW -> {
                 rawCaptureDao.setState(capture.id, CaptureState.DONE)
                 Outcome.Done(0, 0, 0)
@@ -141,6 +149,7 @@ class ExtractionPipeline(
         now: Long,
         todayKey: String,
         aboutMe: String,
+        block: ChatContext.Block,
     ): Outcome {
         val context = parseContext(capture.contextLabel)
         val input = MessageInput(
@@ -153,6 +162,7 @@ class ExtractionPipeline(
             sourceLabel = capture.sourceLabel,
             userNames = userNames,
             aboutMe = aboutMe,
+            context = ChatContext.render(block),
         )
 
         logger.write(
@@ -176,14 +186,22 @@ class ExtractionPipeline(
             "tokens=${extraction.tokens ?: "?"} reasoning=${extraction.reasoning?.take(300)}",
         )
 
+        val marked = extraction.done?.let { markDone(capture, it, text, block, context.sender) } ?: 0
+
         val task = extraction.task
         if (!extraction.isTask || task == null) {
-            rawCaptureDao.setState(capture.id, CaptureState.REJECTED)
-            return Outcome.Done(0, 0, 1)
+            rawCaptureDao.setState(capture.id, if (marked > 0) CaptureState.DONE else CaptureState.REJECTED)
+            return Outcome.Done(0, 0, if (marked > 0) 0 else 1, marked)
         }
 
-        val candidates = verifyAndCorrect(listOf(task), text, verifyPass, now, todayKey, capture.sourceApp)
-        return submitAll(capture, candidates, text, context.label(capture.sourceLabel))
+        val (fresh, updated) = applyUpdates(capture, listOf(task), text, block, context.sender)
+        if (fresh.isEmpty()) {
+            rawCaptureDao.setState(capture.id, CaptureState.DONE)
+            return Outcome.Done(0, 0, 0, updated + marked)
+        }
+        val candidates = verifyAndCorrect(fresh, text, verifyPass, now, todayKey, capture.sourceApp)
+        val outcome = submitAll(capture, candidates, text, context.label(capture.sourceLabel), block)
+        return outcome.withUpdated(updated + marked, capture)
     }
 
     // ---------------------------------------------------------- transcripts
@@ -195,6 +213,7 @@ class ExtractionPipeline(
         now: Long,
         todayKey: String,
         aboutMe: String,
+        block: ChatContext.Block,
     ): Outcome {
         val label = capture.sourceLabel ?: capture.contextLabel ?: "Unknown caller"
         logger.write(Stage.EXTRACT, LogLevel.DEBUG, "LLM call for transcript", "engine=${extractor.originLabel} label=$label")
@@ -207,6 +226,7 @@ class ExtractionPipeline(
                 rawCaptureId = capture.id,
                 sourceLabel = capture.sourceLabel,
                 aboutMe = aboutMe,
+                context = ChatContext.render(block),
             ),
         )
         settingsRepository.recordLlmCall(todayKey, capture.sourceApp)
@@ -223,14 +243,18 @@ class ExtractionPipeline(
             "tokens=${extraction.tokens ?: "?"} summary=${extraction.summary?.take(300)}",
         )
 
-        if (extraction.tasks.isEmpty()) {
+        val who = AutoTagger.parseLabel(SourceType.CALL, label).person ?: label
+        val marked = extraction.done.sumOf { markDone(capture, it, transcript, block, who) }
+        val (fresh, updated) = applyUpdates(capture, extraction.tasks, transcript, block, who)
+
+        if (fresh.isEmpty()) {
             // Spec 14.4: an empty list is a correct and common answer.
             rawCaptureDao.setState(capture.id, CaptureState.DONE)
-            return Outcome.Done(0, 0, 0)
+            return Outcome.Done(0, 0, 0, updated + marked)
         }
 
-        val candidates = verifyAndCorrect(extraction.tasks, transcript, verifyPass, now, todayKey, capture.sourceApp)
-        return submitAll(capture, candidates, transcript, label)
+        val candidates = verifyAndCorrect(fresh, transcript, verifyPass, now, todayKey, capture.sourceApp)
+        return submitAll(capture, candidates, transcript, label, block).withUpdated(updated + marked, capture)
     }
 
     // -------------------------------------------------------------- verify
@@ -296,6 +320,7 @@ class ExtractionPipeline(
         tasks: List<ExtractedTask>,
         sourceText: String,
         label: String,
+        block: ChatContext.Block = ChatContext.Block.EMPTY,
     ): Outcome {
         var created = 0
         var review = 0
@@ -303,6 +328,7 @@ class ExtractionPipeline(
 
         for (task in tasks) {
             val tags = if (task.assignedToMe) emptyList() else listOf(WAITING_ON_TAG)
+            val matter = ChatContext.resolveMatter(task.matterRef, block)
             val candidate = TaskCandidate(
                 title = task.title,
                 evidence = task.evidence,
@@ -319,9 +345,15 @@ class ExtractionPipeline(
                 sourceText = sourceText,
                 occurredAt = capture.occurredAt,
                 tags = tags,
+                projectId = (matter as? ChatContext.MatterChoice.Existing)?.id,
             )
-            when (funnel.submit(candidate)) {
-                is IntakeResult.Created -> created++
+            when (val result = funnel.submit(candidate)) {
+                is IntakeResult.Created -> {
+                    created++
+                    // A new matter is only made for a task that reached the
+                    // list, so maybes the user drops leave no empty matters behind.
+                    if (matter is ChatContext.MatterChoice.New) fileUnderNewMatter(result.taskId, matter)
+                }
                 is IntakeResult.SentToReview -> review++
                 is IntakeResult.Duplicate -> dropped++
                 is IntakeResult.Discarded -> dropped++
@@ -335,6 +367,112 @@ class ExtractionPipeline(
             rawCaptureDao.setState(capture.id, CaptureState.REJECTED)
         }
         return Outcome.Done(created, review, dropped)
+    }
+
+    // ------------------------------------------------------------- context
+
+    private suspend fun contextFor(capture: RawCaptureEntity): ChatContext.Block {
+        val memory = memory ?: return ChatContext.Block.EMPTY
+        // Context makes the answer better; its absence must never stop one.
+        return runCatching { memory.contextFor(capture) }
+            .onFailure { logger.write(Stage.EXTRACT, LogLevel.WARN, "chat context unavailable", it.toString()) }
+            .getOrDefault(ChatContext.Block.EMPTY)
+    }
+
+    /** Whether [evidence] can be found in [source], by the same rule the funnel applies to new tasks. */
+    private suspend fun grounded(evidence: String?, source: String, sourceType: SourceType): Boolean {
+        val tolerance = settingsRepository.current().funnelConfig().toleranceFor(sourceType)
+        return EvidenceMatcher.match(evidence, source, tolerance).matched
+    }
+
+    /**
+     * Follow-ups to open tasks are applied to those tasks; what is left is
+     * new. An update the source cannot back up, or one the model is unsure
+     * of, goes through the funnel as a new candidate instead - the funnel
+     * then sends it to review or drops it, and its normal dedup applies.
+     */
+    private suspend fun applyUpdates(
+        capture: RawCaptureEntity,
+        tasks: List<ExtractedTask>,
+        source: String,
+        block: ChatContext.Block,
+        who: String,
+    ): Pair<List<ExtractedTask>, Int> {
+        val memory = memory ?: return tasks to 0
+        val config = settingsRepository.current().funnelConfig()
+        var updated = 0
+        val fresh = tasks.filter { task ->
+            val id = ChatContext.resolveTask(task.updatesRef, block) ?: return@filter true
+            val confident = (task.confidence ?: 0.0) >= config.reviewThreshold
+            if (!confident || !grounded(task.evidence, source, capture.sourceType)) {
+                logger.write(
+                    Stage.FUNNEL,
+                    LogLevel.INFO,
+                    "follow-up not applied - ${if (!confident) "low confidence" else "quote not found"}",
+                    "task=${task.title} evidence=${task.evidence}",
+                )
+                return@filter true
+            }
+            val due = task.dueDateRaw?.let { DateResolver.resolve(it, capture.occurredAt).dueAt }
+            val projectId = (ChatContext.resolveMatter(task.matterRef, block) as? ChatContext.MatterChoice.Existing)?.id
+            val changes = memory.applyUpdate(id, due, task.priority, who, task.evidence, capture.occurredAt, projectId)
+            if (changes == null) {
+                // The task was finished or deleted in the meantime: treat as new.
+                return@filter true
+            }
+            updated++
+            logger.write(
+                Stage.FUNNEL,
+                LogLevel.INFO,
+                "${capture.sourceType} -> follow-up to an open task",
+                "task=${task.title} changed=${changes.ifEmpty { listOf("nothing") }.joinToString()}",
+            )
+            false
+        }
+        return fresh to updated
+    }
+
+    /** Tags an open task "maybe done" when the source says so in words it really contains. */
+    private suspend fun markDone(
+        capture: RawCaptureEntity,
+        hint: DoneHint,
+        source: String,
+        block: ChatContext.Block,
+        who: String,
+    ): Int {
+        val memory = memory ?: return 0
+        val id = ChatContext.resolveTask(hint.ref, block) ?: return 0
+        if (!grounded(hint.evidence, source, capture.sourceType)) {
+            logger.write(Stage.FUNNEL, LogLevel.INFO, "maybe-done not applied - quote not found", "evidence=${hint.evidence}")
+            return 0
+        }
+        val changes = memory.markMaybeDone(id, who, hint.evidence, capture.occurredAt) ?: return 0
+        logger.write(
+            Stage.FUNNEL,
+            LogLevel.INFO,
+            "${capture.sourceType} -> an open task may be done",
+            "ref=${hint.ref} evidence=${hint.evidence} changed=${changes.ifEmpty { listOf("nothing") }.joinToString()}",
+        )
+        return 1
+    }
+
+    private suspend fun fileUnderNewMatter(taskId: String, matter: ChatContext.MatterChoice.New) {
+        val memory = memory ?: return
+        runCatching {
+            val projectId = memory.matterId(matter) ?: return
+            memory.assignMatter(taskId, projectId)
+            logger.write(Stage.FUNNEL, LogLevel.INFO, "filed under matter", matter.name)
+        }.onFailure { logger.write(Stage.FUNNEL, LogLevel.WARN, "could not file under matter", it.toString()) }
+    }
+
+    /**
+     * Adds follow-ups to a funnel outcome. A capture whose only effect was
+     * to update an existing task is DONE, not REJECTED.
+     */
+    private suspend fun Outcome.withUpdated(updated: Int, capture: RawCaptureEntity): Outcome {
+        if (updated == 0 || this !is Outcome.Done) return this
+        if (created == 0 && review == 0) rawCaptureDao.setState(capture.id, CaptureState.DONE)
+        return copy(updated = updated)
     }
 
     // -------------------------------------------------------- failure paths

@@ -12,6 +12,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskmind.core.Priority
 import com.taskmind.core.TaskStatus
+import com.taskmind.core.FollowUp
+import com.taskmind.data.db.entity.ProjectEntity
 import com.taskmind.data.db.entity.RawCaptureEntity
 import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.di.AppContainer
@@ -46,7 +48,12 @@ data class TaskDetailUiState(
     val relatedReason: String? = null,
     /** Tasks that look like this one captured twice. */
     val duplicates: List<TaskEntity> = emptyList(),
-)
+    /** Every matter, for the picker. */
+    val matters: List<ProjectEntity> = emptyList(),
+) {
+    val matterName: String? get() = task?.projectId?.let { id -> matters.firstOrNull { it.id == id }?.name }
+    val maybeDone: Boolean get() = task?.let { FollowUp.MAYBE_DONE_TAG in it.tags && it.status == TaskStatus.ACTIVE } == true
+}
 
 class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -74,6 +81,11 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
                     // and its source label.
                     rawCapture = container.taskRepository.rawCaptureFor(task),
                 )
+            }
+        }
+        viewModelScope.launch {
+            container.taskRepository.observeProjects().collect { projects ->
+                _state.value = _state.value.copy(matters = projects)
             }
         }
         viewModelScope.launch {
@@ -129,6 +141,30 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
 
     fun save(update: TaskEntity) {
         viewModelScope.launch { container.taskRepository.update(update) }
+    }
+
+    /** Files the task under a matter, or under none. */
+    fun setMatter(projectId: String?) {
+        val task = _state.value.task ?: return
+        save(task.copy(projectId = projectId))
+    }
+
+    /** Files the task under a new matter, or under the existing one of that name. */
+    fun createMatter(name: String) {
+        val task = _state.value.task ?: return
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            val id = _state.value.matters.firstOrNull { it.name.equals(clean, ignoreCase = true) }?.id
+                ?: container.taskRepository.createProject(clean)
+            container.taskRepository.update(task.copy(projectId = id))
+        }
+    }
+
+    /** The user says it is not done after all. */
+    fun stillOpen() {
+        val task = _state.value.task ?: return
+        save(task.copy(tags = task.tags - FollowUp.MAYBE_DONE_TAG))
     }
 
     fun setPriority(priority: Priority) {
