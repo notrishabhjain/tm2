@@ -208,6 +208,10 @@ interface ReviewItemDao {
     @Query("SELECT * FROM review_items WHERE state = 'DISMISSED' ORDER BY createdAt DESC LIMIT :limit")
     fun observeDismissed(limit: Int): Flow<List<ReviewItemEntity>>
 
+    /** Every review item since [since], in any state. For the capture metrics. */
+    @Query("SELECT * FROM review_items WHERE createdAt >= :since")
+    suspend fun since(since: Long): List<ReviewItemEntity>
+
     @Query("SELECT * FROM review_items WHERE rawCaptureId = :rawCaptureId")
     suspend fun byRawCapture(rawCaptureId: String): List<ReviewItemEntity>
 

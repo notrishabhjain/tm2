@@ -218,24 +218,14 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
     /**
      * Something was found but is not certain enough to assert.
      *
-     * Without this the review inbox was invisible: an item landed there and the
-     * only way to discover it was to open the app and look, which defeats the
-     * point of an app that is supposed to notice things for you.
+     * Deliberately silent since v1.21. Every maybe used to raise a
+     * notification the moment it was found, so a busy group buzzed the phone
+     * all day with things that were mostly not worth a task. Maybes now wait
+     * for the 18:30 digest, which counts them in one notification (see
+     * [postBrief]); the Digest tab's badge shows them in the meantime.
      */
     override suspend fun onReviewProposed(reviewId: String, title: String) {
-        if (!canPost()) return
-        val count = pendingReviewNotices.incrementAndGet()
-        val notification = NotificationCompat.Builder(context, CHANNEL_REVIEW)
-            .setSmallIcon(R.drawable.ic_stat_taskmind)
-            .setContentTitle(
-                if (count > 1) "$count items need a quick look" else "Something needs a quick look",
-            )
-            .setContentText(title)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(title))
-            .setContentIntent(contentIntent(ROUTE_REVIEW))
-            .setAutoCancel(true)
-            .build()
-        postSafely(ID_REVIEW_SUMMARY, notification)
+        pendingReviewNotices.incrementAndGet()
     }
 
     fun postReminder(taskId: String, title: String, notes: String?) {
@@ -302,7 +292,8 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
             .setContentTitle(if (kind == Brief.Kind.MORNING) "Your day" else "Before you stop")
             .setContentText(message.title)
             .setStyle(style)
-            .setContentIntent(contentIntent(ROUTE_TASKS))
+            // With maybes waiting, the tap goes where the decision is.
+            .setContentIntent(contentIntent(if (message.maybes > 0) ROUTE_REVIEW else ROUTE_TASKS))
             .setAutoCancel(true)
         if (kind == Brief.Kind.EVENING && message.slipped > 0) {
             val intent = Intent(context, TaskActionReceiver::class.java)
@@ -315,6 +306,11 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             builder.addAction(NotificationCompat.Action(R.drawable.ic_stat_taskmind, "Move all to tomorrow", move))
+        }
+        if (kind == Brief.Kind.EVENING && message.maybes > 0) {
+            builder.addAction(
+                NotificationCompat.Action(R.drawable.ic_stat_taskmind, "Look at ${message.maybes} maybes", contentIntent(ROUTE_REVIEW)),
+            )
         }
         postSafely(id, builder.build())
     }

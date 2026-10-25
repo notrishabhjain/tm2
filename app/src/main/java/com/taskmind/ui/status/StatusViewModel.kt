@@ -1,5 +1,7 @@
 package com.taskmind.ui.status
 
+import com.taskmind.diagnostics.CaptureHealth
+import com.taskmind.ui.components.DateFormats
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskmind.core.CaptureState
@@ -52,6 +54,9 @@ data class StatusUiState(
     val updateProgress: Float? = null,
     val message: String? = null,
     val installedVersion: String = "",
+    /** Is capture worth it - now, and as it was before v1.21. */
+    val captureNow: String? = null,
+    val captureBefore: String? = null,
 )
 
 class StatusViewModel(private val container: AppContainer) : ViewModel() {
@@ -92,6 +97,10 @@ class StatusViewModel(private val container: AppContainer) : ViewModel() {
                 asrBudgetSeconds = settings.maxAsrMinutesPerDay * 60,
                 captureCounts = counts,
                 installedVersion = "${container.selfUpdater.installedVersionName} (${container.selfUpdater.installedVersionCode})",
+                captureNow = runCatching { CaptureHealth.compute(container).describe() }.getOrNull(),
+                captureBefore = CaptureHealth.baseline(container.context)?.let { (text, at) ->
+                    "$text (as of ${DateFormats.full(at)})"
+                },
             )
         }
     }

@@ -30,6 +30,8 @@ object Brief {
         val lines: List<String>,
         /** Tasks the evening "move to tomorrow" button would move. Empty in the morning. */
         val slipped: Int,
+        /** Maybe-tasks waiting in the digest. Evening only. */
+        val maybes: Int = 0,
     )
 
     private const val MAX_LINES = 5
@@ -43,10 +45,17 @@ object Brief {
      * events, read only when the person turned that on; the morning uses
      * them, the evening does not.
      */
-    fun compose(kind: Kind, active: List<Item>, now: Long, meetings: List<Meeting> = emptyList()): Message? =
+    fun compose(
+        kind: Kind,
+        active: List<Item>,
+        now: Long,
+        meetings: List<Meeting> = emptyList(),
+        /** Maybe-tasks waiting for a keep-or-drop; the evening carries the digest. */
+        maybes: Int = 0,
+    ): Message? =
         when (kind) {
             Kind.MORNING -> morning(active, now, meetings)
-            Kind.EVENING -> evening(active, now)
+            Kind.EVENING -> evening(active, now, maybes)
         }
 
     private fun morning(active: List<Item>, now: Long, meetings: List<Meeting>): Message? {
@@ -76,7 +85,14 @@ object Brief {
         return Message(title, lines, slipped = 0)
     }
 
-    private fun evening(active: List<Item>, now: Long): Message? {
+    /**
+     * The evening wrap-up, which is also the daily digest.
+     *
+     * Maybe-tasks used to raise a notification each, all day. They now wait
+     * here: one evening notification says what is still open AND how many
+     * maybes are worth a look, instead of two notifications half an hour apart.
+     */
+    private fun evening(active: List<Item>, now: Long, maybes: Int): Message? {
         val endOfToday = DateResolver.endOfDay(now)
         // Everything due by the end of today that is still open: whatever was
         // due earlier today and the backlog from before. Waiting-on tasks are
@@ -84,9 +100,14 @@ object Brief {
         // and moving them does not chase anybody.
         val slipped = active.filter { !it.waitingOn && it.dueAt != null && it.dueAt <= endOfToday }
             .sortedBy { it.dueAt }
-        if (slipped.isEmpty()) return null
-        val title = if (slipped.size == 1) "1 thing is still open today" else "${slipped.size} things are still open today"
-        return Message(title, slipped.take(MAX_LINES).map { it.title }, slipped = slipped.size)
+        if (slipped.isEmpty() && maybes == 0) return null
+        val title = listOfNotNull(
+            slipped.size.takeIf { it > 0 }?.let { if (it == 1) "1 thing still open" else "$it things still open" },
+            maybes.takeIf { it > 0 }?.let { if (it == 1) "1 maybe to look at" else "$it maybes to look at" },
+        ).joinToString(", ")
+        val lines = slipped.take(MAX_LINES).map { it.title } +
+            listOfNotNull(maybes.takeIf { it > 0 }?.let { "Digest: $it possible tasks - keep or drop" })
+        return Message(title, lines, slipped = slipped.size, maybes = maybes)
     }
 
     private fun line(item: Item): String {
@@ -95,9 +116,9 @@ object Brief {
         return "${Instant.ofEpochMilli(due).atZone(DateResolver.IST).format(TIME)}  ${item.title}"
     }
 
-    /** The next [hour]:00 IST strictly after [now]. */
-    fun nextAt(hour: Int, now: Long): Long {
-        val today = SmartReminder.withTime(DateResolver.startOfDay(now), hour, 0)
-        return if (today > now) today else SmartReminder.withTime(DateResolver.nextMidnight(now), hour, 0)
+    /** The next [hour]:[minute] IST strictly after [now]. */
+    fun nextAt(hour: Int, now: Long, minute: Int = 0): Long {
+        val today = SmartReminder.withTime(DateResolver.startOfDay(now), hour, minute)
+        return if (today > now) today else SmartReminder.withTime(DateResolver.nextMidnight(now), hour, minute)
     }
 }

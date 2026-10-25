@@ -121,6 +121,25 @@ fun StatusScreen(
                 }
             }
 
+            // Is capture worth having? The three numbers that answer it, next
+            // to the same numbers from before the stricter prompt. Tasks need
+            // a week to count, so "now" settles over the first week or two.
+            SectionCard(
+                title = "Is capture worth it?",
+                subtitle = "Kept: captured tasks a week or more old you did not delete. " +
+                    "Maybes dropped: digest items you said no to.",
+            ) {
+                Text("Last 30 days: ${state.captureNow ?: "working it out\u2026"}", style = MaterialTheme.typography.bodyMedium)
+                state.captureBefore?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Before v1.21: $it",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
             SectionCard(title = "Permissions", subtitle = "Re-checked every time you open this screen.") {
                 state.permissions.forEach { item ->
                     Row(

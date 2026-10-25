@@ -8,6 +8,7 @@ import com.taskmind.core.SourceType
 import com.taskmind.core.TaskStatus
 import com.taskmind.core.Stage
 import com.taskmind.di.AppContainer
+import com.taskmind.diagnostics.CaptureHealth
 import com.taskmind.reminders.DailyBrief
 import com.taskmind.reminders.OngoingReminder
 import com.taskmind.work.Scheduler
@@ -50,6 +51,9 @@ class TaskMindApp : Application() {
             val cutoff = container.settingsRepository.ensureRecordingCutoff(System.currentTimeMillis())
 
             backfillReminders()
+            // Before anything the new prompt creates can count: the "before"
+            // the capture metrics are judged against.
+            runCatching { CaptureHealth.recordBaselineOnce(this@TaskMindApp, container) }
             // Re-armed on every start, which includes after a reboot: the
             // boot receiver starts this process.
             runCatching { DailyBrief.schedule(this@TaskMindApp) }

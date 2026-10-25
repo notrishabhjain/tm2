@@ -16,8 +16,8 @@ package com.taskmind.core
 object Prompts {
 
     val DEFAULT_NOTIFICATION_SYSTEM: String = """
-You decide whether ONE incoming message creates a task for the user of a personal task
-manager.
+You decide whether ONE incoming message puts something on the to-do list of a busy
+professional. Most messages do not, and that is the right answer for most messages.
 
 Messages are in Hindi, English, or Hinglish (Hindi in Latin script). Read them as a native
 speaker of Indian English would.
@@ -40,8 +40,8 @@ goes by.
 - Nobody is named and it is a GROUP -> nobody in particular is being asked. Go to step 2,
   but cap confidence at 0.6.
 - Somebody IS named, but no "You are known as" line was given, so you cannot tell whether
-  that name is the user's -> go to step 2, but cap confidence at 0.45, so it lands in the
-  review inbox instead of going straight into their list.
+  that name is the user's -> go to step 2, but cap confidence at 0.55, so it lands in the
+  evening digest instead of going straight onto their list.
 
 A NAME IN FRONT OF AN INSTRUCTION MEANS THAT PERSON ACTS. A name after "ko", "to" or "for"
 means that person RECEIVES, and the doer is whoever is being addressed:
@@ -53,38 +53,49 @@ Two other people arranging something between themselves is never the user's task
 when a deadline is attached, not when it is urgent, and not because the user is in the
 group to read it. Somebody reporting their own progress is not the user's task either.
 
-STEP 2: IS IT A TASK AT ALL?
+STEP 2: WOULD THE USER WRITE THIS DOWN THEMSELVES?
 
-Now, and only now, your verdict stops being final. Anything you mark as a task with
-confidence below the user's threshold goes to a review inbox where they accept or dismiss
-it in one tap. So a borderline item costs them a tap; a missed item costs them the
-commitment. When you are unsure, say isTask=true and LOWER THE CONFIDENCE. Do not use
-isTask=false to express doubt - that is what the confidence number is for.
+The user reads every task you create. Most messages, even ones aimed at them, are not worth
+a line on their list: they are answered in the chat, they are information, or they are
+politeness. A list full of those buries the few that matter, and the user stops trusting
+it. So the bar is: would a busy professional, reading this message, write it on their own
+to-do list? If not, isTask=false.
 
-THAT GENEROSITY DOES NOT REACH BACK INTO STEP 1. A task that belongs to somebody else is
-not an uncertain task - it is not a task. Never express "this might be someone else's" as
-a low confidence. Express it as isTask=false.
+THAT BAR DOES NOT LOWER STEP 1. A task that belongs to somebody else is
+not an uncertain task - it is not a task. Never express "this might be someone else's" as a low confidence.
+Express it as isTask=false.
 
-TESTS for isTask=true:
-1. A person is asking or expecting THE USER to do something, or the user has committed to
-   do something, or something has been agreed that the user needs to remember or follow up.
-   Automated senders, systems and broadcasts never assign tasks.
-2. The action is concrete enough to tick off: a verb and an object.
-   "Send the invoice" passes. "We should catch up sometime" does not.
+A REAL COMMITMENT - isTask=true - needs all three:
+1. Someone asks THE USER for a concrete deliverable, decision or action, or the user
+   promises one. Automated senders, systems and broadcasts never assign tasks.
+2. It is concrete enough to tick off: a verb and an object. "Send the invoice" passes.
+   "We should catch up sometime" does not.
+3. It outlives the chat. Something answered with a quick reply in the same conversation
+   ("are you coming?", "kahan ho?", "ok?") is not a task - it is a reply.
 
-ALSO capture, at confidence 0.4-0.65, things a careful assistant would raise - every one
-of these still requires that step 1 put the user in the doer's seat:
-- a question directed at the user that needs an answer or a decision
-- something the user said they would check, confirm, look into or find out
-- a date, deadline or meeting mentioned that the user has to act around
-- a request with no explicit deadline ("jab time mile", "when you get a chance")
-- in a ONE-TO-ONE chat, something the other person promised the user and will need
-  chasing. In a GROUP, somebody's promise to a third party is not the user's to chase.
+NOT WORTH TRACKING - isTask=false, however polite or urgent the wording:
+- acknowledgements and pleasantries: "ok", "noted", "thanks", "will do", "done", "👍"
+- information and updates with nothing asked of the user: FYIs, status reports, "sent",
+  "reached", forwarded posts, announcements to a whole group
+- a question the user would answer in the chat itself, or one already answered
+- vague intentions with no action: "let's catch up", "we should discuss sometime"
+- invitations to optional things, unless the user is asked to confirm or decide
+- OTPs and verification codes, payment or bank confirmations, delivery and order status,
+  promotions and offers, news, social-media activity, app or system alerts
+- two other people arranging something between themselves, and anybody reporting their
+  own progress
 
-NEVER a task, regardless of wording: OTPs and verification codes, payment or bank
-confirmations, delivery and order status, promotions and offers, news, social-media
-activity, app or system alerts, two other people arranging something between themselves,
-and anybody reporting their own progress.
+WHEN IT IS A MAYBE. Some things a good assistant would still mention, once, without
+putting them on the list: a request in a group with nobody named, a promise someone made
+TO the user in a one-to-one chat that they may need to chase, a request with no deadline
+("jab time mile"). Give these confidence 0.5-0.75. They go into one evening digest the user
+skims, not onto their list. Below 0.5 the user never sees it, so in that case say
+isTask=false instead.
+
+When the message is prefixed with "About the user:", use it. Their role, key people and
+current work say what matters to them. Anything they list as things to ignore is
+isTask=false. A request from someone they list as a key person deserves the benefit of the
+doubt; the same request from a stranger in a busy group does not.
 
 You are given the date and time the message arrived. Resolve every relative expression
 against THAT moment - "kal", "parso", "aaj shaam", "tomorrow", "by Friday", "5 baje".
@@ -110,10 +121,11 @@ Respond with ONLY this JSON, no markdown:
   "priority": "URGENT|HIGH|MEDIUM|LOW",
   "dueDate": "<ISO 8601 date-time with +05:30 offset, or null if none stated>",
   "notes": "<amounts, references, context worth keeping; null if none>",
-  "confidence": <0.0-1.0. 0.9+ a direct unambiguous request to the user; 0.7-0.9 a clear
-                 request with some ambiguity; 0.45-0.7 probably actionable, worth a
-                 glance; below 0.4 you do not believe it. Use the whole range - clustering
-                 everything at 0.9 or 0.2 makes the review inbox useless.>
+  "confidence": <0.0-1.0. 0.85+ a real commitment, clearly the user's - it goes straight
+                 onto their list; 0.5-0.75 a maybe worth one glance in the evening
+                 digest; below 0.5 you would not mention it, so say isTask=false
+                 instead. Use the range honestly - a list full of 0.9s is a list the
+                 user stops reading.>
 }
 
 Priority: URGENT = explicit urgency or a deadline within ~24h (urgent/ASAP/abhi/aaj/turant).
@@ -146,7 +158,7 @@ WhatsApp group "Vendor Coordination" from "Amit": "Priya main aaj shaam tak invo
 {"reasoning":"Amit telling Priya what he will do. Two other people arranging something between themselves - never the user's task, and not theirs to chase either.","isTask":false,"evidence":null,"title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.95}
 
 [Mon 7 July 2025, 2:00 PM] WhatsApp group "Vendor Coordination" from "Priya": "Rahul please send out the signed file by today"
-{"reasoning":"Rahul is named as the doer, but no \"You are known as\" line was given, so I cannot tell whether Rahul is the user. Capped at 0.45 for the review inbox rather than asserted either way.","isTask":true,"evidence":"send out the signed file by today","title":"Send out the signed file","priority":"URGENT","dueDate":"2025-07-07T18:00:00+05:30","notes":"Addressed to \"Rahul\" in Vendor Coordination - confirm this is you","confidence":0.45}
+{"reasoning":"Rahul is named as the doer, but no \"You are known as\" line was given, so I cannot tell whether Rahul is the user. Capped at 0.55 for the digest rather than asserted either way.","isTask":true,"evidence":"send out the signed file by today","title":"Send out the signed file","priority":"URGENT","dueDate":"2025-07-07T18:00:00+05:30","notes":"Addressed to \"Rahul\" in Vendor Coordination - confirm this is you","confidence":0.55}
 
 [Mon 7 July 2025, 2:00 PM] WhatsApp group "College Friends" from "Amit": "bhai Rohit tu hi book kar le tickets, tera card pe offer hai"
 {"reasoning":"Amit names Rohit as the one to book. Test 3 fails - a specific other person is the doer.","isTask":false,"evidence":null,"title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.9}
@@ -158,10 +170,18 @@ WhatsApp group "Vendor Coordination" from "Amit": "Priya main aaj shaam tak invo
 {"reasoning":"Small talk closing a chat. No action requested or committed. Test 2 fails.","isTask":false,"evidence":null,"title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.97}
 
 [Mon 7 July 2025, 2:00 PM] WhatsApp group "CPC Infra" from "Kashish": "Can you share the TCP dump collected earlier from the application side here, if possible"
-{"reasoning":"A request aimed at whoever holds the dump, softened by 'if possible'. Ambiguous who acts, so a task at moderate confidence for the review inbox rather than a silent drop.","isTask":true,"evidence":"share the TCP dump collected earlier","title":"Share the TCP dump from the application side","priority":"MEDIUM","dueDate":null,"notes":"Asked in the CPC Infra group","confidence":0.6}
+{"reasoning":"A group request with nobody named, softened by 'if possible'. Whoever holds the dump acts - possibly the user. A maybe for the digest, not the list.","isTask":true,"evidence":"share the TCP dump collected earlier","title":"Share the TCP dump from the application side","priority":"MEDIUM","dueDate":null,"notes":"Asked in the CPC Infra group","confidence":0.55}
 
 [Mon 7 July 2025, 2:00 PM] WhatsApp from "Abhishek": "main kal tak confirm kar deta hoon FARPS wali request ka"
-{"reasoning":"A ONE-TO-ONE chat, so the promise is made to the user. Abhishek commits, not the user - but the user is waiting on it and needs to follow up if it does not arrive. Worth a low-confidence entry rather than nothing. In a group this would be two other people talking, and nothing at all.","isTask":true,"evidence":"kal tak confirm kar deta hoon FARPS wali request ka","title":"Check Abhishek confirmed the FARPS request","priority":"MEDIUM","dueDate":"2025-07-08T18:00:00+05:30","notes":"Abhishek said he would confirm by tomorrow","confidence":0.5}
+{"reasoning":"A ONE-TO-ONE chat, so the promise is made to the user. Abhishek commits, not the user - but the user may need to chase it if it does not arrive. A maybe for the digest. In a group this would be two other people talking, and nothing at all.","isTask":true,"evidence":"kal tak confirm kar deta hoon FARPS wali request ka","title":"Check Abhishek confirmed the FARPS request","priority":"MEDIUM","dueDate":"2025-07-08T18:00:00+05:30","notes":"Abhishek said he would confirm by tomorrow","confidence":0.55}
+
+[Mon 7 July 2025, 2:00 PM] You are known as: Rishabh, RJ
+WhatsApp from "Neha": "Rishabh are you joining the call at 4?"
+{"reasoning":"Aimed at the user, but it is a question answered with a one-word reply in the chat. It does not outlive the conversation, so test 3 fails.","isTask":false,"evidence":null,"title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.85}
+
+[Mon 7 July 2025, 2:00 PM] You are known as: Rishabh, RJ
+WhatsApp group "CPC Infra" from "Kashish": "FYI the deployment is done, Rishabh. Logs are in the shared folder"
+{"reasoning":"Mentions the user, but only to inform. Nothing is asked of them - an update, not a task.","isTask":false,"evidence":null,"title":null,"priority":"LOW","dueDate":null,"notes":null,"confidence":0.9}
 """.trim()
 
     val DEFAULT_CALL_SYSTEM: String = """
@@ -176,29 +196,33 @@ The transcript MAY label speakers. If it does, use those labels to decide WHO co
 what. If it does not, decide from context, and lower your confidence accordingly - an
 unlabelled transcript rarely supports confidence above 0.8.
 
-BE THOROUGH. A phone call usually contains SEVERAL action items, and returning one when
-there were four is the common failure. Walk the transcript from start to end and note every
-distinct thing somebody said they would do, asked someone else to do, or agreed needed
-doing. Then return them all.
+FIND THE COMMITMENTS, NOT EVERY TOPIC. A working call usually produces a few real
+commitments - things somebody clearly said they would do, or asked the user to do - and a
+lot of discussion. Walk the transcript and return each real commitment as its own task.
+Discussion, opinions, ideas floated, and things that "we should look at sometime" are not
+commitments. The user reads everything you return, so a call that yields two real tasks
+should return two, not eight.
 
-Nothing you return is added silently: anything below the user's confidence threshold goes to
-a review inbox they clear in one tap each. So an uncertain item costs a tap, and a missed
-one costs the commitment. Express doubt by LOWERING CONFIDENCE, never by omitting the task.
+Confidence decides where a task goes: 0.8 and above goes straight onto the user's list;
+0.5-0.75 goes into one evening digest the user skims; below 0.5 the user never sees it, so
+leave it out.
 
 CAPTURE, each as its own task:
-- explicit requests ("aap yeh bhej dijiye", "can you share the dump")
-- explicit commitments ("main kal tak confirm kar deta hoon") - including ones the OTHER
-  party made, which the user needs to follow up; set assignedToMe=false
-- things to check, verify, find out or look into
+- explicit requests made to the user ("aap yeh bhej dijiye", "can you share the dump")
+- explicit commitments the user made ("main kal tak confirm kar deta hoon")
+- commitments the OTHER party made that the user will need to chase - set
+  assignedToMe=false, confidence 0.5-0.7
 - meetings, calls or deadlines agreed during the conversation
-- decisions deferred to later ("iska baad mein dekhte hain") at confidence around 0.45
+
+When the transcript is prefixed with "About the user:", use it to judge what matters to
+them, and leave out anything they list as things to ignore.
 
 RULES:
 - Extract only what was ACTUALLY SPOKEN. Never invent an amount, name, date or recipient
   that is not in the transcript.
-- Speech recognition mangles Hinglish badly. If a passage is garbled but the INTENT is
-  clear, extract it at reduced confidence (0.4-0.6) and quote the garbled words verbatim as
-  evidence. Only skip a passage when you genuinely cannot tell what was meant.
+- Speech recognition mangles Hinglish badly. If a passage is garbled but a commitment is
+  plainly meant, extract it at reduced confidence (0.5-0.7) and quote the garbled words
+  verbatim as evidence. Skip it when you cannot tell what was meant.
 - Merge genuine duplicates. Do not merge two different actions because they share a topic.
 - Titles must name concrete specifics from the call - names, amounts, documents. Never a
   bare "Follow up".
@@ -225,9 +249,9 @@ Return ONLY this JSON, no markdown:
       "dueDate": "<ISO 8601 with +05:30, resolved from the call date, or null>",
       "assignedToMe": <true if the user must act, false if the other party committed>,
       "notes": "<names, amounts, references; null if none>",
-      "confidence": <0.0-1.0. 0.85+ clearly spoken and unambiguous; 0.6-0.85 clear intent with
-                     some ambiguity about who or when; 0.4-0.6 the audio or phrasing is
-                     unclear but an action was plainly meant. Use the whole range.>
+      "confidence": <0.0-1.0. 0.85+ clearly spoken, clearly committed; 0.5-0.8 a real
+                     commitment with doubt about who or when, or audio that is hard to
+                     read. Below 0.5, leave it out.>
     }
   ]
 }
@@ -238,9 +262,8 @@ kal tak/important. MEDIUM = no stated urgency. LOW = optional, "jab time mile".
 Common Hindi/Hinglish action phrases: "bhej dena", "bhej do", "kar dena", "dekh lena",
 "bata dena", "call karna", "confirm karo", "meeting rakhna", "payment karna", "forward karna".
 
-If there are genuinely no action items, return "tasks": []. But check twice before you do:
-on a working call that answer is usually wrong. A transcript of two colleagues discussing a
-live problem almost always contains at least one thing somebody is going to do next.
+If nobody committed to anything, return "tasks": []. That is a normal answer for a social
+call or a call that only discussed things.
 """.trim()
 
     val DEFAULT_VERIFY_SYSTEM: String = """
@@ -249,17 +272,18 @@ a list of candidate tasks. For each candidate, judge it against the source:
 
 - "keep"  - clearly stated in the source, aimed at the user, title and date accurate
 - "fix"   - the commitment is real but the title or dueDate is wrong; supply corrections
-- "drop"  - not actually stated, a duplicate, ordinary conversation misread as a task, or
-            an action that belongs to somebody other than the user
+- "drop"  - not actually stated, a duplicate, ordinary conversation misread as a task, not
+            worth the user's list, or an action that belongs to somebody other than the user
 
 Check each candidate's "evidence" against the source. If those words do not appear at all,
 drop it. If the words appear but are garbled or approximate - common with speech recognition
 - keep it and correct the evidence to the exact wording from the source.
 
-When in doubt, prefer "fix" or a "keep" over "drop". A dropped task disappears with no
-trace the user sees; a kept one they did not want costs a single tap in the review inbox.
-Reserve "drop" for candidates that are genuinely not in the source, or duplicates of
-another candidate in the same list.
+Also drop anything that is not a real commitment: an acknowledgement, a pleasantry, an
+update with nothing asked of the user, a question answered in the chat, or a vague "we
+should" with no action. The user reads every task that survives, and a list full of those
+is one they stop trusting. When a candidate is a real commitment but its title or date is
+off, prefer "fix" over "drop".
 
 THAT PREFERENCE HAS ONE EXCEPTION, AND IT IS THE MAIN REASON THIS REVIEW EXISTS.
 
@@ -296,6 +320,8 @@ Return ONLY JSON:
          * it is worse than silence, because the model will try to use it.
          */
         userNames: Collection<String> = emptyList(),
+        /** The user's own description of their work and what to ignore. */
+        aboutMe: String = "",
     ): String {
         val time = DateResolver.formatForPrompt(occurredAtMillis)
         val where = if (groupName.isNullOrBlank()) {
@@ -305,17 +331,31 @@ Return ONLY JSON:
         }
         val names = userNames.map { it.trim() }.filter { it.isNotEmpty() }
         val who = if (names.isEmpty()) "" else "You are known as: ${names.joinToString(", ")}\n"
-        return "[$time IST] $who$where: \"$messageText\""
+        return aboutBlock(aboutMe) + "[$time IST] $who$where: \"$messageText\""
     }
 
-    fun callUser(occurredAtMillis: Long, contactLabel: String, transcript: String): String {
+    fun callUser(occurredAtMillis: Long, contactLabel: String, transcript: String, aboutMe: String = ""): String {
         val time = DateResolver.formatForPrompt(occurredAtMillis)
         return buildString {
+            append(aboutBlock(aboutMe))
             append("Call with ").append(contactLabel).append('\n')
             append("Call date and time: ").append(time).append(" IST\n\n")
             append("TRANSCRIPT:\n")
             append(transcript)
         }
+    }
+
+    /** Longest "About me" sent with a prompt; past this it is cut, not dropped. */
+    const val MAX_ABOUT_ME = 1500
+
+    /**
+     * The user's own words about their work, ahead of the message. Omitted
+     * when empty, for the same reason as the names: an empty heading invites
+     * the model to guess.
+     */
+    fun aboutBlock(aboutMe: String): String {
+        val text = aboutMe.trim().take(MAX_ABOUT_ME)
+        return if (text.isEmpty()) "" else "About the user: $text\n\n"
     }
 
     fun verifyUser(

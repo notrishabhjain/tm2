@@ -85,7 +85,7 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Review inbox") },
+                title = { Text("Digest") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -115,6 +115,10 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
                     onClick = { showingDismissed = true },
                     label = { Text("Dismissed") },
                 )
+                if (!showingDismissed && pending.isNotEmpty()) {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = viewModel::dropTheRest) { Text("Drop the rest") }
+                }
             }
 
             // Only on the waiting tab, and only when there is something to
@@ -129,13 +133,14 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
 
             if (items.isEmpty()) {
                 EmptyState(
-                    title = if (showingDismissed) "Nothing dismissed" else "Nothing to review",
+                    title = if (showingDismissed) "Nothing dismissed" else "No maybes waiting",
                     body = if (showingDismissed) {
                         "Candidates you said no to appear here, and so do ones TaskMind dismissed " +
                             "for you after nobody answered them for a week. Either can be put back."
                     } else {
-                        "When TaskMind is fairly sure it found a commitment but not sure enough to " +
-                            "add it outright, it waits for you here rather than guessing."
+                        "Possible tasks TaskMind was not sure enough to add wait here for one look - " +
+                            "keep the few that matter and drop the rest. The 18:30 notification says " +
+                            "how many there are."
                     },
                     icon = Icons.Outlined.Inbox,
                 )

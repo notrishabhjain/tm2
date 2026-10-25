@@ -50,6 +50,19 @@ class BriefTest {
         assertEquals(listOf("All day  Meeting: Diwali leave", "11:00  Meeting: Vendor sync"), m.lines)
     }
 
+    @Test fun `the evening carries the digest, and speaks for maybes alone`() {
+        val both = Brief.compose(Brief.Kind.EVENING, tasks, seven, maybes = 4)!!
+        assertEquals("3 things still open, 4 maybes to look at", both.title)
+        assertEquals("Digest: 4 possible tasks - keep or drop", both.lines.last())
+        val onlyMaybes = Brief.compose(Brief.Kind.EVENING, emptyList(), seven, maybes = 1)!!
+        assertEquals("1 maybe to look at", onlyMaybes.title)
+        assertEquals(0, onlyMaybes.slipped)
+    }
+
+    @Test fun `the digest time has minutes`() {
+        assertEquals(ist("2026-10-23T18:30"), Brief.nextAt(18, nine, 30))
+    }
+
     @Test fun `nothing to say means no message`() {
         val clear = listOf(Brief.Item("Plan offsite", ist("2026-10-30T18:00"), waitingOn = false))
         assertNull(Brief.compose(Brief.Kind.MORNING, clear, nine))

@@ -35,24 +35,38 @@ class PromptsTest {
     // -- the order of the argument -------------------------------------------
 
     @Test
-    fun `whose task it is comes before the instruction to be generous`() {
+    fun `whose task it is comes before the bar for what is worth a task`() {
         val doer = notification.indexOf("WHOSE TASK IS IT")
-        val recall = notification.indexOf("LOWER THE CONFIDENCE")
+        val bar = notification.indexOf("WOULD THE USER WRITE THIS DOWN")
         assertTrue("the doer question is missing", doer >= 0)
-        assertTrue("the recall instruction is missing", recall >= 0)
-        assertTrue(
-            "the recall bias must not be stated before the doer question",
-            doer < recall,
-        )
+        assertTrue("the precision bar is missing", bar >= 0)
+        assertTrue("the bar must not come before the doer question", doer < bar)
+    }
+
+    /**
+     * v1.21 reversed the prompt's stance. It used to say "when unsure, create
+     * the task and lower the confidence", which is why most captured tasks were
+     * noise. That instruction must not come back by accident.
+     */
+    @Test
+    fun `the old recall instruction is gone from both extraction prompts`() {
+        listOf(notification, Prompts.DEFAULT_CALL_SYSTEM).forEach { prompt ->
+            assertTrue(!prompt.contains("LOWER THE CONFIDENCE"))
+            assertTrue(!prompt.contains("never by omitting"))
+            assertTrue(!prompt.contains("BE THOROUGH"))
+        }
+        assertTrue(!verify.contains("prefer \"fix\" or a \"keep\" over \"drop\""))
     }
 
     @Test
-    fun `the recall bias is explicitly exempted from the doer question`() {
-        assertTrue(
-            "nothing tells the model that 'when unsure say true' stops at whose task it is",
-            notification.contains("DOES NOT REACH BACK") ||
-                notification.contains("does not reach back"),
-        )
+    fun `the bar is explicitly not a way round the doer question`() {
+        assertTrue(notification.contains("DOES NOT LOWER STEP 1"))
+    }
+
+    @Test
+    fun `maybes are routed to the digest, not the list`() {
+        assertTrue(notification.contains("evening\ndigest") || notification.contains("evening digest"))
+        assertTrue(notification.contains("acknowledgements"))
     }
 
     @Test

@@ -121,6 +121,22 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /**
+     * The digest's last step: after keeping the few worth keeping, everything
+     * else goes in one tap. Dismissed, not deleted - each one can be put back
+     * from the Dismissed tab.
+     */
+    fun dropTheRest() {
+        viewModelScope.launch {
+            val count = container.taskRepository.dismissStaleReviewItems(System.currentTimeMillis() + 1)
+            _message.value = when (count) {
+                0 -> "Nothing left to drop"
+                1 -> "Dropped 1 - it is in the Dismissed tab"
+                else -> "Dropped $count - they are in the Dismissed tab"
+            }
+        }
+    }
+
     fun clearMessage() {
         _message.value = null
     }
