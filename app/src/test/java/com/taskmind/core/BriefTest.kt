@@ -73,4 +73,19 @@ class BriefTest {
         assertEquals(ist("2026-10-23T19:00"), Brief.nextAt(19, nine))
         assertEquals(ist("2026-10-24T09:00"), Brief.nextAt(9, nine))
     }
+
+    @Test fun `the morning leads with the day's picks and does not repeat them`() {
+        val m = Brief.compose(
+            Brief.Kind.MORNING, tasks, nine,
+            picks = listOf(Brief.Pick("Pay rent", "Overdue"), Brief.Pick("Call bank", null), Brief.Pick("A", null), Brief.Pick("B", null)),
+        )!!
+        assertTrue(m.title.startsWith("Your 3 things today"))
+        assertEquals(listOf("1. Pay rent - Overdue", "2. Call bank", "3. A"), m.lines.take(3))
+        assertTrue(m.lines.none { it == "Late: Pay rent" || it == "16:00  Call bank" })
+    }
+
+    @Test fun `picks alone are worth a morning`() {
+        val m = Brief.compose(Brief.Kind.MORNING, emptyList(), nine, picks = listOf(Brief.Pick("Read contract", "High priority")))
+        assertEquals("Your 1 thing today", m!!.title)
+    }
 }

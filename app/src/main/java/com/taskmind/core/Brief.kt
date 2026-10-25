@@ -37,6 +37,12 @@ object Brief {
     private const val MAX_LINES = 5
     private val TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
 
+    /** One of the day's top things, from [Importance.focus], with why it is there. */
+    data class Pick(val title: String, val why: String?)
+
+    /** How many picks the morning leads with. */
+    const val PICKS = 3
+
     /** A calendar event today. [start] is null for an all-day event. */
     data class Meeting(val start: Long?, val title: String)
 
@@ -52,22 +58,25 @@ object Brief {
         meetings: List<Meeting> = emptyList(),
         /** Maybe-tasks waiting for a keep-or-drop; the evening carries the digest. */
         maybes: Int = 0,
+        /** The day's top things, best first. The morning leads with up to [PICKS]. */
+        picks: List<Pick> = emptyList(),
     ): Message? =
         when (kind) {
-            Kind.MORNING -> morning(active, now, meetings)
+            Kind.MORNING -> morning(active, now, meetings, picks.take(PICKS))
             Kind.EVENING -> evening(active, now, maybes)
         }
 
-    private fun morning(active: List<Item>, now: Long, meetings: List<Meeting>): Message? {
+    private fun morning(active: List<Item>, now: Long, meetings: List<Meeting>, picks: List<Pick>): Message? {
         val startOfToday = DateResolver.startOfDay(now)
         val endOfToday = DateResolver.endOfDay(now)
         val overdue = active.filter { it.dueAt != null && it.dueAt < startOfToday }
         val today = active.filter { it.dueAt != null && it.dueAt in startOfToday..endOfToday }
             .sortedBy { it.dueAt }
         val waiting = active.count { it.waitingOn }
-        if (overdue.isEmpty() && today.isEmpty() && waiting == 0 && meetings.isEmpty()) return null
+        if (picks.isEmpty() && overdue.isEmpty() && today.isEmpty() && waiting == 0 && meetings.isEmpty()) return null
 
         val title = listOfNotNull(
+            picks.size.takeIf { it > 0 }?.let { if (it == 1) "your 1 thing today" else "your $it things today" },
             meetings.size.takeIf { it > 0 }?.let { if (it == 1) "1 meeting" else "$it meetings" },
             today.size.takeIf { it > 0 }?.let { "$it due today" },
             overdue.size.takeIf { it > 0 }?.let { "$it overdue" },
@@ -80,8 +89,15 @@ object Brief {
             val at = m.start?.let { Instant.ofEpochMilli(it).atZone(DateResolver.IST).format(TIME) } ?: "All day"
             "$at  Meeting: ${m.title}"
         }
-        val lines = (meetingLines + overdue.sortedBy { it.dueAt }.map { "Late: ${it.title}" } + today.map { line(it) })
-            .take(MAX_LINES + 2)
+        // The picks lead, numbered, each with its reason. What they already
+        // cover is not repeated below them.
+        val picked = picks.map { it.title }.toSet()
+        val pickLines = picks.mapIndexed { i, p -> "${i + 1}. ${p.title}" + (p.why?.let { " - $it" } ?: "") }
+        val lines = (
+            pickLines + meetingLines +
+                overdue.filter { it.title !in picked }.sortedBy { it.dueAt }.map { "Late: ${it.title}" } +
+                today.filter { it.title !in picked }.map { line(it) }
+            ).take(MAX_LINES + 2)
         return Message(title, lines, slipped = 0)
     }
 

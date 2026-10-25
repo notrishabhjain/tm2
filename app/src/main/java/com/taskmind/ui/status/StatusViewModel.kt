@@ -57,6 +57,8 @@ data class StatusUiState(
     /** Is capture worth it - now, and as it was before v1.21. */
     val captureNow: String? = null,
     val captureBefore: String? = null,
+    /** Morning picks done the same day, 0-100; null until there are enough. */
+    val focusDone: Int? = null,
 )
 
 class StatusViewModel(private val container: AppContainer) : ViewModel() {
@@ -101,6 +103,7 @@ class StatusViewModel(private val container: AppContainer) : ViewModel() {
                 captureBefore = CaptureHealth.baseline(container.context)?.let { (text, at) ->
                     "$text (as of ${DateFormats.full(at)})"
                 },
+                focusDone = runCatching { CaptureHealth.focusCompletion(container) }.getOrNull(),
             )
         }
     }

@@ -6,6 +6,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.taskmind.core.Brief
+import com.taskmind.core.DateResolver
+import com.taskmind.core.FocusLog
+import com.taskmind.data.repo.TaskRanking
+import com.taskmind.diagnostics.CaptureHealth
 import com.taskmind.core.LogLevel
 import com.taskmind.core.Stage
 import com.taskmind.core.TaskStatus
@@ -107,9 +111,20 @@ object DailyBrief {
     suspend fun post(context: Context, kind: Brief.Kind) {
         val container = AppContainer.get(context)
         val now = System.currentTimeMillis()
-        val items = container.taskRepository.observeTasks().first()
+        val all = container.taskRepository.observeTasks().first()
+        val items = all
             .filter { it.status == TaskStatus.ACTIVE && it.parentTaskId == null }
             .map { Brief.Item(it.title, it.dueAt, WaitingOn.matches(it.title, it.tags)) }
+        // The morning leads with the day's top things, and writes down which
+        // they were so Health can say later whether they got done.
+        val picks = if (kind == Brief.Kind.MORNING) {
+            TaskRanking.focus(all, container.settingsRepository.current().aboutMe, now, Brief.PICKS)
+        } else {
+            emptyList()
+        }
+        if (picks.isNotEmpty()) {
+            CaptureHealth.recordFocus(context, FocusLog.Day(DateResolver.startOfDay(now), picks.map { it.first.id }))
+        }
         val meetings = if (kind == Brief.Kind.MORNING && UiPreferences(context).current().calendarInBrief) {
             CalendarToday.read(context, now)
         } else {
@@ -120,7 +135,7 @@ object DailyBrief {
         } else {
             0
         }
-        val message = Brief.compose(kind, items, now, meetings, maybes)
+        val message = Brief.compose(kind, items, now, meetings, maybes, picks.map { (t, why) -> Brief.Pick(t.title, why) })
         if (message == null) {
             container.logger.write(Stage.SYSTEM, LogLevel.DEBUG, "${kind.name.lowercase()} brief: nothing to say")
             return

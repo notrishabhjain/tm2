@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.taskmind.core.DateResolver
 import com.taskmind.core.Priority
 import com.taskmind.core.SmartReminder
+import com.taskmind.core.Standing
+import com.taskmind.data.repo.TaskRanking
 import com.taskmind.core.WeeklyReview
 import com.taskmind.reminders.toWeeklyItem
 import java.time.Instant
@@ -31,7 +33,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class TaskListUiState(
-    val view: TaskView = TaskView.AGENDA,
+    val view: TaskView = TaskView.FOCUS,
     val sort: SortMode = SortMode.DUE_DATE,
     val group: GroupMode = GroupMode.MATTER,
     val query: String = "",
@@ -74,12 +76,20 @@ data class TaskListUiState(
     val matters: List<MatterGroup> = emptyList(),
     /** What is in no matter. Equals [tasks] when there are no matters to show. */
     val unmattered: List<TaskEntity> = emptyList(),
+    /** Why each Focus task is there, by task id. */
+    val reasons: Map<String, String> = emptyMap(),
+    /** Open tasks Focus left for later; shown as a pointer to Agenda. */
+    val laterCount: Int = 0,
+    /** Who owes what; filled in the People view only. */
+    val people: List<Standing.Person> = emptyList(),
+    /** The user's About me, for picking out key people. */
+    val aboutMe: String = "",
 ) {
     val selectionMode: Boolean get() = selection.isNotEmpty()
 }
 
-/** One matter's open work, in the list's own order. */
-data class MatterGroup(val id: String, val name: String, val tasks: List<TaskEntity>)
+/** One matter's open work, in the list's own order, and where it stands. */
+data class MatterGroup(val id: String, val name: String, val tasks: List<TaskEntity>, val summary: String? = null)
 
 /**
  * The visible tasks by matter. Matters with the soonest due work come first;
@@ -92,7 +102,10 @@ internal fun groupByMatter(
     val names = projects.associate { it.id to it.name }
     val (filed, loose) = tasks.partition { it.projectId != null && it.projectId in names }
     val groups = filed.groupBy { it.projectId!! }
-        .map { (id, rows) -> MatterGroup(id, names.getValue(id), rows) }
+        .map { (id, rows) ->
+            val open = rows.filter { it.status == TaskStatus.ACTIVE }.map(TaskRanking::standing)
+            MatterGroup(id, names.getValue(id), rows, Standing.matter(open, System.currentTimeMillis()))
+        }
         .sortedWith(compareBy<MatterGroup> { g -> g.tasks.mapNotNull { it.dueAt }.minOrNull() ?: Long.MAX_VALUE }.thenBy { it.name.lowercase() })
     return groups to loose
 }
@@ -120,9 +133,11 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
         }
         viewModelScope.launch {
             container.settingsRepository.settings
-                .map { s -> s.ownNames.any { it.isNotBlank() } to s.aboutMe.isNotBlank() }
+                .map { s -> s.ownNames.any { it.isNotBlank() } to s.aboutMe }
                 .distinctUntilChanged()
-                .collect { (names, about) -> filters.update { it.copy(ownNamesSet = names, aboutMeSet = about) } }
+                .collect { (names, about) ->
+                    filters.update { it.copy(ownNamesSet = names, aboutMeSet = about.isNotBlank(), aboutMe = about) }
+                }
         }
     }
 
@@ -175,7 +190,7 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
         val liveTag = current.tag?.takeIf { TaskFilters.hasTag(scope, it) }
         if (current.tag != null && liveTag == null) filters.update { it.copy(tag = null) }
 
-        val visible = TaskFilters.apply(
+        val filtered = TaskFilters.apply(
             tasks = tasks,
             view = current.view,
             query = current.query,
@@ -185,15 +200,35 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             now = now,
         )
 
+        // Focus ranks what the filters left and keeps the top few; the rest
+        // is one tap away under Agenda. Grouping does not apply: the order
+        // is the point.
+        val focus = TaskRanking.focus(filtered, current.aboutMe, now)
+        val visible = when (current.view) {
+            TaskView.FOCUS -> focus.map { it.first }
+            else -> filtered
+        }
+        val reasons = if (current.view == TaskView.FOCUS) {
+            focus.mapNotNull { (t, why) -> why?.let { t.id to it } }.toMap()
+        } else {
+            emptyMap()
+        }
+        val people = if (current.view == TaskView.PEOPLE) {
+            Standing.people(filtered.map(TaskRanking::standing))
+        } else {
+            emptyList()
+        }
+
         // Only when the mode is on: relating every task to every other is
         // quadratic, and paying for it while nobody is looking at the result
         // would slow down every edit in the app.
-        val (bundles, loose) = if (current.group == GroupMode.RELATED) {
+        val grouping = current.view != TaskView.FOCUS && current.view != TaskView.PEOPLE
+        val (bundles, loose) = if (grouping && current.group == GroupMode.RELATED) {
             TaskBundles.grouped(visible)
         } else {
             emptyList<TaskBundles.Group>() to visible
         }
-        val (matters, unmattered) = if (current.group == GroupMode.MATTER) {
+        val (matters, unmattered) = if (grouping && current.group == GroupMode.MATTER) {
             groupByMatter(visible, projects)
         } else {
             emptyList<MatterGroup>() to visible
@@ -201,12 +236,21 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
 
         current.copy(
             tag = liveTag,
-            tasks = visible,
+            // The People view draws people; with nobody to draw, the empty
+            // state says so rather than an empty list.
+            tasks = if (current.view == TaskView.PEOPLE && people.isEmpty()) emptyList() else visible,
+            reasons = reasons,
+            laterCount = if (current.view == TaskView.FOCUS) (filtered.size - visible.size).coerceAtLeast(0) else 0,
+            people = people,
             bundles = bundles,
             unbundled = loose,
             matters = matters,
             unmattered = unmattered,
-            counts = TaskFilters.counts(tasks, now),
+            counts = TaskFilters.counts(tasks, now) +
+                mapOf(
+                    TaskView.FOCUS to TaskRanking.focus(tasks, current.aboutMe, now).size,
+                    TaskView.PEOPLE to 0,
+                ),
             tagCloud = TaskFilters.tagCloud(scope, liveTag),
             allSubjects = TaskFilters.tagCloud(allTasks, limit = Int.MAX_VALUE)
                 .filter { it.kind == AutoTagger.Kind.PERSON || it.kind == AutoTagger.Kind.GROUP }
