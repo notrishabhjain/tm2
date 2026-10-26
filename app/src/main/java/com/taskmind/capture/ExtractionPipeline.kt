@@ -51,6 +51,8 @@ class ExtractionPipeline(
     private val appLabelFor: (String?) -> String,
     /** The chat so far, open tasks and matters; null runs without context. */
     private val memory: ChatMemory? = null,
+    /** The approved rules as prompt text; empty when there are none. */
+    private val rules: () -> String = { "" },
 ) {
 
     sealed interface Outcome {
@@ -163,6 +165,7 @@ class ExtractionPipeline(
             userNames = userNames,
             aboutMe = aboutMe,
             context = ChatContext.render(block),
+            rules = rules(),
         )
 
         logger.write(
@@ -227,6 +230,7 @@ class ExtractionPipeline(
                 sourceLabel = capture.sourceLabel,
                 aboutMe = aboutMe,
                 context = ChatContext.render(block),
+                rules = rules(),
             ),
         )
         settingsRepository.recordLlmCall(todayKey, capture.sourceApp)

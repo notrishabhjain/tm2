@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isConfigured, missingConfig, supabase } from "@/lib/supabase";
-import type { NewTask, Priority, ReviewItem, Task } from "@/lib/types";
+import type { Matter, NewTask, Priority, ReviewItem, Task } from "@/lib/types";
 import {
   addTask,
   cancelNewTask,
@@ -130,6 +130,9 @@ function Dashboard({ email }: { email: string }) {
   // on the list rather than on a wall of chips.
   const [showFilters, setShowFilters] = useState(false);
   const [related, setRelated] = useState(false);
+  const [matters, setMatters] = useState<Matter[]>([]);
+  // On by default, as on the phone; with no matters it changes nothing.
+  const [byMatter, setByMatter] = useState(true);
 
   const load = useCallback(async () => {
     const [t, r, q] = await Promise.all([
@@ -137,6 +140,11 @@ function Dashboard({ email }: { email: string }) {
       supabase.from("review_items").select("*").order("created_at", { ascending: false }),
       supabase.from("web_new_tasks").select("*").order("created_at", { ascending: true }),
     ]);
+    // Matters are read on their own, and a failure is not an error: before
+    // schema_v4.sql has been run the table does not exist, and the page
+    // should work exactly as it did.
+    const m = await supabase.from("matters").select("*").order("name");
+    setMatters(m.error ? [] : (m.data as Matter[]));
     const failed = t.error ?? r.error ?? q.error;
     if (failed) {
       setError(failed.message);
@@ -279,6 +287,39 @@ function Dashboard({ email }: { email: string }) {
 
   const grouped = useMemo(() => (related ? bundles(active) : null), [active, related]);
 
+  // Tasks by matter, matters with the soonest due work first; whatever has
+  // no matter falls through to the usual date groups.
+  const filed = useMemo(() => {
+    if (!byMatter || related || matters.length === 0) return null;
+    const known = new Map(matters.map((m) => [m.id, m]));
+    const groupsByMatter = new Map<string, Task[]>();
+    for (const t of active) {
+      const id = t.matter_id ?? null;
+      if (id && known.has(id)) groupsByMatter.set(id, [...(groupsByMatter.get(id) ?? []), t]);
+    }
+    if (groupsByMatter.size === 0) return null;
+    const soonest = (ts: Task[]) =>
+      ts.reduce((min, t) => (t.due_at && t.due_at < min ? t.due_at : min), "\uffff");
+    const list = [...groupsByMatter.entries()]
+      .map(([id, ts]) => ({ matter: known.get(id)!, tasks: ts }))
+      .sort((a, b) => soonest(a.tasks).localeCompare(soonest(b.tasks)) || a.matter.name.localeCompare(b.matter.name));
+    const taken = new Set(list.flatMap((g) => g.tasks.map((t) => t.id)));
+    return { list, taken };
+  }, [active, byMatter, related, matters]);
+
+  // The date groups, less anything already shown under a matter.
+  const loose = useMemo(() => {
+    if (!filed) return groups;
+    const keep = (ts: Task[]) => ts.filter((t) => !filed.taken.has(t.id));
+    return {
+      overdue: keep(groups.overdue),
+      today: keep(groups.today),
+      upcoming: keep(groups.upcoming),
+      undated: keep(groups.undated),
+      waiting: keep(groups.waiting),
+    };
+  }, [groups, filed]);
+
   const lastSync = useMemo(() => {
     const stamps = [...tasks, ...reviews].map((r) => r.synced_at).filter(Boolean);
     return stamps.length ? stamps.reduce((a, b) => (a > b ? a : b)) : null;
@@ -328,6 +369,17 @@ function Dashboard({ email }: { email: string }) {
             <button className={showFilters || tag ? "tagchip on" : "tagchip"} onClick={() => setShowFilters((v) => !v)}>
               {tag ? `Filter: ${tag}` : "Filter by person or topic"}
             </button>
+            {matters.length > 0 && (
+              <button
+                className={byMatter && !related ? "tagchip on" : "tagchip"}
+                onClick={() => {
+                  setByMatter((v) => !v);
+                  setRelated(false);
+                }}
+              >
+                By matter
+              </button>
+            )}
             <button className={related ? "tagchip on" : "tagchip"} onClick={() => setRelated((v) => !v)}>
               Group related
             </button>
@@ -424,11 +476,20 @@ function Dashboard({ email }: { email: string }) {
                 </>
               ) : (
                 <>
-                  <Group title="Overdue" alert items={groups.overdue} mutate={mutate} />
-                  <Group title="Today" items={groups.today} mutate={mutate} />
-                  <Group title="Upcoming" items={groups.upcoming} mutate={mutate} />
-                  <Group title="No date" items={groups.undated} mutate={mutate} />
-                  <Group title="Waiting on others" items={groups.waiting} mutate={mutate} />
+                  {filed?.list.map((g) => (
+                    <Group
+                      key={g.matter.id}
+                      title={g.matter.name}
+                      subtitle={g.matter.summary}
+                      items={g.tasks}
+                      mutate={mutate}
+                    />
+                  ))}
+                  <Group title="Overdue" alert items={loose.overdue} mutate={mutate} />
+                  <Group title="Today" items={loose.today} mutate={mutate} />
+                  <Group title="Upcoming" items={loose.upcoming} mutate={mutate} />
+                  <Group title="No date" items={loose.undated} mutate={mutate} />
+                  <Group title="Waiting on others" items={loose.waiting} mutate={mutate} />
                 </>
               )}
               {done.length > 0 && (
@@ -499,11 +560,14 @@ function Group({
   mutate,
   alert = false,
   onCompleteAll,
+  subtitle,
 }: {
   title: string;
   items: Task[];
   mutate: Mutate;
   alert?: boolean;
+  /** For a matter: where it stands, in one line. */
+  subtitle?: string | null;
   /** For a bundle: tick everything in it off at once. */
   onCompleteAll?: () => void;
 }) {
@@ -519,6 +583,7 @@ function Group({
           </button>
         )}
       </div>
+      {subtitle && <div className="group-sub">{subtitle}</div>}
       <div className="card">
         {items.map((t) => (
           <TaskRow key={t.id} task={t} mutate={mutate} />

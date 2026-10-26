@@ -34,6 +34,21 @@ export interface Task {
    * every push, so the rules exist in one place rather than two.
    */
   auto_tags: string[];
+  /**
+   * The matter the phone filed this under. Absent until schema_v4.sql has
+   * been run, so always read as `t.matter_id ?? null`.
+   */
+  matter_id?: string | null;
+}
+
+/** An ongoing piece of work the phone files tasks under. From schema_v4.sql. */
+export interface Matter {
+  id: string;
+  name: string;
+  /** The phone's one line on where it stands, written from its tasks. */
+  summary: string | null;
+  open_count: number;
+  updated_at: string;
 }
 
 export interface ReviewItem {

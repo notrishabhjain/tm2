@@ -19,7 +19,9 @@ import com.taskmind.core.AsrProvider
 import com.taskmind.data.db.TaskMindDatabase
 import com.taskmind.data.repo.ActivityLogger
 import com.taskmind.data.repo.BackupRepository
+import com.taskmind.core.Rules
 import com.taskmind.data.repo.ChatMemory
+import com.taskmind.data.repo.LearningStore
 import com.taskmind.data.repo.RoomInferenceRecorder
 import com.taskmind.data.repo.RoomIntakePorts
 import com.taskmind.data.repo.TaskRepository
@@ -119,8 +121,12 @@ class AppContainer(context: Context) {
             callRecordDao = database.callRecordDao(),
             funnel = intakeFunnel,
             logger = logger,
+            learning = learningStore,
         )
     }
+
+    /** Feedback and the rules the user approved. */
+    val learningStore: LearningStore by lazy { LearningStore(appContext) }
 
     // -- providers ---------------------------------------------------------
 
@@ -215,6 +221,7 @@ class AppContainer(context: Context) {
             hasLlmKey = { secretStore.hasLlmKey() },
             appLabelFor = ::appLabel,
             memory = chatMemory,
+            rules = { Rules.promptBlock(learningStore.rules.value) },
         )
     }
 

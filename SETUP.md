@@ -38,9 +38,12 @@ column for them in the database, so this cannot start happening by accident.
 4. Do the same with `supabase/schema_v2.sql` — the columns that let you edit
    from the browser.
 5. And `supabase/schema_v3.sql` — the column that carries the automatic tags.
+6. And `supabase/schema_v4.sql` — matters, so the web app can list tasks by
+   matter with the phone's one-line summary. Optional: sync works without it,
+   and the phone starts sending matters on its own once it is there.
 
 You should see "Success. No rows returned" each time. If you get an error, fix
-it and run the whole file again — every statement in all three files is safe to
+it and run the whole file again — every statement in all four files is safe to
 run twice.
 
 > **Already set this up?** Run only the files you have not run yet, in order.

@@ -142,6 +142,7 @@ fun SettingsScreen(
 
                 SettingsPage.YOU -> {
                     AboutMeSection(settings, viewModel)
+                    RulesSection(viewModel)
                     GroupSection(settings, viewModel)
                     HowManySection(settings, viewModel)
                     MessageAppsSection(settings, ui, viewModel)

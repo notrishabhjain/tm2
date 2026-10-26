@@ -51,6 +51,8 @@ data class MessageInput(
     val aboutMe: String = "",
     /** The rendered chat context: earlier messages, open tasks, matters. */
     val context: String = "",
+    /** The rules the user approved, rendered. */
+    val rules: String = "",
 )
 
 data class TranscriptInput(
@@ -62,6 +64,7 @@ data class TranscriptInput(
     val aboutMe: String = "",
     /** The rendered context: open tasks with this person, matters. */
     val context: String = "",
+    val rules: String = "",
 )
 
 data class ExtractedTask(
@@ -142,6 +145,7 @@ class CloudTaskExtractor(
             userNames = input.userNames,
             aboutMe = input.aboutMe,
             context = input.context,
+            rules = input.rules,
         )
         val result = llm.complete(
             config = config,
@@ -194,7 +198,7 @@ class CloudTaskExtractor(
     override suspend fun extractFromTranscript(input: TranscriptInput): AiResult<TranscriptExtraction> {
         val config = configProvider()
         cachedOrigin = "cloud:${config.model}"
-        val user = Prompts.callUser(input.occurredAt, input.contactLabel, input.transcript, input.aboutMe, input.context)
+        val user = Prompts.callUser(input.occurredAt, input.contactLabel, input.transcript, input.aboutMe, input.context, input.rules)
         val result = llm.complete(
             config = config,
             systemPrompt = promptProvider().callSystem,

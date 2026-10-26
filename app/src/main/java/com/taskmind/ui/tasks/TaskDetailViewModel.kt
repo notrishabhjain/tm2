@@ -234,7 +234,7 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
     fun notMine(onRemoved: (group: String?) -> Unit) {
         val task = _state.value.task ?: return
         viewModelScope.launch {
-            container.taskRepository.delete(task.id)
+            container.taskRepository.notMine(task.id)
             container.logger.write(Stage.FUNNEL, LogLevel.INFO, "marked not mine", task.title)
             onRemoved(AutoTagger.parseLabel(task.sourceType, task.sourceLabel).group?.takeIf { it.isNotBlank() })
         }

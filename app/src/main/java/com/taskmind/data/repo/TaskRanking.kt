@@ -41,15 +41,21 @@ object TaskRanking {
     fun rankable(tasks: List<TaskEntity>): List<TaskEntity> =
         tasks.filter { it.status == TaskStatus.ACTIVE && it.parentTaskId == null }
 
-    /** The senders the user named in About me. */
-    fun keyPeople(tasks: List<TaskEntity>, aboutMe: String): Set<String> =
-        Importance.keyPeople(aboutMe, tasks.mapNotNull { person(it) }.distinct())
+    /** The senders the user named in About me, plus those approved as key people in Rules. */
+    fun keyPeople(tasks: List<TaskEntity>, aboutMe: String, approved: Set<String> = emptySet()): Set<String> =
+        Importance.keyPeople(aboutMe, tasks.mapNotNull { person(it) }.distinct()) + approved
 
     /** Focus, best first, as tasks with the line that explains each. */
-    fun focus(tasks: List<TaskEntity>, aboutMe: String, now: Long, limit: Int = Importance.FOCUS_SIZE): List<Pair<TaskEntity, String?>> {
+    fun focus(
+        tasks: List<TaskEntity>,
+        aboutMe: String,
+        now: Long,
+        limit: Int = Importance.FOCUS_SIZE,
+        approvedKeyPeople: Set<String> = emptySet(),
+    ): List<Pair<TaskEntity, String?>> {
         val open = rankable(tasks)
         val byId = open.associateBy { it.id }
-        return Importance.focus(open.map(::input), now, keyPeople(open, aboutMe), limit)
+        return Importance.focus(open.map(::input), now, keyPeople(open, aboutMe, approvedKeyPeople), limit)
             .mapNotNull { (input, score) -> byId[input.id]?.let { it to score.why } }
     }
 }

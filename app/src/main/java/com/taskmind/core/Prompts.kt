@@ -92,6 +92,10 @@ TO the user in a one-to-one chat that they may need to chase, a request with no 
 skims, not onto their list. Below 0.5 the user never sees it, so in that case say
 isTask=false instead.
 
+When the message is prefixed with "Rules the user approved:", follow them. They come from
+what the user kept and dropped, and they outrank your own judgement of what matters - but
+never STEP 1: a rule cannot make somebody else's task the user's.
+
 When the message is prefixed with "About the user:", use it. Their role, key people and
 current work say what matters to them. Anything they list as things to ignore is
 isTask=false. A request from someone they list as a key person deserves the benefit of the
@@ -261,7 +265,8 @@ CAPTURE, each as its own task:
 - meetings, calls or deadlines agreed during the conversation
 
 When the transcript is prefixed with "About the user:", use it to judge what matters to
-them, and leave out anything they list as things to ignore.
+them, and leave out anything they list as things to ignore. When it is prefixed with
+"Rules the user approved:", follow them.
 
 WHAT IS ALREADY ON THE LIST. The transcript may be preceded by "The user's open tasks with
 this person or group", numbered T1, T2, and "Matters the user tracks", numbered M1, M2.
@@ -381,6 +386,8 @@ Return ONLY JSON:
         aboutMe: String = "",
         /** [ChatContext.render]: the chat so far, open tasks, matters. */
         context: String = "",
+        /** [Rules.promptBlock]: the rules the user approved. */
+        rules: String = "",
     ): String {
         val time = DateResolver.formatForPrompt(occurredAtMillis)
         val where = if (groupName.isNullOrBlank()) {
@@ -390,7 +397,7 @@ Return ONLY JSON:
         }
         val names = userNames.map { it.trim() }.filter { it.isNotEmpty() }
         val who = if (names.isEmpty()) "" else "You are known as: ${names.joinToString(", ")}\n"
-        return aboutBlock(aboutMe) + context + "[$time IST] $who$where: \"$messageText\""
+        return aboutBlock(aboutMe) + rules + context + "[$time IST] $who$where: \"$messageText\""
     }
 
     fun callUser(
@@ -399,10 +406,12 @@ Return ONLY JSON:
         transcript: String,
         aboutMe: String = "",
         context: String = "",
+        rules: String = "",
     ): String {
         val time = DateResolver.formatForPrompt(occurredAtMillis)
         return buildString {
             append(aboutBlock(aboutMe))
+            append(rules)
             append(context)
             append("Call with ").append(contactLabel).append('\n')
             append("Call date and time: ").append(time).append(" IST\n\n")

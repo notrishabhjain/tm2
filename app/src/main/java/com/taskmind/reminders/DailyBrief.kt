@@ -8,6 +8,7 @@ import android.content.Intent
 import com.taskmind.core.Brief
 import com.taskmind.core.DateResolver
 import com.taskmind.core.FocusLog
+import com.taskmind.core.Rules
 import com.taskmind.data.repo.TaskRanking
 import com.taskmind.diagnostics.CaptureHealth
 import com.taskmind.core.LogLevel
@@ -73,7 +74,8 @@ object DailyBrief {
         val container = AppContainer.get(context)
         val now = System.currentTimeMillis()
         val summary = WeeklyReview.summarise(weeklyItems(container), now) ?: return
-        container.notifier.postWeekly(summary)
+        val ideas = runCatching { container.learningStore.ideas(now).size }.getOrDefault(0)
+        container.notifier.postWeekly(summary, ideas)
     }
 
     /** The task list as the weekly review reads it. Also used by the Done view. */
@@ -118,7 +120,13 @@ object DailyBrief {
         // The morning leads with the day's top things, and writes down which
         // they were so Health can say later whether they got done.
         val picks = if (kind == Brief.Kind.MORNING) {
-            TaskRanking.focus(all, container.settingsRepository.current().aboutMe, now, Brief.PICKS)
+            TaskRanking.focus(
+                all,
+                container.settingsRepository.current().aboutMe,
+                now,
+                Brief.PICKS,
+                Rules.keyPeople(container.learningStore.rules.value),
+            )
         } else {
             emptyList()
         }
