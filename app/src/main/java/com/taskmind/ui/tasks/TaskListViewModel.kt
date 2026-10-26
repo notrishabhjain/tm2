@@ -5,7 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.taskmind.core.DateResolver
 import com.taskmind.core.Priority
 import com.taskmind.core.SmartReminder
+import com.taskmind.core.Cleanup
 import com.taskmind.core.Rules
+import com.taskmind.core.SourceType
+import com.taskmind.data.repo.MatterFiler
 import com.taskmind.core.Standing
 import com.taskmind.data.repo.TaskRanking
 import com.taskmind.core.WeeklyReview
@@ -87,9 +90,30 @@ data class TaskListUiState(
     val aboutMe: String = "",
     /** People the user approved as key in Rules. */
     val approvedKeyPeople: Set<String> = emptySet(),
+    /** Open tasks with no matter, and open tasks gone stale: what the tidy-up offers. */
+    val unfiled: List<TaskEntity> = emptyList(),
+    val stale: List<TaskEntity> = emptyList(),
+    /** Until when the tidy-up banner is hidden. */
+    val cleanupSnoozedUntil: Long = 0L,
 ) {
     val selectionMode: Boolean get() = selection.isNotEmpty()
 }
+
+/** The tidy-up sheet: matter suggestions being fetched, shown, or applied. */
+data class CleanupState(
+    val busy: Boolean = false,
+    /** Null until asked for; empty when the model filed nothing. */
+    val suggestions: List<Cleanup.Assignment>? = null,
+    val error: String? = null,
+    val message: String? = null,
+)
+
+/** Enough unfiled or stale tasks to be worth offering a tidy-up. */
+fun TaskListUiState.cleanupWorthOffering(now: Long): Boolean =
+    now >= cleanupSnoozedUntil && (unfiled.size >= CLEANUP_MIN_UNFILED || stale.size >= CLEANUP_MIN_STALE)
+
+const val CLEANUP_MIN_UNFILED = 5
+const val CLEANUP_MIN_STALE = 3
 
 /** One matter's open work, in the list's own order, and where it stands. */
 data class MatterGroup(val id: String, val name: String, val tasks: List<TaskEntity>, val summary: String? = null)
@@ -117,6 +141,7 @@ internal fun groupByMatter(
 data class UndoAction(val message: String, val undo: suspend () -> Unit)
 
 private const val DAY_MILLIS = 24L * 60 * 60 * 1000
+private const val KEY_CLEANUP_SNOOZE = "cleanup_snoozed_until"
 
 class TaskListViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -144,7 +169,59 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    private val once = container.context.getSharedPreferences("taskmind_once", android.content.Context.MODE_PRIVATE)
+
+    private val _cleanup = MutableStateFlow(CleanupState())
+    val cleanup: StateFlow<CleanupState> = _cleanup.asStateFlow()
+
+    private val filer = MatterFiler(container)
+
+    /** Asks the model to suggest a matter for every open task without one. */
+    fun suggestMatters() {
+        if (_cleanup.value.busy) return
+        val unfiled = state.value.unfiled
+        if (unfiled.isEmpty()) return
+        _cleanup.value = CleanupState(busy = true)
+        viewModelScope.launch {
+            _cleanup.value = when (val r = runCatching { filer.suggest(unfiled) }.getOrElse { MatterFiler.Result.Failed(it.message ?: "$it") }) {
+                is MatterFiler.Result.Suggested -> CleanupState(suggestions = r.assignments)
+                is MatterFiler.Result.Failed -> CleanupState(error = r.message)
+            }
+        }
+    }
+
+    fun applyMatters(accepted: List<Cleanup.Assignment>) {
+        viewModelScope.launch {
+            val filed = filer.apply(accepted)
+            _cleanup.value = CleanupState(message = "Filed $filed task${if (filed == 1) "" else "s"} under matters.")
+        }
+    }
+
+    /** Archives stale tasks: off the list, still under Done, reopenable. */
+    fun dropStale(ids: List<String>) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            container.taskRepository.bulkSetStatus(ids, TaskStatus.ARCHIVED)
+            _cleanup.value = _cleanup.value.copy(message = "Dropped ${ids.size}. They are under Done if you need one back.")
+            _undo.value = UndoAction("Dropped ${ids.size} stale task${if (ids.size == 1) "" else "s"}") {
+                container.taskRepository.bulkSetStatus(ids, TaskStatus.ACTIVE)
+            }
+        }
+    }
+
+    fun resetCleanup() {
+        _cleanup.value = CleanupState()
+    }
+
+    /** Hides the tidy-up banner for a week. */
+    fun snoozeCleanup() {
+        val until = System.currentTimeMillis() + 7L * DAY_MILLIS
+        runCatching { once.edit().putLong(KEY_CLEANUP_SNOOZE, until).apply() }
+        filters.update { it.copy(cleanupSnoozedUntil = until) }
+    }
+
     init {
+        filters.update { it.copy(cleanupSnoozedUntil = runCatching { once.getLong(KEY_CLEANUP_SNOOZE, 0L) }.getOrDefault(0L)) }
         viewModelScope.launch {
             container.learningStore.rules.collect { rules ->
                 filters.update { it.copy(approvedKeyPeople = Rules.keyPeople(rules)) }
@@ -253,6 +330,11 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             reasons = reasons,
             laterCount = if (current.view == TaskView.FOCUS) (filtered.size - visible.size).coerceAtLeast(0) else 0,
             people = people,
+            unfiled = TaskRanking.rankable(tasks).filter { it.projectId == null && it.sourceType != SourceType.MANUAL },
+            stale = TaskRanking.rankable(tasks).let { open ->
+                val byId = open.associateBy { it.id }
+                Cleanup.stale(open.map(TaskRanking::input), now).mapNotNull { byId[it.id] }
+            },
             bundles = bundles,
             unbundled = loose,
             matters = matters,

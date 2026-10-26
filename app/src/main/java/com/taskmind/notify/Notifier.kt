@@ -316,10 +316,13 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
     }
 
     /** Sunday's look back at the week. */
-    fun postWeekly(summary: WeeklyReview.Summary, ruleIdeas: Int = 0) {
+    fun postWeekly(summary: WeeklyReview.Summary, ruleIdeas: Int = 0, stale: Int = 0) {
         if (!canPost()) return
         val style = NotificationCompat.InboxStyle().setBigContentTitle(summary.headline)
         summary.lines().forEach { style.addLine(it) }
+        if (stale > 0) {
+            style.addLine("$stale task${if (stale == 1) "" else "s"} untouched for 3 weeks - tidy up from the task list")
+        }
         if (ruleIdeas > 0) {
             style.addLine("$ruleIdeas rule idea${if (ruleIdeas == 1) "" else "s"} from what you kept and dropped - Settings, You")
         }

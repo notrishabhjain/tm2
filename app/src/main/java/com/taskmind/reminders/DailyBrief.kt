@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.taskmind.core.Brief
+import com.taskmind.core.Cleanup
 import com.taskmind.core.DateResolver
 import com.taskmind.core.FocusLog
 import com.taskmind.core.Rules
@@ -75,7 +76,11 @@ object DailyBrief {
         val now = System.currentTimeMillis()
         val summary = WeeklyReview.summarise(weeklyItems(container), now) ?: return
         val ideas = runCatching { container.learningStore.ideas(now).size }.getOrDefault(0)
-        container.notifier.postWeekly(summary, ideas)
+        val stale = runCatching {
+            val open = TaskRanking.rankable(container.taskRepository.observeTasks().first())
+            Cleanup.stale(open.map(TaskRanking::input), now).size
+        }.getOrDefault(0)
+        container.notifier.postWeekly(summary, ideas, stale)
     }
 
     /** The task list as the weekly review reads it. Also used by the Done view. */
