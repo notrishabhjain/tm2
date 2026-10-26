@@ -76,6 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskmind.core.Priority
 import com.taskmind.core.WeeklyReview
+import com.taskmind.core.Cleanup
 import com.taskmind.core.FollowUp
 import com.taskmind.core.Standing
 import com.taskmind.core.TaskStatus
@@ -137,6 +138,8 @@ fun TaskListScreen(
         }
     }
     var showFilters by remember { mutableStateOf(false) }
+    var showCleanup by remember { mutableStateOf(false) }
+    val cleanup by viewModel.cleanup.collectAsStateWithLifecycle()
 
     // Spec 16: undo for every destructive action, via snackbar.
     LaunchedEffect(undo) {
@@ -238,6 +241,21 @@ fun TaskListScreen(
                     body = "Ten lines on your role, key people and what to ignore - the biggest single " +
                         "improvement to what becomes a task.",
                     onClick = onOpenNameSettings,
+                )
+            } else if (
+                (state.view == TaskView.FOCUS || state.view == TaskView.AGENDA) &&
+                state.cleanupWorthOffering(System.currentTimeMillis())
+            ) {
+                NameBanner(
+                    title = "Tidy up your list",
+                    body = listOfNotNull(
+                        state.unfiled.size.takeIf { it > 0 }?.let { "$it with no matter" },
+                        state.stale.size.takeIf { it > 0 }?.let { "$it untouched for 3 weeks" },
+                    ).joinToString(", ").replaceFirstChar { it.uppercase() } + ". Nothing changes until you say so.",
+                    onClick = {
+                        viewModel.resetCleanup()
+                        showCleanup = true
+                    },
                 )
             }
 
@@ -413,6 +431,21 @@ fun TaskListScreen(
                 }
             }
         }
+    }
+
+    if (showCleanup) {
+        CleanupSheet(
+            state = state,
+            cleanup = cleanup,
+            onDismiss = { showCleanup = false },
+            onSuggest = viewModel::suggestMatters,
+            onApply = viewModel::applyMatters,
+            onDrop = viewModel::dropStale,
+            onSnooze = {
+                viewModel.snoozeCleanup()
+                showCleanup = false
+            },
+        )
     }
 
     if (showFilters) {
@@ -960,4 +993,136 @@ private fun ViewChips(state: TaskListUiState, onSelect: (TaskView) -> Unit) {
 private fun looksLikeQuestion(query: String): Boolean {
     val q = query.trim()
     return q.endsWith("?") || q.split(Regex("\\s+")).size >= 3
+}
+
+/**
+ * The tidy-up: file open tasks under matters, and drop the stale ones.
+ *
+ * Every change is shown before it is made and each row can be unticked.
+ * Dropping archives, so a dropped task is still under Done.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CleanupSheet(
+    state: TaskListUiState,
+    cleanup: CleanupState,
+    onDismiss: () -> Unit,
+    onSuggest: () -> Unit,
+    onApply: (List<Cleanup.Assignment>) -> Unit,
+    onDrop: (List<String>) -> Unit,
+    onSnooze: () -> Unit,
+) {
+    // Ticked by default: the point is to clear the list, and unticking the
+    // odd exception is less work than ticking forty rows.
+    var unticked by remember(cleanup.suggestions) { mutableStateOf(emptySet<String>()) }
+    var keepStale by remember(state.stale.size) { mutableStateOf(emptySet<String>()) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.edge)
+                .padding(bottom = Space.section),
+        ) {
+            Text("Tidy up", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            cleanup.message?.let {
+                Spacer(Modifier.height(Space.snug))
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
+            cleanup.error?.let {
+                Spacer(Modifier.height(Space.snug))
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            }
+
+            // -- matters -------------------------------------------------
+            SheetLabel("File into matters")
+            val suggestions = cleanup.suggestions
+            when {
+                cleanup.busy -> Text("Sorting ${state.unfiled.size} tasks…", style = MaterialTheme.typography.bodyMedium)
+                suggestions == null -> {
+                    Text(
+                        if (state.unfiled.isEmpty()) {
+                            "Every open task is already under a matter, or typed by you."
+                        } else {
+                            "${state.unfiled.size} open tasks have no matter. TaskMind can suggest one for each " +
+                                "- one AI call, titles and who they are from only. You see every suggestion first."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (state.unfiled.isNotEmpty()) {
+                        TextButton(onClick = onSuggest) { Text("Suggest matters") }
+                    }
+                }
+                suggestions.isEmpty() -> Text(
+                    "Nothing to group - these look like one-off tasks, which is fine.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                else -> {
+                    suggestions.groupBy { it.matter }.forEach { (matter, rows) ->
+                        Text(
+                            matter + if (rows.first().matterId == null) "  (new)" else "",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(top = Space.snug),
+                        )
+                        rows.forEach { a ->
+                            CheckRow(
+                                text = a.title,
+                                checked = a.taskId !in unticked,
+                                onChecked = { on -> unticked = if (on) unticked - a.taskId else unticked + a.taskId },
+                            )
+                        }
+                    }
+                    val accepted = suggestions.filter { it.taskId !in unticked }
+                    TextButton(onClick = { onApply(accepted) }, enabled = accepted.isNotEmpty()) {
+                        Text("File ${accepted.size}")
+                    }
+                }
+            }
+
+            // -- stale ---------------------------------------------------
+            SheetLabel("Untouched for 3 weeks")
+            if (state.stale.isEmpty()) {
+                Text(
+                    "Nothing has gone stale.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    "Not urgent, not due soon, and nobody has chased them. Dropped tasks stay under Done.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                state.stale.forEach { t ->
+                    CheckRow(
+                        text = t.title,
+                        checked = t.id !in keepStale,
+                        onChecked = { on -> keepStale = if (on) keepStale - t.id else keepStale + t.id },
+                    )
+                }
+                val drop = state.stale.map { it.id }.filter { it !in keepStale }
+                TextButton(onClick = { onDrop(drop) }, enabled = drop.isNotEmpty()) { Text("Drop ${drop.size}") }
+            }
+
+            Spacer(Modifier.height(Space.step))
+            TextButton(onClick = onSnooze) { Text("Not now - ask again next week") }
+        }
+    }
+}
+
+@Composable
+private fun CheckRow(text: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = Touch.min)
+            .clickable { onChecked(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onChecked)
+        Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
 }
