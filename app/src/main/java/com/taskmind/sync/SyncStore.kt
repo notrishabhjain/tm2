@@ -69,6 +69,9 @@ class SyncStore(private val context: Context) {
          */
         val pushSchema = intPreferencesKey("push_schema")
 
+        /** Whether the server's `matters` table has been seen (schema_v4.sql). */
+        val mattersSeen = booleanPreferencesKey("matters_seen")
+
         val lastAttemptAt = longPreferencesKey("last_attempt_at")
         val lastSuccessAt = longPreferencesKey("last_success_at")
         val lastResult = stringPreferencesKey("last_result")
@@ -142,6 +145,21 @@ class SyncStore(private val context: Context) {
             it[K.pushSchema] = PUSH_SCHEMA
         }
         return true
+    }
+
+    /**
+     * Called each run with whether the server has the `matters` table. The
+     * first time it does, every task is re-sent once so older tasks get their
+     * matter too. Returns true on that first time.
+     */
+    suspend fun noteMattersSchema(present: Boolean): Boolean {
+        val seen = context.syncDataStore.data.first()[K.mattersSeen] ?: false
+        if (present == seen) return false
+        context.syncDataStore.edit {
+            it[K.mattersSeen] = present
+            if (present) it[K.pushedThrough] = 0L
+        }
+        return present
     }
 
     /** Advanced only after every pulled row has been applied. */

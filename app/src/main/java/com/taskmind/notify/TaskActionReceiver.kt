@@ -126,7 +126,7 @@ class TaskActionReceiver : BroadcastReceiver() {
 
             ACTION_NOT_MINE -> {
                 val task = taskId?.let { repo.byId(it) } ?: return
-                repo.delete(task.id)
+                repo.notMine(task.id)
                 container.logger.write(Stage.FUNNEL, LogLevel.INFO, "marked not mine from a notification", task.title)
                 val group = AutoTagger.parseLabel(task.sourceType, task.sourceLabel).group
                 if (group.isNullOrBlank()) {

@@ -2,7 +2,10 @@ package com.taskmind.sync
 
 import com.taskmind.core.LogLevel
 import com.taskmind.core.Stage
+import com.taskmind.core.Standing
+import com.taskmind.core.TaskStatus
 import com.taskmind.data.db.entity.ReviewItemEntity
+import com.taskmind.data.repo.TaskRanking
 import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.di.AppContainer
 import com.taskmind.tagging.AutoTagger
@@ -111,14 +114,54 @@ class SyncEngine(
             is SupabaseApi.Outcome.Failed -> return@withContext fail(out.message, out.retryable)
         }
 
-        // ---- tasks --------------------------------------------------------
+        // ---- matters ------------------------------------------------------
+        //
+        // Only once schema_v4.sql has made a place for them. Before that the
+        // probe fails, nothing about matters is sent, and the rest of the
+        // sync carries on exactly as it did - so sync never breaks for want
+        // of a script.
 
         val allTasks = container.database.taskDao().allForExport()
-        val changed = allTasks.filter { it.updatedAt > state.pushedThrough }
+        // A missing table is a 404; anything else (no network, an expired
+        // token) is a failed run like any other, not a sign the table went.
+        val hasMatters = when (val probe = api.select(state.projectUrl, secrets.anonKey, token, "matters", "id=not.is.null", 1)) {
+            is SupabaseApi.Outcome.Ok -> true
+            is SupabaseApi.Outcome.Failed ->
+                if (probe.message.startsWith("HTTP 404")) false else return@withContext fail(probe.message, probe.retryable)
+        }
+        val resend = store.noteMattersSchema(hasMatters)
+        if (resend) {
+            container.logger.write(Stage.SYSTEM, LogLevel.INFO, "Web sync: matters found on the server, re-sending tasks once")
+        }
+        if (hasMatters) {
+            val projects = container.database.projectDao().all()
+            val now = System.currentTimeMillis()
+            val rows = projects.map { p ->
+                val open = allTasks.filter { it.projectId == p.id && it.status == TaskStatus.ACTIVE && it.parentTaskId == null }
+                JsonObject(
+                    mapOf(
+                        "id" to JsonPrimitive(p.id),
+                        "name" to JsonPrimitive(p.name),
+                        "summary" to str(Standing.matter(open.map(TaskRanking::standing), now)),
+                        "open_count" to JsonPrimitive(open.size),
+                        "updated_at" to JsonPrimitive(isoString(now)),
+                    ),
+                )
+            }
+            val matterPush = api.upsert(state.projectUrl, secrets.anonKey, token, "matters", JsonArray(rows))
+            if (matterPush is SupabaseApi.Outcome.Failed) return@withContext fail(matterPush.message, matterPush.retryable)
+            val matterPrune = api.deleteNotIn(state.projectUrl, secrets.anonKey, token, "matters", projects.map { it.id })
+            if (matterPrune is SupabaseApi.Outcome.Failed) return@withContext fail(matterPrune.message, matterPrune.retryable)
+        }
+
+        // ---- tasks --------------------------------------------------------
+
+        val pushedThrough = if (resend) 0L else state.pushedThrough
+        val changed = allTasks.filter { it.updatedAt > pushedThrough }
 
         val taskPush = api.upsert(
             state.projectUrl, secrets.anonKey, token, "tasks",
-            JsonArray(changed.map(::taskJson)),
+            JsonArray(changed.map { taskJson(it, hasMatters) }),
         )
         if (taskPush is SupabaseApi.Outcome.Failed) return@withContext fail(taskPush.message, taskPush.retryable)
 
@@ -152,7 +195,7 @@ class SyncEngine(
         // The mark moves to the newest row actually sent, not to "now". If a
         // task is written while this run is in flight, its updatedAt is above
         // the mark and the next run picks it up.
-        val mark = changed.maxOfOrNull { it.updatedAt } ?: state.pushedThrough
+        val mark = changed.maxOfOrNull { it.updatedAt } ?: pushedThrough
         val summary = buildList {
             if (pulled.created > 0) add("added ${pulled.created} from the browser")
             if (pulled.decided > 0) add("applied ${pulled.decided} review decision(s)")
@@ -201,8 +244,9 @@ class SyncEngine(
 
     // -- mapping ------------------------------------------------------------
 
-    private fun taskJson(task: TaskEntity): JsonObject = JsonObject(
-        mapOf(
+    /** [withMatter] only once the server has the column (schema_v4.sql); before that it would reject the row. */
+    private fun taskJson(task: TaskEntity, withMatter: Boolean): JsonObject = JsonObject(
+        (if (withMatter) mapOf("matter_id" to str(task.projectId)) else emptyMap()) + mapOf(
             "id" to JsonPrimitive(task.id),
             "title" to JsonPrimitive(task.title),
             "notes" to str(task.notes),

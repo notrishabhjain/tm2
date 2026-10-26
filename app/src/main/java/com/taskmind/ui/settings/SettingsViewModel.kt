@@ -10,6 +10,7 @@ import com.taskmind.capture.AudioChunker
 import com.taskmind.core.AsrProvider
 import com.taskmind.core.CaptureState
 import com.taskmind.core.LogLevel
+import com.taskmind.core.Rules
 import com.taskmind.core.Stage
 import com.taskmind.data.db.entity.SeenPackageEntity
 import com.taskmind.data.settings.Settings
@@ -40,6 +41,45 @@ data class SettingsUiState(
 )
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
+
+    // -- rules --------------------------------------------------------------
+
+    /** The rules the user decided on, approved and rejected. */
+    val rules: StateFlow<List<Rules.Rule>> = container.learningStore.rules
+
+    private val _ideas = MutableStateFlow<List<Rules.Idea>>(emptyList())
+    /** Rule ideas from recent feedback, not yet decided. */
+    val ideas: StateFlow<List<Rules.Idea>> = _ideas.asStateFlow()
+
+    fun refreshIdeas() {
+        viewModelScope.launch { _ideas.value = container.learningStore.ideas() }
+    }
+
+    fun decideIdea(idea: Rules.Idea, approve: Boolean) {
+        viewModelScope.launch {
+            container.learningStore.decide(
+                Rules.Rule(idea.kind, idea.subject, if (approve) Rules.State.APPROVED else Rules.State.REJECTED),
+            )
+            container.logger.write(Stage.SYSTEM, LogLevel.INFO, if (approve) "rule approved" else "rule idea rejected", idea.id)
+            _ideas.value = container.learningStore.ideas()
+        }
+    }
+
+    fun addRule(text: String) {
+        val clean = text.trim().take(Rules.MAX_CUSTOM)
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            container.learningStore.decide(Rules.Rule(Rules.Kind.CUSTOM, clean, Rules.State.APPROVED))
+        }
+    }
+
+    /** Forgets a decision: an approved rule stops applying, a rejected idea may come back. */
+    fun removeRule(id: String) {
+        viewModelScope.launch {
+            container.learningStore.remove(id)
+            _ideas.value = container.learningStore.ideas()
+        }
+    }
 
     val settings: StateFlow<Settings> = container.settingsRepository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Settings.DEFAULT)

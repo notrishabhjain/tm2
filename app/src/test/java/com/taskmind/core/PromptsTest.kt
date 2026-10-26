@@ -245,6 +245,23 @@ class PromptsTest {
     }
 
     @Test
+    fun `approved rules are explained and sent ahead of the message`() {
+        assertTrue(notification.contains("Rules the user approved:"))
+        assertTrue(Prompts.DEFAULT_CALL_SYSTEM.contains("Rules the user approved:"))
+        val rules = Rules.promptBlock(listOf(Rules.Rule(Rules.Kind.IGNORE_GROUP, "Ops Alerts", Rules.State.APPROVED)))
+        val user = Prompts.notificationUser(
+            occurredAtMillis = 1_751_875_200_000L,
+            appLabel = "WhatsApp",
+            senderKey = "Bot",
+            groupName = "Ops Alerts",
+            messageText = "stock low",
+            rules = rules,
+        )
+        assertTrue(user.startsWith("Rules the user approved:"))
+        assertTrue(user.indexOf("Ops Alerts\" are not") < user.indexOf("stock low"))
+    }
+
+    @Test
     fun `the verifier omits the names line when there are none`() {
         val user = Prompts.verifyUser("source text", listOf("title=Do a thing"))
         assertTrue(user, !user.contains("known as"))

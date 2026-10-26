@@ -1,5 +1,6 @@
 package com.taskmind.data.repo
 
+import com.taskmind.core.Feedback
 import com.taskmind.core.LogLevel
 import com.taskmind.core.Priority
 import com.taskmind.core.Recurrence
@@ -20,6 +21,7 @@ import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.intake.IntakeFunnel
 import com.taskmind.intake.IntakeResult
 import com.taskmind.intake.TaskCandidate
+import com.taskmind.tagging.AutoTagger
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
@@ -37,7 +39,36 @@ class TaskRepository(
     private val callRecordDao: CallRecordDao,
     private val funnel: IntakeFunnel,
     private val logger: ActivityLogger,
+    /** Where kept and dropped captures are recorded; null records nothing. */
+    private val learning: LearningStore? = null,
 ) {
+
+    // ------------------------------------------------------------ feedback
+
+    /**
+     * Notes what the user did with a captured task or a digest item, and who
+     * it came from. Typed tasks teach nothing about senders and are skipped.
+     * Never allowed to break the action it records.
+     */
+    private suspend fun learn(kind: Feedback.Kind?, sourceType: SourceType, sourceLabel: String?) {
+        val store = learning ?: return
+        if (kind == null || sourceType == SourceType.MANUAL) return
+        runCatching {
+            val parsed = AutoTagger.parseLabel(sourceType, sourceLabel)
+            store.record(Feedback.Event(System.currentTimeMillis(), kind, parsed.person, parsed.group))
+        }
+    }
+
+    private suspend fun learnTask(id: String, kind: (TaskEntity) -> Feedback.Kind?) {
+        val task = taskDao.byId(id) ?: return
+        learn(kind(task), task.sourceType, task.sourceLabel)
+    }
+
+    /** The task was somebody else's: deleted, and remembered as the strongest "no". */
+    suspend fun notMine(id: String) {
+        learnTask(id) { Feedback.Kind.NOT_MINE }
+        taskDao.setStatus(id, TaskStatus.DELETED, null, System.currentTimeMillis())
+    }
 
     // ----------------------------------------------------------- observation
 
@@ -140,6 +171,7 @@ class TaskRepository(
         val now = System.currentTimeMillis()
         val task = taskDao.byId(id) ?: return null
         taskDao.setStatus(id, TaskStatus.COMPLETED, now, now)
+        if (task.status == TaskStatus.ACTIVE) learn(Feedback.Kind.COMPLETED, task.sourceType, task.sourceLabel)
 
         val rule = task.recurrenceRule
         if (!Recurrence.isValid(rule)) return null
@@ -197,13 +229,25 @@ class TaskRepository(
 
     /** Soft delete: recoverable until the user empties it (spec 16). */
     suspend fun delete(id: String) {
-        taskDao.setStatus(id, TaskStatus.DELETED, null, System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        learnTask(id) { if (it.status == TaskStatus.ACTIVE) Feedback.forDelete(it.createdAt, now) else null }
+        taskDao.setStatus(id, TaskStatus.DELETED, null, now)
     }
 
     suspend fun restore(id: String) = reopen(id)
 
     suspend fun bulkSetStatus(ids: List<String>, status: TaskStatus) {
         val now = System.currentTimeMillis()
+        ids.forEach { id ->
+            learnTask(id) {
+                when {
+                    it.status != TaskStatus.ACTIVE -> null
+                    status == TaskStatus.COMPLETED -> Feedback.Kind.COMPLETED
+                    status == TaskStatus.DELETED -> Feedback.forDelete(it.createdAt, now)
+                    else -> null
+                }
+            }
+        }
         taskDao.setStatusBulk(ids, status, if (status == TaskStatus.COMPLETED) now else null, now)
     }
 
@@ -287,10 +331,14 @@ class TaskRepository(
             dueAt?.let { taskDao.setDueAt(result.taskId, it, System.currentTimeMillis()) }
         }
         reviewItemDao.setState(id, ReviewState.ACCEPTED)
+        learn(Feedback.Kind.KEPT, item.sourceType, item.sourceLabel)
         return result
     }
 
     suspend fun dismissReviewItem(id: String) {
+        reviewItemDao.byId(id)?.takeIf { it.state == ReviewState.PENDING }?.let {
+            learn(Feedback.Kind.DISMISSED, it.sourceType, it.sourceLabel)
+        }
         reviewItemDao.setState(id, ReviewState.DISMISSED)
         logger.write(Stage.FUNNEL, LogLevel.INFO, "review item dismissed", id)
     }

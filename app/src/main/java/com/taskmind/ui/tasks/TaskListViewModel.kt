@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.taskmind.core.DateResolver
 import com.taskmind.core.Priority
 import com.taskmind.core.SmartReminder
+import com.taskmind.core.Rules
 import com.taskmind.core.Standing
 import com.taskmind.data.repo.TaskRanking
 import com.taskmind.core.WeeklyReview
@@ -84,6 +85,8 @@ data class TaskListUiState(
     val people: List<Standing.Person> = emptyList(),
     /** The user's About me, for picking out key people. */
     val aboutMe: String = "",
+    /** People the user approved as key in Rules. */
+    val approvedKeyPeople: Set<String> = emptySet(),
 ) {
     val selectionMode: Boolean get() = selection.isNotEmpty()
 }
@@ -138,6 +141,14 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
                 .collect { (names, about) ->
                     filters.update { it.copy(ownNamesSet = names, aboutMeSet = about.isNotBlank(), aboutMe = about) }
                 }
+        }
+    }
+
+    init {
+        viewModelScope.launch {
+            container.learningStore.rules.collect { rules ->
+                filters.update { it.copy(approvedKeyPeople = Rules.keyPeople(rules)) }
+            }
         }
     }
 
@@ -203,7 +214,7 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
         // Focus ranks what the filters left and keeps the top few; the rest
         // is one tap away under Agenda. Grouping does not apply: the order
         // is the point.
-        val focus = TaskRanking.focus(filtered, current.aboutMe, now)
+        val focus = TaskRanking.focus(filtered, current.aboutMe, now, approvedKeyPeople = current.approvedKeyPeople)
         val visible = when (current.view) {
             TaskView.FOCUS -> focus.map { it.first }
             else -> filtered
@@ -248,7 +259,7 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             unmattered = unmattered,
             counts = TaskFilters.counts(tasks, now) +
                 mapOf(
-                    TaskView.FOCUS to TaskRanking.focus(tasks, current.aboutMe, now).size,
+                    TaskView.FOCUS to TaskRanking.focus(tasks, current.aboutMe, now, approvedKeyPeople = current.approvedKeyPeople).size,
                     TaskView.PEOPLE to 0,
                 ),
             tagCloud = TaskFilters.tagCloud(scope, liveTag),
