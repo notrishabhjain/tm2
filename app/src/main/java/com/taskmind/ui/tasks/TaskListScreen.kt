@@ -13,6 +13,7 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -76,6 +77,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskmind.core.Priority
 import com.taskmind.core.WeeklyReview
 import com.taskmind.core.FollowUp
+import com.taskmind.core.Standing
 import com.taskmind.core.TaskStatus
 import com.taskmind.data.db.entity.TaskEntity
 import com.taskmind.ui.components.DateFormats
@@ -275,6 +277,7 @@ fun TaskListScreen(
                             ) {
                                 TaskRow(
                                     task = task,
+                                    reason = state.reasons[task.id],
                                     selected = task.id in state.selection,
                                     selectionMode = state.selectionMode,
                                     overdue = TaskFilters.sectionFor(task, System.currentTimeMillis()) ==
@@ -318,6 +321,32 @@ fun TaskListScreen(
                     }
 
                     when {
+                        // Focus is ranked, and the rank is the point, so no
+                        // grouping applies. The rest is a tap away.
+                        state.view == TaskView.FOCUS -> {
+                            taskRows(state.tasks)
+                            if (state.laterCount > 0) {
+                                item(key = "focus-later") {
+                                    TextButton(
+                                        onClick = { viewModel.setView(TaskView.AGENDA) },
+                                        modifier = Modifier.padding(horizontal = Space.step),
+                                    ) { Text("${state.laterCount} more for later - see Agenda") }
+                                }
+                            }
+                        }
+
+                        state.view == TaskView.PEOPLE -> {
+                            items(state.people, key = { "person-${it.name.lowercase()}" }) { person ->
+                                PersonRow(
+                                    person = person,
+                                    onClick = {
+                                        viewModel.setTag(person.name)
+                                        viewModel.setView(TaskView.ALL)
+                                    },
+                                )
+                            }
+                        }
+
                         // Bundling wins over the agenda when it is on: the two
                         // answer different questions and stacking both would
                         // put a task under two headings at once.
@@ -351,7 +380,17 @@ fun TaskListScreen(
                         state.group == GroupMode.MATTER && state.matters.isNotEmpty() -> {
                             for (matter in state.matters) {
                                 item(key = "matter-${matter.id}") {
-                                    SectionHeading(label = matter.name, count = matter.tasks.size, urgent = false)
+                                    Column {
+                                        SectionHeading(label = matter.name, count = matter.tasks.size, urgent = false)
+                                        matter.summary?.let {
+                                            Text(
+                                                it,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(horizontal = Space.edge).padding(bottom = Space.tight),
+                                            )
+                                        }
+                                    }
                                 }
                                 taskRows(matter.tasks)
                             }
@@ -411,6 +450,8 @@ fun TaskListScreen(
 @Composable
 private fun TaskRow(
     task: TaskEntity,
+    /** Why the task is in Focus; null elsewhere. */
+    reason: String? = null,
     selected: Boolean,
     selectionMode: Boolean,
     overdue: Boolean,
@@ -473,6 +514,13 @@ private fun TaskRow(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (reason != null && !done) {
+                    Text(
+                        reason,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
 
                 // Three chips rather than one truncated "Sharma Ji in Project
                 // Alpha - WhatsApp". The same information, but each part is
@@ -658,6 +706,38 @@ private fun priorityColor(priority: Priority, overdue: Boolean): Color = when {
     priority == Priority.HIGH -> MaterialTheme.colorScheme.error.copy(alpha = 0.65f)
     priority == Priority.MEDIUM -> MaterialTheme.colorScheme.primary
     else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+}
+
+/** One person in the People view: what you owe them, what they owe you. */
+@Composable
+private fun PersonRow(person: Standing.Person, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(Radius.row),
+        color = Color.Transparent,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Space.snug)
+            .clickable(onClick = onClick),
+    ) {
+        Column(
+            Modifier
+                .heightIn(min = Touch.min)
+                .padding(horizontal = Space.step, vertical = Space.snug),
+        ) {
+            Text(person.name, style = MaterialTheme.typography.bodyLarge)
+            val owed = listOfNotNull(
+                person.youOwe.takeIf { it > 0 }?.let { "You owe $it" },
+                person.theyOwe.takeIf { it > 0 }?.let { "they owe you $it" },
+            ).joinToString(", ").replaceFirstChar { it.uppercase() }
+            Text(
+                listOfNotNull(owed, person.next).joinToString(" - "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 @Composable

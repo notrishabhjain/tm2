@@ -9,6 +9,13 @@ import com.taskmind.tagging.AutoTagger
 
 /** Spec 16 - the views. Every one of them has an empty state. */
 enum class TaskView(val label: String, val emptyTitle: String, val emptyBody: String) {
+    /** The few things worth doing now, ranked. The default. */
+    FOCUS(
+        "Focus",
+        "Nothing pressing",
+        "The few tasks worth doing now appear here, best first: deadlines, people who chased you, " +
+            "and the people you named in About you. Everything else is under Agenda.",
+    ),
     AGENDA(
         "Agenda",
         "Nothing on",
@@ -41,6 +48,13 @@ enum class TaskView(val label: String, val emptyTitle: String, val emptyBody: St
         "Done",
         "Nothing done yet",
         "Tasks you tick off appear here, newest first.",
+    ),
+
+    /** Who you owe, and who owes you. Rows are people, not tasks. */
+    PEOPLE(
+        "People",
+        "Nobody yet",
+        "Everyone with something open between you appears here: what you owe them and what they owe you.",
     ),
 }
 
@@ -79,7 +93,7 @@ object TaskFilters {
             when (view) {
                 // Everything active with a date, plus the undated, sectioned
                 // by AgendaSection below rather than filtered out here.
-                TaskView.AGENDA -> task.status == TaskStatus.ACTIVE
+                TaskView.FOCUS, TaskView.AGENDA, TaskView.PEOPLE -> task.status == TaskStatus.ACTIVE
                 TaskView.ALL -> task.status == TaskStatus.ACTIVE
                 TaskView.WAITING -> task.status == TaskStatus.ACTIVE && WaitingOn.matches(task.title, task.tags)
                 TaskView.COMPLETED ->

@@ -138,6 +138,13 @@ fun StatusScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Morning picks done the same day: " +
+                        (state.focusDone?.let { "$it%, last two weeks" } ?: "not enough mornings yet"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             SectionCard(title = "Permissions", subtitle = "Re-checked every time you open this screen.") {
