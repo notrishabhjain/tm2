@@ -60,20 +60,22 @@ object Brief {
         maybes: Int = 0,
         /** The day's top things, best first. The morning leads with up to [PICKS]. */
         picks: List<Pick> = emptyList(),
+        /** Captured tasks waiting in the Inbox for a decision. */
+        inbox: Int = 0,
     ): Message? =
         when (kind) {
-            Kind.MORNING -> morning(active, now, meetings, picks.take(PICKS))
+            Kind.MORNING -> morning(active, now, meetings, picks.take(PICKS), inbox)
             Kind.EVENING -> evening(active, now, maybes)
         }
 
-    private fun morning(active: List<Item>, now: Long, meetings: List<Meeting>, picks: List<Pick>): Message? {
+    private fun morning(active: List<Item>, now: Long, meetings: List<Meeting>, picks: List<Pick>, inbox: Int): Message? {
         val startOfToday = DateResolver.startOfDay(now)
         val endOfToday = DateResolver.endOfDay(now)
         val overdue = active.filter { it.dueAt != null && it.dueAt < startOfToday }
         val today = active.filter { it.dueAt != null && it.dueAt in startOfToday..endOfToday }
             .sortedBy { it.dueAt }
         val waiting = active.count { it.waitingOn }
-        if (picks.isEmpty() && overdue.isEmpty() && today.isEmpty() && waiting == 0 && meetings.isEmpty()) return null
+        if (picks.isEmpty() && overdue.isEmpty() && today.isEmpty() && waiting == 0 && meetings.isEmpty() && inbox == 0) return null
 
         val title = listOfNotNull(
             picks.size.takeIf { it > 0 }?.let { if (it == 1) "your 1 thing today" else "your $it things today" },
@@ -81,6 +83,7 @@ object Brief {
             today.size.takeIf { it > 0 }?.let { "$it due today" },
             overdue.size.takeIf { it > 0 }?.let { "$it overdue" },
             waiting.takeIf { it > 0 }?.let { "waiting on $it" },
+            inbox.takeIf { it > 0 }?.let { "$it new in Inbox" },
         ).joinToString(", ").replaceFirstChar { it.uppercase() }
 
         // Meetings first: they are fixed in time, so the day is planned
@@ -97,7 +100,8 @@ object Brief {
             pickLines + meetingLines +
                 overdue.filter { it.title !in picked }.sortedBy { it.dueAt }.map { "Late: ${it.title}" } +
                 today.filter { it.title !in picked }.map { line(it) }
-            ).take(MAX_LINES + 2)
+            ).take(MAX_LINES + 2) +
+            listOfNotNull(inbox.takeIf { it > 0 }?.let { "Inbox: $it new - send each to Today or Later" })
         return Message(title, lines, slipped = 0)
     }
 

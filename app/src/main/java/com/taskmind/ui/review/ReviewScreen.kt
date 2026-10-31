@@ -53,6 +53,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskmind.data.db.entity.ReviewItemEntity
+import com.taskmind.data.db.entity.TaskEntity
+import com.taskmind.data.repo.TaskRepository
+import com.taskmind.ui.braindump.BrainDumpSheet
+import androidx.compose.material.icons.filled.Mic
 import com.taskmind.ui.components.DateFormats
 import com.taskmind.ui.components.EmptyState
 import com.taskmind.ui.components.StatusPill
@@ -66,14 +70,29 @@ import com.taskmind.ui.components.StatusPill
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
+fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, onOpenTask: (String) -> Unit = {}) {
     val pending by viewModel.items.collectAsStateWithLifecycle()
     val dismissed by viewModel.dismissed.collectAsStateWithLifecycle()
+    val newTasks by viewModel.newTasks.collectAsStateWithLifecycle()
     val stale by viewModel.stale.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    var showingDismissed by remember { mutableStateOf(false) }
+    // Null until the user picks: then New when there is anything new, else Maybes.
+    var picked by remember { mutableStateOf<InboxTab?>(null) }
+    val tab = picked ?: if (newTasks.isNotEmpty() || pending.isEmpty()) InboxTab.NEW else InboxTab.MAYBES
+    val showingDismissed = tab == InboxTab.DROPPED
     val items = if (showingDismissed) dismissed else pending
+    var dumping by remember { mutableStateOf(false) }
+
+    if (dumping) {
+        BrainDumpSheet(
+            onDismiss = { dumping = false },
+            onAdded = { n ->
+                dumping = false
+                viewModel.say(if (n == 1) "Added 1 task" else "Added $n tasks")
+            },
+        )
+    }
 
     LaunchedEffect(message) {
         val text = message ?: return@LaunchedEffect
@@ -85,10 +104,16 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Digest") },
+                title = { Text("Inbox") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { dumping = true }) {
+                        Icon(Icons.Filled.Mic, contentDescription = null)
+                        Text(" Brain dump")
                     }
                 },
             )
@@ -106,17 +131,35 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 FilterChip(
-                    selected = !showingDismissed,
-                    onClick = { showingDismissed = false },
-                    label = { Text(if (pending.isEmpty()) "Waiting" else "Waiting (${pending.size})") },
+                    selected = tab == InboxTab.NEW,
+                    onClick = { picked = InboxTab.NEW },
+                    label = { Text(if (newTasks.isEmpty()) "New" else "New (${newTasks.size})") },
+                )
+                FilterChip(
+                    selected = tab == InboxTab.MAYBES,
+                    onClick = { picked = InboxTab.MAYBES },
+                    label = { Text(if (pending.isEmpty()) "Maybes" else "Maybes (${pending.size})") },
                 )
                 FilterChip(
                     selected = showingDismissed,
-                    onClick = { showingDismissed = true },
-                    label = { Text("Dismissed") },
+                    onClick = { picked = InboxTab.DROPPED },
+                    label = { Text("Dropped") },
                 )
-                if (!showingDismissed && pending.isNotEmpty()) {
-                    Spacer(Modifier.weight(1f))
+            }
+
+            if (tab == InboxTab.NEW) {
+                NewItems(
+                    tasks = newTasks,
+                    onTriage = viewModel::triage,
+                    onKeepAll = viewModel::keepAllForLater,
+                    onOpen = onOpenTask,
+                    onDump = { dumping = true },
+                )
+                return@Column
+            }
+
+            if (!showingDismissed && pending.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = viewModel::dropTheRest) { Text("Drop the rest") }
                 }
             }
@@ -161,6 +204,83 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
                         onDismiss = { viewModel.dismiss(item) },
                         onRestore = { viewModel.restore(item) },
                     )
+                }
+            }
+        }
+    }
+}
+
+private enum class InboxTab { NEW, MAYBES, DROPPED }
+
+/**
+ * Captured tasks waiting for a decision. Inbox-first: nothing captured reaches
+ * the list until it is sent to Today or kept for Later here.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NewItems(
+    tasks: List<TaskEntity>,
+    onTriage: (TaskEntity, TaskRepository.Triage) -> Unit,
+    onKeepAll: () -> Unit,
+    onOpen: (String) -> Unit,
+    onDump: () -> Unit,
+) {
+    if (tasks.isEmpty()) {
+        EmptyState(
+            title = "Nothing new",
+            body = "Tasks TaskMind captures from messages, calls and email land here first, for one " +
+                "decision each: today, later, or drop. Got something on your mind? Use Brain dump.",
+            icon = Icons.Outlined.Inbox,
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            FilledTonalButton(onClick = onDump) { Text("Brain dump") }
+        }
+        return
+    }
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (tasks.size > 1) {
+            item(key = "keep-all") {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onKeepAll) { Text("Keep all for later") }
+                }
+            }
+        }
+        items(tasks, key = { it.id }) { task ->
+            Card(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                onClick = { onOpen(task.id) },
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(task.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        listOfNotNull(
+                            task.sourceLabel ?: task.sourceType.name.lowercase(),
+                            task.dueAt?.let { "due ${DateFormats.due(it).replaceFirstChar { c -> c.lowercase() }}" },
+                            task.area,
+                        ).joinToString("  \u00b7  "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    task.evidence?.let { evidence ->
+                        Spacer(Modifier.height(8.dp))
+                        Text("\u201C$evidence\u201D", style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Button(onClick = { onTriage(task, TaskRepository.Triage.TODAY) }, modifier = Modifier.weight(1f)) { Text("Today") }
+                        OutlinedButton(onClick = { onTriage(task, TaskRepository.Triage.LATER) }, modifier = Modifier.weight(1f)) {
+                            Text("Later")
+                        }
+                        TextButton(onClick = { onTriage(task, TaskRepository.Triage.DROP) }) { Text("Drop") }
+                    }
                 }
             }
         }

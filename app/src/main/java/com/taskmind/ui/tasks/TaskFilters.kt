@@ -9,12 +9,15 @@ import com.taskmind.tagging.AutoTagger
 
 /** Spec 16 - the views. Every one of them has an empty state. */
 enum class TaskView(val label: String, val emptyTitle: String, val emptyBody: String) {
-    /** The few things worth doing now, ranked. The default. */
+    /**
+     * Today: what you chose to do today, and suggestions to choose from. The
+     * default. (Named FOCUS in code: it grew out of the Focus view.)
+     */
     FOCUS(
-        "Focus",
-        "Nothing pressing",
-        "The few tasks worth doing now appear here, best first: deadlines, people who chased you, " +
-            "and the people you named in About you. Everything else is under Agenda.",
+        "Today",
+        "Nothing planned yet",
+        "Pick today's few from the Inbox, or add one with the button below. Suggestions appear " +
+            "here when something is due or pressing. Everything else is under Agenda.",
     ),
     AGENDA(
         "Agenda",
@@ -75,6 +78,7 @@ enum class SortMode(val label: String) {
 enum class GroupMode(val label: String) {
     /** The default: work the model filed under a matter, then everything else as usual. */
     MATTER("By matter"),
+    AREA("By area"),
     NONE("Flat list"),
     RELATED("Group related"),
 }
@@ -89,7 +93,9 @@ object TaskFilters {
      * or a tag outlives the last task carrying it.
      */
     fun scope(tasks: List<TaskEntity>, view: TaskView, now: Long): List<TaskEntity> {
-        return tasks.filter { task ->
+        // Inbox-first: a captured task waits in the Inbox, not on any list,
+        // until the user sends it to Today or keeps it for Later.
+        return tasks.filter { task -> !(task.inbox && task.status == TaskStatus.ACTIVE) }.filter { task ->
             when (view) {
                 // Everything active with a date, plus the undated, sectioned
                 // by AgendaSection below rather than filtered out here.

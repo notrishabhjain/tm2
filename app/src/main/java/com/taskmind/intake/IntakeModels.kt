@@ -36,6 +36,12 @@ data class TaskCandidate(
     val parentTaskId: String? = null,
     /** Model reasoning, carried to the review inbox so the user can judge it. */
     val reasoning: String? = null,
+    /** The area to file it under (Work, Home...), or null. */
+    val area: String? = null,
+    /** Lands in the Inbox rather than straight on the list. */
+    val inbox: Boolean = false,
+    /** The day (IST day key) it is planned for, or null. */
+    val plannedFor: String? = null,
 )
 
 /** What the funnel decided to persist. Mapped to the Room entity by the sink. */
@@ -60,6 +66,9 @@ data class NewTask(
     val inferenceOrigin: String?,
     val rawCaptureId: String?,
     val createdAt: Long,
+    val area: String? = null,
+    val inbox: Boolean = false,
+    val plannedFor: String? = null,
 )
 
 /** A candidate the funnel was not confident enough to create outright. */
@@ -81,6 +90,7 @@ data class ReviewProposal(
     val inferenceOrigin: String?,
     val occurredAt: Long,
     val createdAt: Long,
+    val area: String? = null,
 )
 
 sealed interface IntakeResult {

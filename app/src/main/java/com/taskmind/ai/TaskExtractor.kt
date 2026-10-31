@@ -53,6 +53,7 @@ data class MessageInput(
     val context: String = "",
     /** The rules the user approved, rendered. */
     val rules: String = "",
+    val areas: List<String> = emptyList(),
 )
 
 data class TranscriptInput(
@@ -65,6 +66,7 @@ data class TranscriptInput(
     /** The rendered context: open tasks with this person, matters. */
     val context: String = "",
     val rules: String = "",
+    val areas: List<String> = emptyList(),
 )
 
 data class ExtractedTask(
@@ -79,6 +81,8 @@ data class ExtractedTask(
     val updatesRef: String? = null,
     /** "M1", a new matter name, or null. */
     val matterRef: String? = null,
+    /** The area as the model named it; checked against the user's list before use. */
+    val areaRef: String? = null,
 )
 
 /** An open task the source says is done, with the words that say so. */
@@ -146,6 +150,7 @@ class CloudTaskExtractor(
             aboutMe = input.aboutMe,
             context = input.context,
             rules = input.rules,
+            areas = input.areas,
         )
         val result = llm.complete(
             config = config,
@@ -191,6 +196,7 @@ class CloudTaskExtractor(
             confidence = obj.dbl("confidence"),
             updatesRef = obj.ref("updates"),
             matterRef = obj.ref("matter"),
+            areaRef = obj.ref("area"),
         )
         return AiResult.Ok(MessageExtraction(true, reasoning, task, completion.totalTokens))
     }
@@ -198,7 +204,9 @@ class CloudTaskExtractor(
     override suspend fun extractFromTranscript(input: TranscriptInput): AiResult<TranscriptExtraction> {
         val config = configProvider()
         cachedOrigin = "cloud:${config.model}"
-        val user = Prompts.callUser(input.occurredAt, input.contactLabel, input.transcript, input.aboutMe, input.context, input.rules)
+        val user = Prompts.callUser(
+            input.occurredAt, input.contactLabel, input.transcript, input.aboutMe, input.context, input.rules, input.areas,
+        )
         val result = llm.complete(
             config = config,
             systemPrompt = promptProvider().callSystem,
@@ -235,6 +243,7 @@ class CloudTaskExtractor(
                 assignedToMe = t.bool("assignedToMe") ?: true,
                 updatesRef = t.ref("updates"),
                 matterRef = t.ref("matter"),
+                areaRef = t.ref("area"),
             )
         }
         val done = ((obj["done"] as? JsonArray) ?: JsonArray(emptyList())).mapNotNull { element ->

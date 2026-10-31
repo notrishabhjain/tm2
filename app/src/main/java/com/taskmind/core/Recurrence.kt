@@ -3,19 +3,20 @@ package com.taskmind.core
 import java.time.Instant
 
 /**
- * Spec 16 - recurring tasks. Rule grammar: DAILY | WEEKLY | MONTHLY |
- * CUSTOM:<n><unit>, where unit is one of d, w, m.
+ * Spec 16 - recurring tasks. Rule grammar: DAILY | WEEKLY | MONTHLY | YEARLY |
+ * CUSTOM:<n><unit>, where unit is one of d, w, m, y. YEARLY and y arrived
+ * with routines (v1.26): insurance renewals and birthdays are yearly.
  *
  * On completion the next instance is created from the rule.
  */
 object Recurrence {
 
-    private val CUSTOM = Regex("^CUSTOM:(\\d{1,3})([dwmDWM])$")
+    private val CUSTOM = Regex("^CUSTOM:(\\d{1,3})([dwmyDWMY])$")
 
     fun isValid(rule: String?): Boolean {
         if (rule.isNullOrBlank()) return false
         val r = rule.trim().uppercase()
-        return r == "DAILY" || r == "WEEKLY" || r == "MONTHLY" || CUSTOM.matches(rule.trim())
+        return r == "DAILY" || r == "WEEKLY" || r == "MONTHLY" || r == "YEARLY" || CUSTOM.matches(rule.trim())
     }
 
     fun describe(rule: String?): String? {
@@ -25,12 +26,14 @@ object Recurrence {
             "DAILY" -> "Repeats daily"
             "WEEKLY" -> "Repeats weekly"
             "MONTHLY" -> "Repeats monthly"
+            "YEARLY" -> "Repeats yearly"
             else -> {
                 val m = CUSTOM.find(r)!!
                 val n = m.groupValues[1]
                 val unit = when (m.groupValues[2].lowercase()) {
                     "d" -> if (n == "1") "day" else "days"
                     "w" -> if (n == "1") "week" else "weeks"
+                    "y" -> if (n == "1") "year" else "years"
                     else -> if (n == "1") "month" else "months"
                 }
                 "Repeats every $n $unit"
@@ -52,12 +55,14 @@ object Recurrence {
             "DAILY" -> zoned.plusDays(1)
             "WEEKLY" -> zoned.plusWeeks(1)
             "MONTHLY" -> zoned.plusMonths(1)
+            "YEARLY" -> zoned.plusYears(1)
             else -> {
                 val m = CUSTOM.find(r)!!
                 val n = m.groupValues[1].toLong()
                 when (m.groupValues[2].lowercase()) {
                     "d" -> zoned.plusDays(n)
                     "w" -> zoned.plusWeeks(n)
+                    "y" -> zoned.plusYears(n)
                     else -> zoned.plusMonths(n)
                 }
             }

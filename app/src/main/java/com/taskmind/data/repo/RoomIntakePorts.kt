@@ -71,6 +71,9 @@ class RoomIntakePorts(
         rawCaptureId = rawCaptureId,
         createdAt = createdAt,
         updatedAt = createdAt,
+        area = area,
+        inbox = inbox,
+        plannedFor = plannedFor,
     )
 
     private fun ReviewProposal.toEntity(): ReviewItemEntity = ReviewItemEntity(
@@ -91,5 +94,6 @@ class RoomIntakePorts(
         inferenceOrigin = inferenceOrigin,
         occurredAt = occurredAt,
         createdAt = createdAt,
+        area = area,
     )
 }

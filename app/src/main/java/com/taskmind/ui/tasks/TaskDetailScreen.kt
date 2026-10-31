@@ -323,6 +323,22 @@ fun TaskDetailScreen(
             ) {
                 Fact("Matter", state.matterName ?: "None - tap to file it under one")
             }
+            if (!done) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.snug)) {
+                    FilterChip(
+                        selected = state.onToday,
+                        onClick = { viewModel.setToday(!state.onToday) },
+                        label = { Text(if (state.onToday) "On today's list" else "Add to today") },
+                    )
+                    state.areas.forEach { area ->
+                        FilterChip(
+                            selected = task.area == area,
+                            onClick = { viewModel.setArea(if (task.area == area) null else area) },
+                            label = { Text(area) },
+                        )
+                    }
+                }
+            }
             task.completedAt?.let { Fact("Completed", DateFormats.full(it)) }
 
             // -- priority ----------------------------------------------------

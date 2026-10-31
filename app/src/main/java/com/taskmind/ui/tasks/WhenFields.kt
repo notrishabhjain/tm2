@@ -50,6 +50,8 @@ fun WhenFields(
     onDueAt: (Long?) -> Unit,
     reminder: SmartReminder.Choice,
     onReminder: (SmartReminder.Choice) -> Unit,
+    /** False where the caller sets the reminder its own way (routines). */
+    showReminder: Boolean = true,
 ) {
     var showDate by remember { mutableStateOf(false) }
     var showTime by remember { mutableStateOf(false) }
@@ -102,6 +104,7 @@ fun WhenFields(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            if (showReminder) {
             Spacer(Modifier.height(16.dp))
             Text("Remind me", style = MaterialTheme.typography.labelLarge)
             Row(
@@ -128,6 +131,7 @@ fun WhenFields(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            }
         }
     }
 

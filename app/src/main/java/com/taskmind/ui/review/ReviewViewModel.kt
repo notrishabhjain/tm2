@@ -3,7 +3,12 @@ package com.taskmind.ui.review
 import com.taskmind.data.repo.ReviewEdit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.taskmind.core.DateResolver
+import com.taskmind.core.TaskStatus
 import com.taskmind.data.db.entity.ReviewItemEntity
+import com.taskmind.data.db.entity.TaskEntity
+import com.taskmind.data.repo.TaskRepository
+import kotlinx.coroutines.flow.map
 import com.taskmind.di.AppContainer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -40,6 +45,36 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
      */
     val dismissed: StateFlow<List<ReviewItemEntity>> = container.taskRepository.observeDismissedReview()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Captured tasks waiting for a decision, newest first. */
+    val newTasks: StateFlow<List<TaskEntity>> = container.taskRepository.observeTasks()
+        .map { all ->
+            all.filter { it.inbox && it.status == TaskStatus.ACTIVE && it.parentTaskId == null }
+                .sortedByDescending { it.createdAt }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Today, Later or Drop for one captured task. */
+    fun triage(task: TaskEntity, choice: TaskRepository.Triage) {
+        viewModelScope.launch {
+            container.taskRepository.triage(task.id, choice, DateResolver.dayKey(System.currentTimeMillis()))
+            _message.value = when (choice) {
+                TaskRepository.Triage.TODAY -> "On today's list"
+                TaskRepository.Triage.LATER -> "Kept for later"
+                TaskRepository.Triage.DROP -> "Dropped"
+            }
+        }
+    }
+
+    /** Keeps every new item, unplanned: the inbox is cleared, nothing is lost. */
+    fun keepAllForLater() {
+        viewModelScope.launch {
+            val ids = newTasks.value.map { it.id }
+            val today = DateResolver.dayKey(System.currentTimeMillis())
+            ids.forEach { container.taskRepository.triage(it, TaskRepository.Triage.LATER, today) }
+            _message.value = if (ids.size == 1) "Kept 1 for later" else "Kept ${ids.size} for later"
+        }
+    }
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
@@ -135,6 +170,10 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
                 else -> "Dropped $count - they are in the Dismissed tab"
             }
         }
+    }
+
+    fun say(text: String) {
+        _message.value = text
     }
 
     fun clearMessage() {

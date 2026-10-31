@@ -84,6 +84,14 @@ data class TaskListUiState(
     val reasons: Map<String, String> = emptyMap(),
     /** Open tasks Focus left for later; shown as a pointer to Agenda. */
     val laterCount: Int = 0,
+    /** The Today view's three parts. */
+    val todayTasks: List<TaskEntity> = emptyList(),
+    val carriedTasks: List<TaskEntity> = emptyList(),
+    val suggestedTasks: List<TaskEntity> = emptyList(),
+    /** Only tasks in this area, or every area when null. */
+    val area: String? = null,
+    /** The user's areas, for the filter and grouping. */
+    val areas: List<String> = emptyList(),
     /** Who owes what; filled in the People view only. */
     val people: List<Standing.Person> = emptyList(),
     /** The user's About me, for picking out key people. */
@@ -137,6 +145,16 @@ internal fun groupByMatter(
     return groups to loose
 }
 
+/** The visible tasks by area, in the user's order of areas; untagged ones fall through. */
+internal fun groupByArea(tasks: List<TaskEntity>, areas: List<String>): Pair<List<MatterGroup>, List<TaskEntity>> {
+    val groups = areas.mapNotNull { area ->
+        val rows = tasks.filter { it.area.equals(area, ignoreCase = true) }
+        if (rows.isEmpty()) null else MatterGroup("area:${area.lowercase()}", area, rows)
+    }
+    val taken = groups.flatMap { g -> g.tasks.map { it.id } }.toSet()
+    return groups to tasks.filter { it.id !in taken }
+}
+
 /** A destructive action the user can take back (spec 16: undo for every one). */
 data class UndoAction(val message: String, val undo: suspend () -> Unit)
 
@@ -161,10 +179,10 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
         }
         viewModelScope.launch {
             container.settingsRepository.settings
-                .map { s -> s.ownNames.any { it.isNotBlank() } to s.aboutMe }
+                .map { s -> Triple(s.ownNames.any { it.isNotBlank() }, s.aboutMe, s.areas) }
                 .distinctUntilChanged()
-                .collect { (names, about) ->
-                    filters.update { it.copy(ownNamesSet = names, aboutMeSet = about.isNotBlank(), aboutMe = about) }
+                .collect { (names, about, areas) ->
+                    filters.update { it.copy(ownNamesSet = names, aboutMeSet = about.isNotBlank(), aboutMe = about, areas = areas) }
                 }
         }
     }
@@ -288,19 +306,24 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             now = now,
         )
 
-        // Focus ranks what the filters left and keeps the top few; the rest
-        // is one tap away under Agenda. Grouping does not apply: the order
-        // is the point.
-        val focus = TaskRanking.focus(filtered, current.aboutMe, now, approvedKeyPeople = current.approvedKeyPeople)
-        val visible = when (current.view) {
-            TaskView.FOCUS -> focus.map { it.first }
-            else -> filtered
-        }
-        val reasons = if (current.view == TaskView.FOCUS) {
-            focus.mapNotNull { (t, why) -> why?.let { t.id to it } }.toMap()
+        // Today: what you chose for today, what is left from earlier days,
+        // and suggestions (Focus picks, anything due) - nothing joins it on
+        // its own. Grouping does not apply: the order is the point.
+        val areaFiltered = current.area?.let { a -> filtered.filter { it.area.equals(a, ignoreCase = true) } } ?: filtered
+        val plan = if (current.view == TaskView.FOCUS) {
+            TaskRanking.today(areaFiltered, current.aboutMe, now, current.approvedKeyPeople)
         } else {
-            emptyMap()
+            null
         }
+        val byId = areaFiltered.associateBy { it.id }
+        val todayTasks = plan?.today.orEmpty().mapNotNull { byId[it.id] }
+        val carriedTasks = plan?.carried.orEmpty().mapNotNull { byId[it.id] }
+        val suggestedTasks = plan?.suggested.orEmpty().mapNotNull { (t, _) -> byId[t.id] }
+        val visible = when (current.view) {
+            TaskView.FOCUS -> todayTasks + carriedTasks + suggestedTasks
+            else -> areaFiltered
+        }
+        val reasons = plan?.suggested.orEmpty().mapNotNull { (t, why) -> why?.let { t.id to it } }.toMap()
         val people = if (current.view == TaskView.PEOPLE) {
             Standing.people(filtered.map(TaskRanking::standing))
         } else {
@@ -318,6 +341,8 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
         }
         val (matters, unmattered) = if (grouping && current.group == GroupMode.MATTER) {
             groupByMatter(visible, projects)
+        } else if (grouping && current.group == GroupMode.AREA) {
+            groupByArea(visible, current.areas)
         } else {
             emptyList<MatterGroup>() to visible
         }
@@ -328,7 +353,10 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             // state says so rather than an empty list.
             tasks = if (current.view == TaskView.PEOPLE && people.isEmpty()) emptyList() else visible,
             reasons = reasons,
-            laterCount = if (current.view == TaskView.FOCUS) (filtered.size - visible.size).coerceAtLeast(0) else 0,
+            laterCount = if (current.view == TaskView.FOCUS) (areaFiltered.size - visible.size).coerceAtLeast(0) else 0,
+            todayTasks = todayTasks,
+            carriedTasks = carriedTasks,
+            suggestedTasks = suggestedTasks,
             people = people,
             unfiled = TaskRanking.rankable(tasks).filter { it.projectId == null && it.sourceType != SourceType.MANUAL },
             stale = TaskRanking.rankable(tasks).let { open ->
@@ -341,7 +369,9 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
             unmattered = unmattered,
             counts = TaskFilters.counts(tasks, now) +
                 mapOf(
-                    TaskView.FOCUS to TaskRanking.focus(tasks, current.aboutMe, now, approvedKeyPeople = current.approvedKeyPeople).size,
+                    TaskView.FOCUS to tasks.count {
+                        it.status == TaskStatus.ACTIVE && !it.inbox && it.plannedFor == DateResolver.dayKey(now)
+                    },
                     TaskView.PEOPLE to 0,
                 ),
             tagCloud = TaskFilters.tagCloud(scope, liveTag),
@@ -372,6 +402,15 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setProject(projectId: String?) = filters.update { it.copy(projectId = projectId) }
     fun setTag(tag: String?) = filters.update { it.copy(tag = tag) }
+    fun setArea(area: String?) = filters.update { it.copy(area = area) }
+
+    /** Puts tasks on today's list, or (null) takes them off. */
+    fun planToday(ids: List<String>, on: Boolean = true) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            container.taskRepository.plan(ids, if (on) DateResolver.dayKey(System.currentTimeMillis()) else null)
+        }
+    }
 
     fun toggleSelection(id: String) = filters.update {
         it.copy(selection = if (id in it.selection) it.selection - id else it.selection + id)
@@ -408,6 +447,12 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
                 reminderAt = reminderAt,
                 recurrenceRule = recurrenceRule,
                 parentTaskId = parentTaskId,
+                // Added while looking at Today: it is for today.
+                plannedFor = if (state.value.view == TaskView.FOCUS && parentTaskId == null) {
+                    DateResolver.dayKey(System.currentTimeMillis())
+                } else {
+                    null
+                },
             )
             if (result is IntakeResult.Created && reminderAt != null) {
                 com.taskmind.work.Scheduler.scheduleNextReminder(container.context, container)

@@ -50,6 +50,9 @@ data class Settings(
      */
     val aboutMe: String = "",
 
+    /** The fixed parts of life tasks are filed under (Work, Home...), user-editable. */
+    val areas: List<String> = com.taskmind.core.Areas.DEFAULT,
+
     /**
      * Defaults to ADDRESSED_TO_ME, but stands down to EVERYTHING until
      * [ownNames] has something in it - see PreFilter.resolveGroupPolicy. So a

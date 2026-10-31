@@ -31,6 +31,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import com.taskmind.ui.braindump.BrainDumpSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -57,6 +61,17 @@ fun ImportTranscriptScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    var asList by remember { mutableStateOf(false) }
+    if (asList) {
+        BrainDumpSheet(
+            initialText = state.text,
+            onDismiss = { asList = false },
+            onAdded = {
+                asList = false
+                onBack()
+            },
+        )
+    }
 
     // Keyed on the text, so a second share while this screen is open replaces
     // the first rather than being ignored.
@@ -164,6 +179,14 @@ fun ImportTranscriptScreen(
                 ) {
                     Text(if (state.busy) "Importing..." else "Find tasks in this transcript")
                 }
+                // A list shared or pasted from another app - Keep, Google
+                // Tasks, a notes file - is the user's own to-dos, not a
+                // conversation: every line is a task, no judging.
+                OutlinedButton(
+                    onClick = { asList = true },
+                    enabled = state.text.isNotBlank() && !state.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("It's my to-do list - add each item") }
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "The transcript is sent to your configured provider, the same as any other capture.",

@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.Speed
@@ -149,6 +150,11 @@ fun SettingsScreen(
                     ProfileSection()
                 }
 
+                SettingsPage.ROUTINES -> {
+                    RoutinesSection(settings, viewModel)
+                    AreasSection(settings, viewModel)
+                }
+
                 SettingsPage.CALLS ->
                     CallCaptureSection(settings, viewModel, onOpenCalls, onOpenImport) { dirLauncher.launch(null) }
 
@@ -234,6 +240,11 @@ enum class SettingsPage(
         "You and your chats",
         "About you, your name, group chats, apps to read, work and personal",
         Icons.Outlined.Groups,
+    ),
+    ROUTINES(
+        "Routines and areas",
+        "Bills, renewals and refills that repeat; the areas tasks are filed under",
+        Icons.Outlined.Repeat,
     ),
     CALLS(
         "Calls",

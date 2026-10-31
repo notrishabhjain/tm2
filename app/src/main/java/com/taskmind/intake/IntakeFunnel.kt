@@ -160,6 +160,9 @@ class IntakeFunnel(
             inferenceOrigin = candidate.inferenceOrigin,
             rawCaptureId = candidate.rawCaptureId,
             createdAt = now,
+            area = candidate.area,
+            inbox = candidate.inbox,
+            plannedFor = candidate.plannedFor,
         )
 
         val inserted = taskSink.insertIfAbsent(task)
@@ -217,6 +220,7 @@ class IntakeFunnel(
             inferenceOrigin = candidate.inferenceOrigin,
             occurredAt = candidate.occurredAt,
             createdAt = now,
+            area = candidate.area,
         )
         reviewSink.propose(proposal)
         markCapture(candidate)
