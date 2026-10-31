@@ -251,11 +251,11 @@ private fun NewItems(
         }
         items(tasks, key = { it.id }) { task ->
             Card(
-                Modifier
+                onClick = { onOpen(task.id) },
+                modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                onClick = { onOpen(task.id) },
             ) {
                 Column(Modifier.padding(16.dp)) {
                     Text(task.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
