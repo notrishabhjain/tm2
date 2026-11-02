@@ -105,19 +105,41 @@ class TaskActionReceiver : BroadcastReceiver() {
                 // brief leaves them out for the same reason.
                 val endOfToday = DateResolver.endOfDay(now)
                 val tomorrowStart = DateResolver.nextMidnight(now)
+                val todayKey = DateResolver.dayKey(now)
+                val tomorrowKey = DateResolver.dayKey(tomorrowStart)
+                // Late deadlines and today's list alike: what the wrap-up listed.
                 val slipped = repo.observeTasks().first().filter {
-                    it.status == TaskStatus.ACTIVE && it.parentTaskId == null &&
-                        it.dueAt != null && it.dueAt <= endOfToday && !WaitingOn.matches(it.title, it.tags)
+                    it.status == TaskStatus.ACTIVE && it.parentTaskId == null && !it.inbox &&
+                        !WaitingOn.matches(it.title, it.tags) &&
+                        ((it.dueAt != null && it.dueAt <= endOfToday) || it.plannedFor == todayKey)
                 }
+                val changes = mutableListOf<com.taskmind.core.Journal.Change>()
                 slipped.forEach { task ->
-                    val due = task.dueAt ?: return@forEach
-                    val moved = if (SmartReminder.isDateOnly(due)) {
-                        SmartReminder.withoutTime(tomorrowStart)
-                    } else {
-                        val local = java.time.Instant.ofEpochMilli(due).atZone(DateResolver.IST)
-                        SmartReminder.timed(tomorrowStart, local.hour, local.minute)
+                    val due = task.dueAt
+                    val moved = when {
+                        due == null || due > endOfToday -> due
+                        SmartReminder.isDateOnly(due) -> SmartReminder.withoutTime(tomorrowStart)
+                        else -> {
+                            val local = java.time.Instant.ofEpochMilli(due).atZone(DateResolver.IST)
+                            SmartReminder.timed(tomorrowStart, local.hour, local.minute)
+                        }
                     }
-                    repo.update(task.copy(dueAt = moved, reminderAt = SmartReminder.forDue(moved, now)))
+                    val after = task.copy(
+                        dueAt = moved,
+                        reminderAt = if (moved != due) SmartReminder.forDue(moved, now) else task.reminderAt,
+                        plannedFor = if (task.plannedFor != null && task.plannedFor <= todayKey) tomorrowKey else task.plannedFor,
+                    )
+                    if (after != task) {
+                        repo.update(after)
+                        changes += com.taskmind.data.repo.TwinJournal.changed(task, after)
+                    }
+                }
+                runCatching {
+                    container.twinJournal.record(
+                        com.taskmind.data.repo.TwinJournal.SOURCE_EVENING,
+                        "Moved ${changes.size} open task(s) to tomorrow",
+                        changes,
+                    )
                 }
                 container.logger.write(Stage.SYSTEM, LogLevel.INFO, "moved ${slipped.size} open tasks to tomorrow")
                 Scheduler.scheduleNextReminder(app, container)

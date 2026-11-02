@@ -37,6 +37,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
@@ -150,6 +151,8 @@ fun SettingsScreen(
                     ProfileSection()
                 }
 
+                SettingsPage.EMAIL -> EmailSection(settings)
+
                 SettingsPage.ROUTINES -> {
                     RoutinesSection(settings, viewModel)
                     AreasSection(settings, viewModel)
@@ -240,6 +243,11 @@ enum class SettingsPage(
         "You and your chats",
         "About you, your name, group chats, apps to read, work and personal",
         Icons.Outlined.Groups,
+    ),
+    EMAIL(
+        "Email",
+        "Asks and promises from your mail: mail app notifications, or your mailbox directly",
+        Icons.Outlined.Email,
     ),
     ROUTINES(
         "Routines and areas",

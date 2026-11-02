@@ -62,6 +62,9 @@ class AppContainer(context: Context) {
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(appContext) }
     val secretStore: SecretStore by lazy { SecretStore(appContext) }
 
+    /** The mailbox read over IMAP, and how far it has been read. */
+    val emailStore: com.taskmind.email.EmailStore by lazy { com.taskmind.email.EmailStore(appContext) }
+
     /** User overrides for the system prompts (Settings -> Prompts). */
     val promptStore: PromptStore by lazy { PromptStore(appContext) }
     val runtimeStateStore: RuntimeStateStore by lazy { RuntimeStateStore(appContext) }
@@ -206,8 +209,17 @@ class AppContainer(context: Context) {
             rawCaptureDao = database.rawCaptureDao(),
             taskDao = database.taskDao(),
             projectDao = database.projectDao(),
+            journal = twinJournal,
         )
     }
+
+    // -- the twin ------------------------------------------------------------
+
+    /** Every change TaskMind made on its own, with what it replaced. */
+    val twinJournal: com.taskmind.data.repo.TwinJournal by lazy { com.taskmind.data.repo.TwinJournal(appContext) }
+    val twinStore: com.taskmind.data.settings.TwinStore by lazy { com.taskmind.data.settings.TwinStore(appContext) }
+    val twinActions: com.taskmind.data.repo.TwinActions by lazy { com.taskmind.data.repo.TwinActions(this) }
+    val twinBrain: com.taskmind.data.repo.TwinBrain by lazy { com.taskmind.data.repo.TwinBrain(this) }
 
     val extractionPipeline: ExtractionPipeline by lazy {
         ExtractionPipeline(
@@ -222,6 +234,7 @@ class AppContainer(context: Context) {
             appLabelFor = ::appLabel,
             memory = chatMemory,
             rules = { Rules.promptBlock(learningStore.rules.value) },
+            emailAddresses = { emailStore.current().mine },
         )
     }
 

@@ -70,6 +70,13 @@ class SecretStore(context: Context) {
             prefs.edit().putString(KEY_ASR, value.trim()).apply()
         }
 
+    /** The mailbox's app password. Never the account password, and never logged. */
+    var emailPassword: String
+        get() = prefs.getString(KEY_EMAIL, "").orEmpty()
+        set(value) {
+            prefs.edit().putString(KEY_EMAIL, value.trim()).apply()
+        }
+
     fun hasLlmKey(): Boolean = llmApiKey.isNotBlank()
     fun hasAsrKey(): Boolean = asrApiKey.isNotBlank()
 
@@ -89,5 +96,6 @@ class SecretStore(context: Context) {
         const val FALLBACK_FILE = "taskmind_secrets_plain"
         const val KEY_LLM = "llm_api_key"
         const val KEY_ASR = "asr_api_key"
+        const val KEY_EMAIL = "email_app_password"
     }
 }

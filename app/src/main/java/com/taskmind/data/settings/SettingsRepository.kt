@@ -49,6 +49,8 @@ class SettingsRepository(private val context: Context) {
         val groupsAlwaysWatch = stringSetPreferencesKey("groups_always_watch")
         val groupsNeverWatch = stringSetPreferencesKey("groups_never_watch")
         val captureNotifications = booleanPreferencesKey("capture_notifications")
+        val captureEmailApps = booleanPreferencesKey("capture_email_apps")
+        val emailConnectedAddress = stringPreferencesKey("email_connected_address")
         val captureCalls = booleanPreferencesKey("capture_calls")
         val minCallDuration = longPreferencesKey("min_call_duration")
         val callRecordingDirUri = stringPreferencesKey("call_recording_dir_uri")
@@ -119,6 +121,8 @@ class SettingsRepository(private val context: Context) {
             groupsAlwaysWatch = this[K.groupsAlwaysWatch] ?: d.groupsAlwaysWatch,
             groupsNeverWatch = this[K.groupsNeverWatch] ?: d.groupsNeverWatch,
             captureNotifications = this[K.captureNotifications] ?: d.captureNotifications,
+            captureEmailApps = this[K.captureEmailApps] ?: d.captureEmailApps,
+            emailConnectedAddress = this[K.emailConnectedAddress] ?: d.emailConnectedAddress,
             captureCalls = this[K.captureCalls] ?: d.captureCalls,
             minCallDurationSeconds = this[K.minCallDuration] ?: d.minCallDurationSeconds,
             callRecordingDirUri = this[K.callRecordingDirUri] ?: d.callRecordingDirUri,
@@ -193,6 +197,8 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setCaptureNotifications(value: Boolean) = edit { it[K.captureNotifications] = value }
+    suspend fun setCaptureEmailApps(value: Boolean) = edit { it[K.captureEmailApps] = value }
+    suspend fun setEmailConnectedAddress(value: String) = edit { it[K.emailConnectedAddress] = value.trim() }
     suspend fun setCaptureCalls(value: Boolean) = edit { it[K.captureCalls] = value }
 
     suspend fun setMinCallDuration(seconds: Long) = edit { it[K.minCallDuration] = seconds }

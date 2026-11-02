@@ -312,7 +312,56 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
                 NotificationCompat.Action(R.drawable.ic_stat_taskmind, "Look at ${message.maybes} maybes", contentIntent(ROUTE_REVIEW)),
             )
         }
+        if (kind == Brief.Kind.MORNING) {
+            builder.addAction(
+                NotificationCompat.Action(R.drawable.ic_stat_taskmind, "Plan my day", contentIntent("${MainActivity.ROUTE_TWIN}|plan")),
+            )
+        }
         postSafely(id, builder.build())
+    }
+
+    /**
+     * People whose promises to the user have aged, once a day. The button
+     * drafts a nudge for the first; nothing is ever sent from here.
+     */
+    fun postChase(lines: List<String>, firstTaskId: String, firstPerson: String) {
+        if (!canPost() || lines.isEmpty()) return
+        val style = NotificationCompat.InboxStyle().setBigContentTitle(
+            if (lines.size == 1) "Waiting on $firstPerson" else "Waiting on ${lines.size} people",
+        )
+        lines.forEach { style.addLine(it) }
+        val notification = NotificationCompat.Builder(context, CHANNEL_BRIEF)
+            .setSmallIcon(R.drawable.ic_stat_taskmind)
+            .setContentTitle(if (lines.size == 1) "Waiting on $firstPerson" else "Waiting on ${lines.size} people")
+            .setContentText(lines.first())
+            .setStyle(style)
+            .setContentIntent(contentIntent(MainActivity.ROUTE_TWIN))
+            .addAction(
+                NotificationCompat.Action(
+                    R.drawable.ic_stat_taskmind,
+                    "Draft a nudge to $firstPerson",
+                    contentIntent("${MainActivity.ROUTE_TWIN}|nudge:$firstTaskId"),
+                ),
+            )
+            .setAutoCancel(true)
+            .build()
+        postSafely(ID_CHASE, notification)
+    }
+
+    /** Right after a call no recording will cover: one tap to say what was agreed. */
+    fun postCallFollowUp(who: String) {
+        if (!canPost()) return
+        val dump = contentIntent("${MainActivity.ROUTE_DUMP}|From the call with $who: ")
+        val notification = NotificationCompat.Builder(context, CHANNEL_BRIEF)
+            .setSmallIcon(R.drawable.ic_stat_taskmind)
+            .setContentTitle("Anything you agreed with $who?")
+            .setContentText("Say it in 20 seconds and it becomes tasks.")
+            .setContentIntent(dump)
+            .addAction(NotificationCompat.Action(R.drawable.ic_stat_taskmind, "Note it", dump))
+            .setAutoCancel(true)
+            .setTimeoutAfter(2 * 60 * 60 * 1000L)
+            .build()
+        postSafely(ID_CALL_AFTER, notification)
     }
 
     /** Before a meeting: what is open with the people in it. */
@@ -433,6 +482,8 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         const val ID_WEEKLY = 1007
         const val ID_MEETING_PREP = 1008
         const val ID_MEETING_AFTER = 1009
+        const val ID_CHASE = 1010
+        const val ID_CALL_AFTER = 1011
         const val ID_UPDATE = 1002
         const val ID_FOREGROUND_WORKER = 1101
         const val ID_FOREGROUND_RESIDENCY = 1102

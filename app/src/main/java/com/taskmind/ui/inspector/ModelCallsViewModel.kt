@@ -27,7 +27,7 @@ enum class CallFilter(val label: String) {
     fun matches(call: InferenceCallEntity): Boolean = when (this) {
         ALL -> true
         FAILED -> !call.ok
-        MESSAGES -> call.kind == RecordedCall.KIND_MESSAGE
+        MESSAGES -> call.kind == RecordedCall.KIND_MESSAGE || call.kind == RecordedCall.KIND_EMAIL
         CALLS -> call.kind == RecordedCall.KIND_TRANSCRIPT || call.kind == RecordedCall.KIND_ASR
     }
 }

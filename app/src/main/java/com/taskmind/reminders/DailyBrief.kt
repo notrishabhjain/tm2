@@ -50,7 +50,40 @@ object DailyBrief {
         arm(app, Brief.Kind.MORNING, prefs.morningBrief)
         arm(app, Brief.Kind.EVENING, prefs.eveningBrief)
         armWeekly(app, prefs.weeklyReview)
+        armChase(app, AppContainer.get(app).twinStore.current().chaseNotifications)
         runCatching { MeetingNudges.schedule(app) }
+    }
+
+    /** Late morning, once a day: the people whose promises have aged. */
+    private fun armChase(context: Context, enabled: Boolean) {
+        val alarms = context.getSystemService(AlarmManager::class.java) ?: return
+        val pending = PendingIntent.getBroadcast(
+            context,
+            REQUEST_CHASE,
+            Intent(context, BriefReceiver::class.java)
+                .setAction(BriefReceiver.ACTION)
+                .putExtra(BriefReceiver.EXTRA_KIND, BriefReceiver.KIND_CHASE),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        if (!enabled) {
+            runCatching { alarms.cancel(pending) }
+            return
+        }
+        val at = Brief.nextAt(CHASE_HOUR, System.currentTimeMillis(), CHASE_MINUTE)
+        runCatching { alarms.setWindow(AlarmManager.RTC_WAKEUP, at, WINDOW_MILLIS, pending) }
+    }
+
+    /** Posts the chase notification now, if anyone's promise has aged. */
+    suspend fun postChase(context: Context) {
+        val container = AppContainer.get(context)
+        val chase = container.twinBrain.overview().chase
+        val first = chase.firstOrNull() ?: return
+        val now = System.currentTimeMillis()
+        val lines = chase.take(4).map { c ->
+            val since = if (c.overdue(now)) "was due " + com.taskmind.core.Nudge.ago(c.dueAt ?: c.since, now) else "promised " + com.taskmind.core.Nudge.ago(c.since, now)
+            "${c.person}: ${c.title} - $since"
+        }
+        container.notifier.postChase(lines, first.taskId, first.person)
     }
 
     private fun armWeekly(context: Context, enabled: Boolean) {
@@ -120,9 +153,10 @@ object DailyBrief {
         val container = AppContainer.get(context)
         val now = System.currentTimeMillis()
         val all = container.taskRepository.observeTasks().first()
+        val todayKey = DateResolver.dayKey(now)
         val items = all
-            .filter { it.status == TaskStatus.ACTIVE && it.parentTaskId == null }
-            .map { Brief.Item(it.title, it.dueAt, WaitingOn.matches(it.title, it.tags)) }
+            .filter { it.status == TaskStatus.ACTIVE && it.parentTaskId == null && !it.inbox }
+            .map { Brief.Item(it.title, it.dueAt, WaitingOn.matches(it.title, it.tags), plannedToday = it.plannedFor == todayKey) }
         // The morning leads with the day's top things, and writes down which
         // they were so Health can say later whether they got done.
         val picks = if (kind == Brief.Kind.MORNING) {
@@ -164,6 +198,10 @@ object DailyBrief {
     private const val REQUEST_MORNING = 7101
     private const val REQUEST_EVENING = 7102
     private const val REQUEST_WEEKLY = 7103
+    private const val REQUEST_CHASE = 7104
+
+    const val CHASE_HOUR = 11
+    const val CHASE_MINUTE = 30
 
     const val WEEKLY_HOUR = 18
 }
@@ -186,7 +224,7 @@ class BriefReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val name = intent.getStringExtra(EXTRA_KIND) ?: return
         val kind = Brief.Kind.entries.firstOrNull { it.name == name }
-        if (kind == null && name != KIND_WEEKLY) return
+        if (kind == null && name != KIND_WEEKLY && name != KIND_CHASE) return
         val app = context.applicationContext
         val container = AppContainer.get(app)
         val pending = goAsync()
@@ -194,7 +232,11 @@ class BriefReceiver : BroadcastReceiver() {
             try {
                 val prefs = UiPreferences(app).current()
                 when (kind) {
-                    null -> if (prefs.weeklyReview) DailyBrief.postWeekly(app)
+                    null -> if (name == KIND_CHASE) {
+                        if (container.twinStore.current().chaseNotifications) DailyBrief.postChase(app)
+                    } else if (prefs.weeklyReview) {
+                        DailyBrief.postWeekly(app)
+                    }
                     Brief.Kind.MORNING -> if (prefs.morningBrief) DailyBrief.post(app, kind)
                     Brief.Kind.EVENING -> if (prefs.eveningBrief) DailyBrief.post(app, kind)
                 }
@@ -211,5 +253,6 @@ class BriefReceiver : BroadcastReceiver() {
         const val ACTION = "com.taskmind.action.BRIEF"
         const val EXTRA_KIND = "com.taskmind.extra.BRIEF_KIND"
         const val KIND_WEEKLY = "WEEKLY"
+        const val KIND_CHASE = "CHASE"
     }
 }

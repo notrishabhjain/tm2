@@ -100,6 +100,8 @@ fun TaskDetailScreen(
     viewModel: TaskDetailViewModel,
     onBack: () -> Unit,
     onOpenTask: (String) -> Unit = {},
+    /** Someone owes the user this: draft them a nudge, on the twin's screen. */
+    onNudge: (String) -> Unit = {},
 ) {
     LaunchedEffect(taskId) { viewModel.load(taskId) }
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -255,6 +257,9 @@ fun TaskDetailScreen(
             if (!done) {
                 val contact = state.contact
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.tight)) {
+                    if (com.taskmind.core.WaitingOn.matches(task.title, task.tags)) {
+                        TextButton(onClick = { onNudge(task.id) }) { Text("Draft a nudge") }
+                    }
                     TextButton(onClick = { viewModel.snooze(HOUR) }) { Text("In 1 hour") }
                     TextButton(onClick = { viewModel.snooze(24 * HOUR) }) { Text("Tomorrow") }
                     val number = contact?.number

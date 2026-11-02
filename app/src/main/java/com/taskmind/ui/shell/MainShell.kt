@@ -3,6 +3,8 @@ package com.taskmind.ui.shell
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Settings
@@ -42,6 +44,8 @@ enum class MainTab(
 ) {
     TASKS("tasks", "Tasks", Icons.Filled.Checklist, Icons.Outlined.Checklist),
     REVIEW("review", "Inbox", Icons.Filled.Inbox, Icons.Outlined.Inbox),
+    /** The twin: ask, plan, chase, undo. A daily place, so it has a tab. */
+    TWIN("twin", "Twin", Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome),
     SETTINGS("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 

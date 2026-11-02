@@ -39,6 +39,14 @@ export interface Task {
    * been run, so always read as `t.matter_id ?? null`.
    */
   matter_id?: string | null;
+  /**
+   * From schema_v5.sql: the area it is filed under (Work, Home...), the IST
+   * day it is on the Today list for ("2026-11-02"), and whether it is still in
+   * the Inbox waiting for a decision. Absent until the script has been run.
+   */
+  area?: string | null;
+  planned_for?: string | null;
+  inbox?: boolean;
 }
 
 /** An ongoing piece of work the phone files tasks under. From schema_v4.sql. */

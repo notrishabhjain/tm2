@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Long-press the app icon: straight to a brain dump or today's list. -->
+<!-- Long-press the app icon: straight to a brain dump, the Inbox, or a plan for the day. -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
         android:shortcutId="brain_dump"
@@ -25,6 +25,19 @@
             android:targetPackage="com.taskmind"
             android:targetClass="com.taskmind.MainActivity">
             <extra android:name="com.taskmind.extra.ROUTE" android:value="review" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="plan_day"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_plan_short"
+        android:shortcutLongLabel="@string/shortcut_plan_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.taskmind"
+            android:targetClass="com.taskmind.MainActivity">
+            <extra android:name="com.taskmind.extra.ROUTE" android:value="twin|plan" />
         </intent>
     </shortcut>
 </shortcuts>

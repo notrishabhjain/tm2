@@ -18,6 +18,10 @@ export interface TaskPatch {
   due_at?: string | null;
   priority?: Priority;
   status?: "ACTIVE" | "COMPLETED" | "ARCHIVED" | "DELETED";
+  /** schema_v5.sql columns; only sent once the phone has them on the server. */
+  area?: string | null;
+  planned_for?: string | null;
+  inbox?: boolean;
 }
 
 export async function patchTask(id: string, patch: TaskPatch): Promise<void> {

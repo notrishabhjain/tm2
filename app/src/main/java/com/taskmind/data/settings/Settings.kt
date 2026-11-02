@@ -26,6 +26,17 @@ data class Settings(
     // -- capture -----------------------------------------------------------
     val allowedPackages: Set<String> = PreFilter.DEFAULT_ALLOWED_PACKAGES,
     val captureNotifications: Boolean = true,
+    /**
+     * Read mail apps' notifications (Gmail, Outlook...) as email, whether or
+     * not the app is on the allow-list. Works for every provider, no setup.
+     */
+    val captureEmailApps: Boolean = true,
+    /**
+     * The mailbox read directly over IMAP, if any. Kept here, cached, so the
+     * notification listener can skip that account's notifications without a
+     * suspend call - the same mail arrives in full from the mailbox.
+     */
+    val emailConnectedAddress: String = "",
 
     // -- who you are, and what to do about group chats ---------------------
 

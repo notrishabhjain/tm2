@@ -37,6 +37,7 @@ data class RecordedCall(
     companion object {
         const val KIND_MESSAGE = "extract-message"
         const val KIND_TRANSCRIPT = "extract-transcript"
+        const val KIND_EMAIL = "extract-email"
         const val KIND_VERIFY = "verify"
         const val KIND_ASR = "asr"
         const val KIND_TEST = "connection-test"

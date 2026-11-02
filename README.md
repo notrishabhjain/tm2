@@ -3,15 +3,26 @@
 An Android app that captures your work commitments automatically and turns them
 into tasks, without you ever typing one.
 
-It watches two things:
+It watches what you are committed to, wherever it was said:
 
 - **Messages** — WhatsApp, SMS and whatever else you allow. *"beta woh 25000 ka
   payment kal tak kar dena"* becomes a task due tomorrow.
 - **Calls** — the recordings your own phone app already makes get transcribed,
   and commitments spoken during the call become tasks.
+- **Email** — mail apps' notifications (Gmail, Outlook, any account), or your
+  mailbox read directly with an app password: the asks in mail sent to you and
+  the promises in mail you send. Newsletters and receipts are skipped first.
+- **Your own voice, screenshots and meetings** — say everything on your mind,
+  share a screenshot, and get a prompt before and after each meeting.
 
-Both feed a full task manager inside the same app. Hindi, English and Hinglish
-are the normal input, not an edge case.
+Everything lands in one **Inbox** for a yes or no, and feeds a full task manager:
+Today, areas, matters, routines. Hindi, English and Hinglish are the normal
+input, not an edge case.
+
+The **Twin** tab is the part that acts. Ask it anything ("what do I owe Sharma
+ji?"), have it plan your day around your meetings or spread the week, and let it
+draft the nudge to someone who owes you - which you send yourself. It proposes;
+you apply with a tap; every change it (or a message) makes can be undone.
 
 ---
 

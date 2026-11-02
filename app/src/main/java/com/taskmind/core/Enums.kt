@@ -15,7 +15,12 @@ enum class Priority { URGENT, HIGH, MEDIUM, LOW;
 
 enum class TaskStatus { ACTIVE, COMPLETED, ARCHIVED, DELETED }
 
-enum class SourceType { NOTIFICATION, CALL, CLIPBOARD, MANUAL, REVIEW }
+/**
+ * EMAIL is last so nothing stored before it existed changes meaning. Stored by
+ * name; an older build reads an unknown name back as MANUAL, so rolling back
+ * a release never fails to open the database.
+ */
+enum class SourceType { NOTIFICATION, CALL, CLIPBOARD, MANUAL, REVIEW, EMAIL }
 
 /**
  * Spec 6.2. A capture never leaves the pipeline by being deleted; it moves
