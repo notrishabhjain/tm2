@@ -127,7 +127,7 @@ class TaskCreationTest(private val context: Context, private val container: AppC
         }
 
         runCatching {
-            container.extractionPipeline.process(capture.copy(state = CaptureState.PENDING_EXTRACTION))
+            container.extractionPipeline.process(capture.copy(state = CaptureState.PENDING_EXTRACTION), burst = false)
         }
 
         val tasks = runCatching { taskDao.byRawCapture(captureId) }.getOrDefault(emptyList())

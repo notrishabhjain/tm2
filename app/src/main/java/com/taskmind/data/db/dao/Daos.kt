@@ -78,6 +78,28 @@ interface RawCaptureDao {
     suspend fun setState(id: String, state: CaptureState)
 
     /**
+     * Messages from the same app still waiting to be read, oldest first: the
+     * candidates for one chat's burst. Filtered to the same chat by the caller.
+     */
+    @Query(
+        """
+        SELECT * FROM raw_captures
+        WHERE sourceType = 'NOTIFICATION' AND sourceApp = :app AND state = :state
+          AND occurredAt >= :from AND occurredAt <= :to AND id != :excludeId
+        ORDER BY occurredAt ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun pendingFromApp(
+        app: String,
+        state: CaptureState,
+        from: Long,
+        to: Long,
+        excludeId: String,
+        limit: Int,
+    ): List<RawCaptureEntity>
+
+    /**
      * Earlier messages from the same app, newest first, for the chat context
      * the model sees with a message. Filtered to the same conversation by the
      * caller, which is why the limit is wider than the context itself.

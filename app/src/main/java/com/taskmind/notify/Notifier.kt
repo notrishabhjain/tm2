@@ -315,6 +315,37 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         postSafely(id, builder.build())
     }
 
+    /** Before a meeting: what is open with the people in it. */
+    fun postMeetingPrep(title: String, lines: List<String>) {
+        if (!canPost()) return
+        val style = NotificationCompat.InboxStyle().setBigContentTitle("Before \"$title\"")
+        lines.forEach { style.addLine(it) }
+        val notification = NotificationCompat.Builder(context, CHANNEL_BRIEF)
+            .setSmallIcon(R.drawable.ic_stat_taskmind)
+            .setContentTitle("Before \"$title\"")
+            .setContentText(if (lines.size == 1) lines.single() else "${lines.size} open items with the people in it")
+            .setStyle(style)
+            .setContentIntent(contentIntent(ROUTE_TASKS))
+            .setAutoCancel(true)
+            .build()
+        postSafely(ID_MEETING_PREP, notification)
+    }
+
+    /** After a meeting: one tap to note what was agreed. */
+    fun postMeetingFollowUp(title: String) {
+        if (!canPost()) return
+        val dump = contentIntent("${MainActivity.ROUTE_DUMP}|From \"$title\": ")
+        val notification = NotificationCompat.Builder(context, CHANNEL_BRIEF)
+            .setSmallIcon(R.drawable.ic_stat_taskmind)
+            .setContentTitle("Anything you agreed in \"$title\"?")
+            .setContentText("Say it in 20 seconds and it becomes tasks.")
+            .setContentIntent(dump)
+            .addAction(NotificationCompat.Action(R.drawable.ic_stat_taskmind, "Note it", dump))
+            .setAutoCancel(true)
+            .build()
+        postSafely(ID_MEETING_AFTER, notification)
+    }
+
     /** Sunday's look back at the week. */
     fun postWeekly(summary: WeeklyReview.Summary, ruleIdeas: Int = 0, stale: Int = 0) {
         if (!canPost()) return
@@ -400,6 +431,8 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         const val ID_BRIEF_MORNING = 1005
         const val ID_BRIEF_EVENING = 1006
         const val ID_WEEKLY = 1007
+        const val ID_MEETING_PREP = 1008
+        const val ID_MEETING_AFTER = 1009
         const val ID_UPDATE = 1002
         const val ID_FOREGROUND_WORKER = 1101
         const val ID_FOREGROUND_RESIDENCY = 1102

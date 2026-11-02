@@ -1,6 +1,8 @@
 package com.taskmind
 
 import android.content.Intent
+import androidx.core.content.IntentCompat
+import android.net.Uri
 import androidx.core.content.FileProvider
 import java.io.File
 import android.os.Bundle
@@ -85,6 +87,7 @@ class MainActivity : FragmentActivity() {
         // task-finding as a pasted transcript. Capped, because a share can be
         // an entire chat export.
         val sharedText = sharedTextOf(intent)
+        val sharedImages = sharedImagesOf(intent)
 
         setContent {
             TaskMindTheme {
@@ -105,6 +108,7 @@ class MainActivity : FragmentActivity() {
                             startOnboarding = needsOnboarding,
                             startRoute = startRoute,
                             sharedText = sharedText,
+                            sharedImages = sharedImages,
                             incoming = incoming,
                             onIncomingHandled = { incoming = null },
                             onShareText = ::shareText,
@@ -141,11 +145,23 @@ class MainActivity : FragmentActivity() {
         setIntent(intent)
         val route = intent.getStringExtra(EXTRA_ROUTE)
         val shared = sharedTextOf(intent)
-        if (route != null || shared != null) incoming = Incoming(route, shared)
+        val images = sharedImagesOf(intent)
+        if (route != null || shared != null || images.isNotEmpty()) incoming = Incoming(route, shared, images)
     }
 
     /** A destination that arrived while the app was already open. */
     private var incoming by mutableStateOf<Incoming?>(null)
+
+    /** Pictures shared in (one or several), for reading on the phone. */
+    private fun sharedImagesOf(intent: Intent?): List<Uri> {
+        if (intent?.type?.startsWith("image/") != true) return emptyList()
+        return when (intent.action) {
+            Intent.ACTION_SEND -> listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
+            Intent.ACTION_SEND_MULTIPLE ->
+                IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+            else -> emptyList()
+        }
+    }
 
     private fun sharedTextOf(intent: Intent?): String? = intent
         ?.takeIf { it.action == Intent.ACTION_SEND && it.type?.startsWith("text/") == true }
@@ -302,6 +318,7 @@ fun TaskMindNavHost(
     startOnboarding: Boolean,
     startRoute: String?,
     sharedText: String? = null,
+    sharedImages: List<Uri> = emptyList(),
     incoming: Incoming? = null,
     onIncomingHandled: () -> Unit = {},
     onShareText: (String, String) -> Unit,
@@ -310,7 +327,7 @@ fun TaskMindNavHost(
 ) {
     val start = when {
         startOnboarding -> Routes.ONBOARDING
-        sharedText != null -> Routes.IMPORT
+        sharedText != null || sharedImages.isNotEmpty() -> Routes.IMPORT
         startRoute == "status" -> Routes.STATUS
         startRoute == "review" -> Routes.REVIEW
         // The widget opens a specific task. Matched by prefix rather than
@@ -321,11 +338,14 @@ fun TaskMindNavHost(
 
     // What the Import screen shows: the text shared at start-up, or later.
     var shared by remember { mutableStateOf(sharedText) }
+    var images by remember { mutableStateOf(sharedImages) }
     // The widget's "+" asks for the new-task sheet; the list clears this once
     // it has opened it, so coming back to the list does not open it again.
     var wantNewTask by remember { mutableStateOf(startRoute == MainActivity.ROUTE_NEW_TASK) }
     // The launcher shortcut's "Brain dump": open the task list with the sheet up.
-    var wantDump by remember { mutableStateOf(startRoute == MainActivity.ROUTE_DUMP) }
+    var wantDump by remember { mutableStateOf(startRoute?.startsWith(MainActivity.ROUTE_DUMP) == true) }
+    // Text the dump opens with: "From \"Vendor sync\": " after a meeting.
+    var dumpText by remember { mutableStateOf(startRoute?.substringAfter('|', "").orEmpty()) }
 
     // Links that arrive while the app is already open (it is singleTask, so
     // they never pass through the start destination above).
@@ -337,11 +357,16 @@ fun TaskMindNavHost(
                 shared = next.sharedText
                 navController.navigate(Routes.IMPORT) { launchSingleTop = true }
             }
+            next.images.isNotEmpty() -> {
+                images = next.images
+                navController.navigate(Routes.IMPORT) { launchSingleTop = true }
+            }
             route == MainActivity.ROUTE_NEW_TASK -> {
                 wantNewTask = true
                 navController.navigate(Routes.TASKS) { launchSingleTop = true }
             }
-            route == MainActivity.ROUTE_DUMP -> {
+            route != null && route.startsWith(MainActivity.ROUTE_DUMP) -> {
+                dumpText = route.substringAfter('|', "")
                 wantDump = true
                 navController.navigate(Routes.TASKS) { launchSingleTop = true }
             }
@@ -383,6 +408,7 @@ fun TaskMindNavHost(
                     startWithEditor = wantNewTask,
                     onEditorRequestHandled = { wantNewTask = false },
                     startWithDump = wantDump,
+                    dumpText = dumpText,
                     onDumpRequestHandled = { wantDump = false },
                 )
             }
@@ -551,10 +577,16 @@ fun TaskMindNavHost(
                     }
                 },
                 initialText = shared,
+                initialImages = images,
             )
         }
     }
 }
 
 /** A route or shared text delivered to an already-running activity. */
-data class Incoming(val route: String?, val sharedText: String?, val at: Long = System.nanoTime())
+data class Incoming(
+    val route: String?,
+    val sharedText: String?,
+    val images: List<Uri> = emptyList(),
+    val at: Long = System.nanoTime(),
+)

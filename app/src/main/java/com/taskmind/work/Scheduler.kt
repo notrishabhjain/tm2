@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit
 object Scheduler {
 
     private const val WORK_EXTRACTION = "taskmind.extraction"
+    private const val WORK_EXTRACTION_LATER = "taskmind.extraction_later"
     private const val WORK_TRANSCRIPTION = "taskmind.transcription"
     private const val WORK_CALL_DISCOVERY = "taskmind.call_discovery"
     private const val WORK_CALL_SWEEP_DELAYED = "taskmind.call_sweep_delayed"
@@ -55,6 +56,19 @@ object Scheduler {
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
         wm(context).enqueueUniqueWork(WORK_EXTRACTION, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+    }
+
+    /**
+     * A drain after [delayMillis]: how a chat's burst is read once it has gone
+     * quiet. Its own unique name, so it never cancels the immediate drain, and
+     * REPLACE, so a newer burst moves it rather than stacking another.
+     */
+    fun enqueueExtractionAfter(context: Context, delayMillis: Long) {
+        val request = OneTimeWorkRequestBuilder<ExtractionWorker>()
+            .setConstraints(connected)
+            .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
+            .build()
+        wm(context).enqueueUniqueWork(WORK_EXTRACTION_LATER, ExistingWorkPolicy.REPLACE, request)
     }
 
     /**

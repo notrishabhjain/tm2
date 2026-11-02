@@ -59,6 +59,8 @@ data class StatusUiState(
     val captureBefore: String? = null,
     /** Morning picks done the same day, 0-100; null until there are enough. */
     val focusDone: Int? = null,
+    /** Open tasks that look like duplicates, as text. */
+    val duplicates: String? = null,
 )
 
 class StatusViewModel(private val container: AppContainer) : ViewModel() {
@@ -104,6 +106,7 @@ class StatusViewModel(private val container: AppContainer) : ViewModel() {
                     "$text (as of ${DateFormats.full(at)})"
                 },
                 focusDone = runCatching { CaptureHealth.focusCompletion(container) }.getOrNull(),
+                duplicates = runCatching { CaptureHealth.duplicates(container) }.getOrNull(),
             )
         }
     }

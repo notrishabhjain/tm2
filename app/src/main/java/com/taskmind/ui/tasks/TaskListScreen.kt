@@ -125,6 +125,8 @@ fun TaskListScreen(
     onAsk: (String) -> Unit = {},
     /** Opened from the "Brain dump" shortcut: open the brain-dump sheet. */
     startWithDump: Boolean = false,
+    /** What the brain dump opens with, e.g. which meeting it is about. */
+    dumpText: String = "",
     onDumpRequestHandled: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -144,8 +146,10 @@ fun TaskListScreen(
     }
     var showFilters by remember { mutableStateOf(false) }
     var showDump by remember { mutableStateOf(false) }
+    var dumpStart by remember { mutableStateOf("") }
     LaunchedEffect(startWithDump) {
         if (startWithDump) {
+            dumpStart = dumpText
             showDump = true
             onDumpRequestHandled()
         }
@@ -181,7 +185,7 @@ fun TaskListScreen(
                         containerColor = MaterialTheme.colorScheme.background,
                     ),
                     actions = {
-                        IconButton(onClick = { showDump = true }) {
+                        IconButton(onClick = { dumpStart = ""; showDump = true }) {
                             Icon(Icons.Outlined.EditNote, contentDescription = "Brain dump")
                         }
                         IconButton(onClick = { viewModel.setSearching(!state.searching) }) {
@@ -497,7 +501,11 @@ fun TaskListScreen(
 
     if (showDump) {
         BrainDumpSheet(
-            onDismiss = { showDump = false },
+            initialText = dumpStart,
+            onDismiss = {
+                showDump = false
+                dumpStart = ""
+            },
             onAdded = { n ->
                 showDump = false
                 scope.launch { snackbarHostState.showSnackbar(if (n == 1) "Added 1 task" else "Added $n tasks") }

@@ -145,6 +145,13 @@ fun StatusScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                state.duplicates?.let {
+                    Text(
+                        "Possible duplicates: $it - aim for under 5%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             SectionCard(title = "Permissions", subtitle = "Re-checked every time you open this screen.") {

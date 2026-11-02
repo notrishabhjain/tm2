@@ -31,6 +31,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import com.taskmind.ui.braindump.BrainDumpSheet
@@ -57,11 +60,17 @@ fun ImportTranscriptScreen(
     onBack: () -> Unit,
     /** Text shared into TaskMind from another app, used instead of the clipboard. */
     initialText: String? = null,
+    /** Screenshots shared in; their words are read on the phone. */
+    initialImages: List<android.net.Uri> = emptyList(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var asList by remember { mutableStateOf(false) }
+    LaunchedEffect(initialImages) { viewModel.readImages(context, initialImages) }
+    val pickImages = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(ScreenshotReaderLimit),
+    ) { uris -> viewModel.readImages(context, uris) }
     if (asList) {
         BrainDumpSheet(
             initialText = state.text,
@@ -88,7 +97,7 @@ fun ImportTranscriptScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Import transcript") },
+                title = { Text(if (state.fromScreenshots) "Screenshots" else "Import") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -172,12 +181,22 @@ fun ImportTranscriptScreen(
             }
 
             Column(Modifier.padding(16.dp)) {
+                // A chat read on the laptop, an email, a photo of a whiteboard:
+                // the words are read here on the phone, then searched for tasks.
+                OutlinedButton(
+                    onClick = {
+                        pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    enabled = !state.busy && !state.reading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (state.reading) "Reading screenshots\u2026" else "Read screenshots instead") }
+                Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = viewModel::import,
                     enabled = state.text.isNotBlank() && !state.busy,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(if (state.busy) "Importing..." else "Find tasks in this transcript")
+                    Text(if (state.busy) "Importing..." else "Find tasks in this")
                 }
                 // A list shared or pasted from another app - Keep, Google
                 // Tasks, a notes file - is the user's own to-dos, not a
@@ -198,3 +217,5 @@ fun ImportTranscriptScreen(
         }
     }
 }
+
+private const val ScreenshotReaderLimit = com.taskmind.capture.ScreenshotReader.MAX_IMAGES

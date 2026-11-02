@@ -34,6 +34,10 @@ data class ImportUiState(
     val busy: Boolean = false,
     val message: String? = null,
     val done: Boolean = false,
+    /** The text came from screenshots read on the phone. */
+    val fromScreenshots: Boolean = false,
+    /** Screenshots being read. */
+    val reading: Boolean = false,
 )
 
 class ImportViewModel(private val container: AppContainer) : ViewModel() {
@@ -70,6 +74,22 @@ class ImportViewModel(private val container: AppContainer) : ViewModel() {
         )
     }
 
+    /** Reads the words in shared or picked screenshots, on the phone, into the text box. */
+    fun readImages(context: Context, uris: List<android.net.Uri>) {
+        if (uris.isEmpty() || _state.value.reading) return
+        _state.value = _state.value.copy(reading = true, message = null)
+        viewModelScope.launch {
+            val text = runCatching { com.taskmind.capture.ScreenshotReader.read(context, uris) }.getOrDefault("")
+            _state.value = _state.value.copy(reading = false)
+            if (text.isBlank()) {
+                _state.value = _state.value.copy(message = "No words could be read in that picture.")
+            } else {
+                setText(text)
+                _state.value = _state.value.copy(fromScreenshots = true, attachToCallId = null)
+            }
+        }
+    }
+
     fun attachTo(callId: String?) {
         _state.value = _state.value.copy(attachToCallId = callId)
     }
@@ -95,7 +115,7 @@ class ImportViewModel(private val container: AppContainer) : ViewModel() {
             } else {
                 container.captureCoordinator.captureClipboardTranscript(
                     transcript = rendered,
-                    contactLabel = "Imported transcript",
+                    contactLabel = if (current.fromScreenshots) "Screenshot" else "Imported transcript",
                     occurredAt = System.currentTimeMillis(),
                 )
             }

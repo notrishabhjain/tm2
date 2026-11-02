@@ -3,6 +3,7 @@ package com.taskmind.diagnostics
 import android.content.Context
 import com.taskmind.core.CaptureMetrics
 import com.taskmind.core.FocusLog
+import kotlin.math.roundToInt
 import com.taskmind.di.AppContainer
 import kotlinx.coroutines.flow.first
 
@@ -63,6 +64,18 @@ object CaptureHealth {
         if (days.isEmpty()) return null
         val completed = container.taskRepository.observeTasks().first().associate { it.id to it.completedAt }
         return FocusLog.completion(days, { completed[it] }, now)
+    }
+
+    /**
+     * Open tasks that look like another open task captured twice, as "N of M
+     * open (x%)". The linking release's gate is under 5%. Null with nothing open.
+     */
+    suspend fun duplicates(container: AppContainer): String? {
+        val open = com.taskmind.data.repo.TaskRanking.rankable(container.taskRepository.observeTasks().first())
+        if (open.isEmpty()) return null
+        val pairs = com.taskmind.relate.TaskRelations.duplicates(open.map(com.taskmind.ui.tasks.TaskBundles::relatable))
+        val involved = pairs.flatMap { listOf(it.keepId, it.otherId) }.toSet().size
+        return "$involved of ${open.size} open (${(100.0 * involved / open.size).roundToInt()}%)"
     }
 
     /** The baseline as text and when it was taken, or null if not yet. */

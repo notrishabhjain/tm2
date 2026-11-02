@@ -101,6 +101,10 @@ current work say what matters to them. Anything they list as things to ignore is
 isTask=false. A request from someone they list as a key person deserves the benefit of the
 doubt; the same request from a stranger in a busy group does not.
 
+ONE MESSAGE MAY BE SEVERAL. When someone sends a few lines in a row, they arrive together,
+one per line as "[HH:mm] Sender: text". Read them as one message - "Rishabh", "the PO", "can
+you sign it today?" is one request - and quote evidence from any of those lines.
+
 WHAT CAME BEFORE. The message may be preceded by up to three sections. Use them; they are
 how a short message like "ok send it", "any update?" or "Friday then" makes sense.
 - "Earlier in this chat" - the last few messages in the same conversation, oldest first.
