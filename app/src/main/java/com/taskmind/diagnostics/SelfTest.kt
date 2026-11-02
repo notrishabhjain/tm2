@@ -173,7 +173,7 @@ class SelfTest(private val context: Context, private val container: AppContainer
             ),
         )
 
-        container.extractionPipeline.process(capture.copy(state = CaptureState.PENDING_EXTRACTION))
+        container.extractionPipeline.process(capture.copy(state = CaptureState.PENDING_EXTRACTION), burst = false)
 
         val tasks = container.database.taskDao().byRawCapture(captureId)
         if (tasks.isEmpty()) {
@@ -201,7 +201,7 @@ class SelfTest(private val context: Context, private val container: AppContainer
 
         val capture = container.database.rawCaptureDao().byId(captureId)
             ?: return@timedSuspend false to "the RawCapture row was not written"
-        container.extractionPipeline.process(capture.copy(state = CaptureState.PENDING_EXTRACTION))
+        container.extractionPipeline.process(capture.copy(state = CaptureState.PENDING_EXTRACTION), burst = false)
 
         val tasks = container.database.taskDao().byRawCapture(captureId)
         if (tasks.isEmpty()) {

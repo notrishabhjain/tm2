@@ -43,13 +43,21 @@ class ExtractionWorker(context: Context, params: WorkerParameters) : CoroutineWo
             if (batch.isEmpty()) return Result.success()
 
             var retryNeeded = false
+            var nextBurst: Long? = null
             for (capture in batch) {
-                when (container.extractionPipeline.process(capture)) {
+                // A message read earlier in this batch as part of its chat's
+                // burst is already done; the batch was fetched before that.
+                val fresh = dao.byId(capture.id) ?: continue
+                if (fresh.state != CaptureState.PENDING_EXTRACTION) continue
+                when (val outcome = container.extractionPipeline.process(fresh)) {
                     is ExtractionPipeline.Outcome.Retry -> retryNeeded = true
+                    is ExtractionPipeline.Outcome.Deferred -> nextBurst = minOf(nextBurst ?: outcome.at, outcome.at)
                     is ExtractionPipeline.Outcome.Parked -> Unit
                     else -> Unit
                 }
             }
+            // A chat still talking: come back once it has gone quiet.
+            nextBurst?.let { Scheduler.enqueueExtractionAfter(applicationContext, (it - System.currentTimeMillis()).coerceAtLeast(5_000L)) }
             if (retryNeeded) Result.retry() else Result.success()
         } catch (t: Throwable) {
             container.logger.write(Stage.WORKER, LogLevel.ERROR, "extraction worker failed", t.toString())

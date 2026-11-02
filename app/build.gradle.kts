@@ -11,8 +11,8 @@ plugins {
 
 // versionCode / versionName are the contract the self-updater (spec S19) checks
 // against update.json. Bump both together.
-val appVersionCode = 27
-val appVersionName = "1.26.0"
+val appVersionCode = 28
+val appVersionName = "1.27.0"
 
 /**
  * Release signing.
@@ -173,6 +173,12 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
+
+    // On-device text recognition for shared screenshots (v1.27): the picture
+    // never leaves the phone; only the text read from it goes on, like any
+    // shared text. Bundled model, so it works offline and without Play
+    // services updates.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

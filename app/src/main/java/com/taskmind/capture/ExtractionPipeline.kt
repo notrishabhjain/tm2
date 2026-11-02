@@ -9,6 +9,7 @@ import com.taskmind.ai.TaskExtractor
 import com.taskmind.ai.TranscriptInput
 import com.taskmind.core.Backoff
 import com.taskmind.core.Areas
+import com.taskmind.core.Burst
 import com.taskmind.core.CaptureState
 import com.taskmind.core.ChatContext
 import com.taskmind.core.EvidenceMatcher
@@ -63,11 +64,17 @@ class ExtractionPipeline(
         data class Retry(val reason: String, val at: Long?) : Outcome
         data class Rejected(val reason: String) : Outcome
         data class Permanent(val reason: String) : Outcome
+        /** Its chat is still talking; read the burst together at [at]. */
+        data class Deferred(val at: Long) : Outcome
     }
 
-    suspend fun process(capture: RawCaptureEntity): Outcome {
-        val text = capture.rawText
-        if (text.isNullOrBlank()) {
+    /**
+     * [burst] false reads the capture on its own, now - for the self-tests,
+     * which must not wait a quiet minute for a chat that does not exist.
+     */
+    suspend fun process(capture: RawCaptureEntity, burst: Boolean = true): Outcome {
+        val rawText = capture.rawText
+        if (rawText.isNullOrBlank()) {
             return Outcome.Parked("no text yet - awaiting transcription")
         }
 
@@ -111,13 +118,27 @@ class ExtractionPipeline(
             }
         }
 
+        // A chat that is still talking is read once it goes quiet, as one
+        // burst (see Burst). Checked before the fingerprint, which is only
+        // written when the message is actually read.
+        val siblings = if (burst && capture.sourceType == SourceType.NOTIFICATION) burstOf(capture) else emptyList()
+        if (burst && capture.sourceType == SourceType.NOTIFICATION) {
+            val ready = Burst.readyAt((siblings + capture).map { line(it) })
+            if (ready > now) {
+                (siblings + capture).forEach {
+                    rawCaptureDao.setRetry(it.id, CaptureState.PENDING_EXTRACTION, it.attemptCount, null, ready)
+                }
+                return Outcome.Deferred(ready)
+            }
+        }
+
         // Fingerprint check. Cheap pre-inference reject only; the unique index
         // on tasks is what actually prevents duplicates (spec 6.2).
         if (capture.sourceType == SourceType.NOTIFICATION) {
             val fingerprint = SourceRef.fingerprint(
                 packageName = capture.sourceApp.orEmpty(),
                 senderKey = capture.contextLabel.orEmpty(),
-                messageText = text,
+                messageText = rawText,
             )
             val sevenDaysAgo = now - SEVEN_DAYS
             if (fingerprintDao.seenSince(fingerprint, sevenDaysAgo) > 0) {
@@ -128,8 +149,25 @@ class ExtractionPipeline(
             fingerprintDao.insert(FingerprintEntity(fingerprint, now))
         }
 
+        // The rest of the burst joins this message. A sibling already seen
+        // (a re-delivered notification) is dropped rather than read twice.
+        val joined = siblings.filter { s ->
+            val fp = SourceRef.fingerprint(s.sourceApp.orEmpty(), s.contextLabel.orEmpty(), s.rawText.orEmpty())
+            if (fingerprintDao.seenSince(fp, now - SEVEN_DAYS) > 0) {
+                rawCaptureDao.setState(s.id, CaptureState.REJECTED)
+                false
+            } else {
+                fingerprintDao.insert(FingerprintEntity(fp, now))
+                true
+            }
+        }
+        val text = if (joined.isEmpty()) rawText else Burst.combine((joined + capture).map { line(it) })
+        if (joined.isNotEmpty()) {
+            logger.write(Stage.EXTRACT, LogLevel.DEBUG, "reading ${joined.size + 1} messages as one burst", capture.sourceRef)
+        }
+
         val block = contextFor(capture)
-        return when (capture.sourceType) {
+        val outcome = when (capture.sourceType) {
             SourceType.NOTIFICATION ->
                 processMessage(capture, text, settings.verifyPass, settings.ownNames, now, todayKey, settings.aboutMe, block)
             SourceType.CALL, SourceType.CLIPBOARD ->
@@ -139,7 +177,35 @@ class ExtractionPipeline(
                 Outcome.Done(0, 0, 0)
             }
         }
+        // The burst's other messages end where this one did: read, or set
+        // aside. On a failure that will be retried they stay pending, and are
+        // gathered again with it next time.
+        if (joined.isNotEmpty()) {
+            val finalState = rawCaptureDao.byId(capture.id)?.state
+            if (finalState == CaptureState.DONE || finalState == CaptureState.REJECTED) {
+                joined.forEach { rawCaptureDao.setState(it.id, finalState) }
+            }
+        }
+        return outcome
     }
+
+    /** Other unread messages of the same chat, within the burst window. */
+    private suspend fun burstOf(capture: RawCaptureEntity): List<RawCaptureEntity> {
+        val app = capture.sourceApp ?: return emptyList()
+        val chat = ChatContext.parseLabel(capture.contextLabel)
+        return rawCaptureDao.pendingFromApp(
+            app = app,
+            state = CaptureState.PENDING_EXTRACTION,
+            from = capture.occurredAt - Burst.WINDOW_MILLIS,
+            to = capture.occurredAt + Burst.WINDOW_MILLIS,
+            excludeId = capture.id,
+            limit = Burst.MAX_LINES * 3,
+        ).filter { !it.rawText.isNullOrBlank() && ChatContext.sameChat(chat, ChatContext.parseLabel(it.contextLabel)) }
+            .takeLast(Burst.MAX_LINES - 1)
+    }
+
+    private fun line(c: RawCaptureEntity) =
+        Burst.Line(c.occurredAt, ChatContext.parseLabel(c.contextLabel).sender, c.rawText.orEmpty())
 
     // ------------------------------------------------------------- messages
 

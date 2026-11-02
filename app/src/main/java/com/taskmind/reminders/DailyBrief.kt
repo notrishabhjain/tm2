@@ -50,6 +50,7 @@ object DailyBrief {
         arm(app, Brief.Kind.MORNING, prefs.morningBrief)
         arm(app, Brief.Kind.EVENING, prefs.eveningBrief)
         armWeekly(app, prefs.weeklyReview)
+        runCatching { MeetingNudges.schedule(app) }
     }
 
     private fun armWeekly(context: Context, enabled: Boolean) {

@@ -80,6 +80,14 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <!-- Screenshots shared in: the text is read on the phone and
+                 searched for tasks like shared text. -->
+            <intent-filter android:label="@string/share_label">
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
@@ -200,6 +208,11 @@
         <!-- The 9:00 brief and the 19:00 wrap-up, armed by the app itself. -->
         <receiver
             android:name=".reminders.BriefReceiver"
+            android:exported="false" />
+
+        <!-- Meeting prep and "anything you agreed?", armed from the calendar. -->
+        <receiver
+            android:name=".reminders.MeetingReceiver"
             android:exported="false" />
 
         <provider
