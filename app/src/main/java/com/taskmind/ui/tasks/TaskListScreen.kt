@@ -77,6 +77,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskmind.core.Priority
 import com.taskmind.core.WeeklyReview
 import com.taskmind.core.Cleanup
+import com.taskmind.ui.braindump.BrainDumpSheet
+import androidx.compose.material.icons.outlined.EditNote
 import com.taskmind.core.FollowUp
 import com.taskmind.core.Standing
 import com.taskmind.core.TaskStatus
@@ -121,6 +123,9 @@ fun TaskListScreen(
     onEditorRequestHandled: () -> Unit = {},
     /** Ask the task list a question in words (Ask TaskMind). */
     onAsk: (String) -> Unit = {},
+    /** Opened from the "Brain dump" shortcut: open the brain-dump sheet. */
+    startWithDump: Boolean = false,
+    onDumpRequestHandled: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val undo by viewModel.undo.collectAsStateWithLifecycle()
@@ -138,6 +143,13 @@ fun TaskListScreen(
         }
     }
     var showFilters by remember { mutableStateOf(false) }
+    var showDump by remember { mutableStateOf(false) }
+    LaunchedEffect(startWithDump) {
+        if (startWithDump) {
+            showDump = true
+            onDumpRequestHandled()
+        }
+    }
     var showCleanup by remember { mutableStateOf(false) }
     val cleanup by viewModel.cleanup.collectAsStateWithLifecycle()
 
@@ -169,6 +181,9 @@ fun TaskListScreen(
                         containerColor = MaterialTheme.colorScheme.background,
                     ),
                     actions = {
+                        IconButton(onClick = { showDump = true }) {
+                            Icon(Icons.Outlined.EditNote, contentDescription = "Brain dump")
+                        }
                         IconButton(onClick = { viewModel.setSearching(!state.searching) }) {
                             Icon(Icons.Outlined.Search, contentDescription = "Search tasks")
                         }
@@ -267,6 +282,8 @@ fun TaskListScreen(
                 tag = state.tag,
                 onClearProfile = { viewModel.setProfile(null) },
                 onClearTag = { viewModel.setTag(null) },
+                area = state.area,
+                onClearArea = { viewModel.setArea(null) },
             )
 
             state.week?.let { WeekCard(it) }
@@ -342,7 +359,52 @@ fun TaskListScreen(
                         // Focus is ranked, and the rank is the point, so no
                         // grouping applies. The rest is a tap away.
                         state.view == TaskView.FOCUS -> {
-                            taskRows(state.tasks)
+                            if (state.todayTasks.isNotEmpty()) {
+                                item(key = "today-head") {
+                                    SectionHeading(label = "Today", count = state.todayTasks.size, urgent = false)
+                                }
+                                taskRows(state.todayTasks)
+                            } else {
+                                item(key = "today-empty") {
+                                    Text(
+                                        "Nothing on today's list yet. Add from the suggestions below or from the Inbox.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = Space.edge, vertical = Space.step),
+                                    )
+                                }
+                            }
+                            if (state.carriedTasks.isNotEmpty()) {
+                                item(key = "carried-head") {
+                                    SectionHeading(
+                                        label = "Still open from earlier",
+                                        count = state.carriedTasks.size,
+                                        urgent = false,
+                                        action = "Move to today",
+                                        onAction = { viewModel.planToday(state.carriedTasks.map { it.id }) },
+                                    )
+                                }
+                                taskRows(state.carriedTasks)
+                            }
+                            if (state.suggestedTasks.isNotEmpty()) {
+                                item(key = "suggested-head") {
+                                    SectionHeading(
+                                        label = "Suggested",
+                                        count = state.suggestedTasks.size,
+                                        urgent = false,
+                                        action = "Add all",
+                                        onAction = { viewModel.planToday(state.suggestedTasks.map { it.id }) },
+                                    )
+                                }
+                                items(state.suggestedTasks, key = { "s-${it.id}" }) { task ->
+                                    SuggestRow(
+                                        task = task,
+                                        reason = state.reasons[task.id],
+                                        onAdd = { viewModel.planToday(listOf(task.id)) },
+                                        onOpen = { onOpenTask(task.id) },
+                                    )
+                                }
+                            }
                             if (state.laterCount > 0) {
                                 item(key = "focus-later") {
                                     TextButton(
@@ -433,6 +495,16 @@ fun TaskListScreen(
         }
     }
 
+    if (showDump) {
+        BrainDumpSheet(
+            onDismiss = { showDump = false },
+            onAdded = { n ->
+                showDump = false
+                scope.launch { snackbarHostState.showSnackbar(if (n == 1) "Added 1 task" else "Added $n tasks") }
+            },
+        )
+    }
+
     if (showCleanup) {
         CleanupSheet(
             state = state,
@@ -456,6 +528,7 @@ fun TaskListScreen(
             onSort = viewModel::setSort,
             onGroup = viewModel::setGroup,
             onTag = viewModel::setTag,
+            onArea = viewModel::setArea,
         )
     }
 
@@ -615,6 +688,7 @@ private fun FilterSheet(
     onSort: (SortMode) -> Unit,
     onGroup: (GroupMode) -> Unit,
     onTag: (String?) -> Unit,
+    onArea: (String?) -> Unit = {},
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -640,6 +714,20 @@ private fun FilterSheet(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.snug)) {
                 SortMode.entries.forEach { mode ->
                     FilterChip(selected = state.sort == mode, onClick = { onSort(mode) }, label = { Text(mode.label) })
+                }
+            }
+
+            if (state.areas.isNotEmpty()) {
+                SheetLabel("Area")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.snug)) {
+                    FilterChip(selected = state.area == null, onClick = { onArea(null) }, label = { Text("All areas") })
+                    state.areas.forEach { area ->
+                        FilterChip(
+                            selected = state.area == area,
+                            onClick = { onArea(if (state.area == area) null else area) },
+                            label = { Text(area) },
+                        )
+                    }
                 }
             }
 
@@ -690,8 +778,10 @@ private fun ActiveFilters(
     tag: String?,
     onClearProfile: () -> Unit,
     onClearTag: () -> Unit,
+    area: String? = null,
+    onClearArea: () -> Unit = {},
 ) {
-    if (profile == null && tag == null) return
+    if (profile == null && tag == null && area == null) return
     Row(
         Modifier
             .fillMaxWidth()
@@ -712,6 +802,14 @@ private fun ActiveFilters(
                 onClick = onClearTag,
                 label = { Text(it) },
                 trailingIcon = { Icon(Icons.Outlined.Close, contentDescription = "Clear filter", modifier = Modifier.size(16.dp)) },
+            )
+        }
+        area?.let {
+            InputChip(
+                selected = true,
+                onClick = onClearArea,
+                label = { Text(it) },
+                trailingIcon = { Icon(Icons.Outlined.Close, contentDescription = "All areas", modifier = Modifier.size(16.dp)) },
             )
         }
     }
@@ -739,6 +837,32 @@ private fun priorityColor(priority: Priority, overdue: Boolean): Color = when {
     priority == Priority.HIGH -> MaterialTheme.colorScheme.error.copy(alpha = 0.65f)
     priority == Priority.MEDIUM -> MaterialTheme.colorScheme.primary
     else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+}
+
+/** A suggestion for today: the task, why it is suggested, and one tap to add it. */
+@Composable
+private fun SuggestRow(task: TaskEntity, reason: String?, onAdd: () -> Unit, onOpen: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .heightIn(min = Touch.min)
+            .padding(start = Space.edge, end = Space.snug, top = Space.tight, bottom = Space.tight),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(task.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val meta = listOfNotNull(reason, task.dueAt?.let { DateFormats.due(it) }, task.area)
+            if (meta.isNotEmpty()) {
+                Text(
+                    meta.joinToString("  \u00b7  "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+        TextButton(onClick = onAdd) { Text("+ Today") }
+    }
 }
 
 /** One person in the People view: what you owe them, what they owe you. */

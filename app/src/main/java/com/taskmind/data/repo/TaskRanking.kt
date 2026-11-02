@@ -1,6 +1,8 @@
 package com.taskmind.data.repo
 
+import com.taskmind.core.DateResolver
 import com.taskmind.core.Importance
+import com.taskmind.core.TodayPlan
 import com.taskmind.core.Standing
 import com.taskmind.core.TaskStatus
 import com.taskmind.core.WaitingOn
@@ -39,7 +41,18 @@ object TaskRanking {
 
     /** Active, top-level: what can be ranked. */
     fun rankable(tasks: List<TaskEntity>): List<TaskEntity> =
-        tasks.filter { it.status == TaskStatus.ACTIVE && it.parentTaskId == null }
+        tasks.filter { it.status == TaskStatus.ACTIVE && it.parentTaskId == null && !it.inbox }
+
+    /** The Today plan for the open tasks, ranked with the same key people as Focus. */
+    fun today(tasks: List<TaskEntity>, aboutMe: String, now: Long, approvedKeyPeople: Set<String> = emptySet()): TodayPlan.Plan {
+        val open = tasks.filter { it.status == TaskStatus.ACTIVE && it.parentTaskId == null }
+        return TodayPlan.plan(
+            open.map { TodayPlan.Task(it.id, it.plannedFor, it.inbox, input(it)) },
+            DateResolver.dayKey(now),
+            now,
+            keyPeople(open, aboutMe, approvedKeyPeople),
+        )
+    }
 
     /** The senders the user named in About me, plus those approved as key people in Rules. */
     fun keyPeople(tasks: List<TaskEntity>, aboutMe: String, approved: Set<String> = emptySet()): Set<String> =

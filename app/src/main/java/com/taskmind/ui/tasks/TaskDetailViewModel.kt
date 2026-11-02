@@ -50,7 +50,10 @@ data class TaskDetailUiState(
     val duplicates: List<TaskEntity> = emptyList(),
     /** Every matter, for the picker. */
     val matters: List<ProjectEntity> = emptyList(),
+    /** The user's areas, for the picker. */
+    val areas: List<String> = emptyList(),
 ) {
+    val onToday: Boolean get() = task?.plannedFor == com.taskmind.core.DateResolver.dayKey(System.currentTimeMillis())
     val matterName: String? get() = task?.projectId?.let { id -> matters.firstOrNull { it.id == id }?.name }
     val maybeDone: Boolean get() = task?.let { FollowUp.MAYBE_DONE_TAG in it.tags && it.status == TaskStatus.ACTIVE } == true
 }
@@ -82,6 +85,9 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
                     rawCapture = container.taskRepository.rawCaptureFor(task),
                 )
             }
+        }
+        viewModelScope.launch {
+            container.settingsRepository.settings.collect { s -> _state.value = _state.value.copy(areas = s.areas) }
         }
         viewModelScope.launch {
             container.taskRepository.observeProjects().collect { projects ->
@@ -141,6 +147,18 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
 
     fun save(update: TaskEntity) {
         viewModelScope.launch { container.taskRepository.update(update) }
+    }
+
+    fun setArea(area: String?) {
+        val task = _state.value.task ?: return
+        save(task.copy(area = area))
+    }
+
+    /** On or off today's list. */
+    fun setToday(on: Boolean) {
+        val task = _state.value.task ?: return
+        val today = com.taskmind.core.DateResolver.dayKey(System.currentTimeMillis())
+        save(task.copy(plannedFor = if (on) today else null, inbox = false))
     }
 
     /** Files the task under a matter, or under none. */

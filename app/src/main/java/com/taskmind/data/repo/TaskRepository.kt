@@ -125,6 +125,8 @@ class TaskRepository(
         reminderAt: Long? = null,
         recurrenceRule: String? = null,
         parentTaskId: String? = null,
+        area: String? = null,
+        plannedFor: String? = null,
     ): IntakeResult {
         tags.forEach { tagDao.insert(TagEntity(it, System.currentTimeMillis())) }
         return funnel.submit(
@@ -148,6 +150,8 @@ class TaskRepository(
                 reminderAt = reminderAt,
                 recurrenceRule = recurrenceRule,
                 parentTaskId = parentTaskId,
+                area = area,
+                plannedFor = plannedFor,
             ),
         ).also { result ->
             // A manual task has no dueAtRaw string, so set the date afterwards.
@@ -155,6 +159,39 @@ class TaskRepository(
                 taskDao.setDueAt(result.taskId, dueAt, System.currentTimeMillis())
             }
         }
+    }
+
+    // ------------------------------------------------------- inbox and today
+
+    /** Where an Inbox item goes when the user decides. */
+    enum class Triage { TODAY, LATER, DROP }
+
+    /**
+     * The user's decision on a captured task in the Inbox. Today plans it for
+     * today; Later keeps it on the list unplanned; Drop deletes it, and counts
+     * as a "no" for the rule ideas when it comes within a day.
+     */
+    suspend fun triage(id: String, choice: Triage, todayKey: String) {
+        when (choice) {
+            Triage.DROP -> delete(id)
+            Triage.TODAY, Triage.LATER -> {
+                val task = taskDao.byId(id) ?: return
+                update(task.copy(inbox = false, plannedFor = if (choice == Triage.TODAY) todayKey else task.plannedFor))
+            }
+        }
+    }
+
+    /** Puts tasks on (or, with null, takes them off) a day's Today list. */
+    suspend fun plan(ids: List<String>, dayKey: String?) {
+        ids.forEach { id ->
+            val task = taskDao.byId(id) ?: return@forEach
+            update(task.copy(plannedFor = dayKey, inbox = false))
+        }
+    }
+
+    suspend fun setArea(id: String, area: String?) {
+        val task = taskDao.byId(id) ?: return
+        update(task.copy(area = area))
     }
 
     // -------------------------------------------------------------- mutation
@@ -201,6 +238,7 @@ class TaskRepository(
                 occurredAt = now,
                 tags = task.tags,
                 projectId = task.projectId,
+                area = task.area,
                 recurrenceRule = rule,
                 parentTaskId = task.parentTaskId,
             ),
@@ -325,6 +363,7 @@ class TaskRepository(
                 sourceText = item.sourceText,
                 occurredAt = item.occurredAt,
                 reminderAt = reminderAt,
+                area = item.area,
             ),
         )
         if (result is IntakeResult.Created) {

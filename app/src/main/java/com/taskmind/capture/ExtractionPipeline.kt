@@ -8,6 +8,7 @@ import com.taskmind.ai.MessageInput
 import com.taskmind.ai.TaskExtractor
 import com.taskmind.ai.TranscriptInput
 import com.taskmind.core.Backoff
+import com.taskmind.core.Areas
 import com.taskmind.core.CaptureState
 import com.taskmind.core.ChatContext
 import com.taskmind.core.EvidenceMatcher
@@ -166,6 +167,7 @@ class ExtractionPipeline(
             aboutMe = aboutMe,
             context = ChatContext.render(block),
             rules = rules(),
+            areas = settingsRepository.current().areas,
         )
 
         logger.write(
@@ -231,6 +233,7 @@ class ExtractionPipeline(
                 aboutMe = aboutMe,
                 context = ChatContext.render(block),
                 rules = rules(),
+                areas = settingsRepository.current().areas,
             ),
         )
         settingsRepository.recordLlmCall(todayKey, capture.sourceApp)
@@ -326,6 +329,7 @@ class ExtractionPipeline(
         label: String,
         block: ChatContext.Block = ChatContext.Block.EMPTY,
     ): Outcome {
+        val areas = settingsRepository.current().areas
         var created = 0
         var review = 0
         var dropped = 0
@@ -350,6 +354,10 @@ class ExtractionPipeline(
                 occurredAt = capture.occurredAt,
                 tags = tags,
                 projectId = (matter as? ChatContext.MatterChoice.Existing)?.id,
+                area = Areas.normalize(task.areaRef, areas),
+                // Inbox-first: a captured task waits for the user's yes before
+                // it reaches their list.
+                inbox = true,
             )
             when (val result = funnel.submit(candidate)) {
                 is IntakeResult.Created -> {

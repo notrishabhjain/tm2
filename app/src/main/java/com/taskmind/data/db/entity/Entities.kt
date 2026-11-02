@@ -1,5 +1,6 @@
 package com.taskmind.data.db.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -75,6 +76,17 @@ data class TaskEntity(
     val completedAt: Long? = null,
     val createdAt: Long,
     val updatedAt: Long,
+
+    /** Work, Home, Money... one of the user's areas, or null when not yet filed. */
+    val area: String? = null,
+    /** The day ("2026-10-31", IST) the user put this on their Today list, or null. */
+    val plannedFor: String? = null,
+    /**
+     * Captured and not yet looked at. Inbox-first: a captured task waits in the
+     * Inbox until the user sends it to Today, keeps it for later, or drops it.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val inbox: Boolean = false,
 )
 
 /**
@@ -149,6 +161,8 @@ data class ReviewItemEntity(
     val occurredAt: Long,
     val state: ReviewState = ReviewState.PENDING,
     val createdAt: Long,
+    /** The area the model suggested, carried to the task if it is kept. */
+    val area: String? = null,
 )
 
 @Entity(

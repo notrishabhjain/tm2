@@ -148,7 +148,11 @@ object DailyBrief {
         } else {
             0
         }
-        val message = Brief.compose(kind, items, now, meetings, maybes, picks.map { (t, why) -> Brief.Pick(t.title, why) })
+        val inbox = all.count { it.inbox && it.status == TaskStatus.ACTIVE }
+        val message = Brief.compose(
+            kind, items, now, meetings, maybes, picks.map { (t, why) -> Brief.Pick(t.title, why) },
+            inbox = if (kind == Brief.Kind.MORNING) inbox else 0,
+        )
         if (message == null) {
             container.logger.write(Stage.SYSTEM, LogLevel.DEBUG, "${kind.name.lowercase()} brief: nothing to say")
             return

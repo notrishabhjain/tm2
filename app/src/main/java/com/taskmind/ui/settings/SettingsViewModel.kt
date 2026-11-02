@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -41,6 +42,47 @@ data class SettingsUiState(
 )
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
+
+    // -- areas and routines ---------------------------------------------------
+
+    fun setAreas(text: String) {
+        viewModelScope.launch {
+            container.settingsRepository.setAreas(com.taskmind.core.Areas.parse(text))
+        }
+    }
+
+    /** Open tasks that repeat: the routines. */
+    val routines: StateFlow<List<com.taskmind.data.db.entity.TaskEntity>> = container.taskRepository.observeTasks()
+        .map { all ->
+            all.filter {
+                it.status == com.taskmind.core.TaskStatus.ACTIVE && it.parentTaskId == null &&
+                    com.taskmind.core.Recurrence.isValid(it.recurrenceRule)
+            }.sortedBy { it.dueAt ?: Long.MAX_VALUE }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun addRoutine(title: String, every: com.taskmind.core.Routines.Every, dueAt: Long, leadDays: Int, area: String?) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            container.taskRepository.createManualTask(
+                title = title.trim(),
+                dueAt = dueAt,
+                reminderAt = com.taskmind.core.Routines.reminderFor(dueAt, leadDays),
+                recurrenceRule = every.rule,
+                area = area,
+            )
+            com.taskmind.work.Scheduler.scheduleNextReminder(container.context, container)
+            _ui.value = _ui.value.copy(message = "Routine added: ${title.trim()}")
+        }
+    }
+
+    /** Stops a routine repeating; the current one stays as a normal task. */
+    fun stopRoutine(task: com.taskmind.data.db.entity.TaskEntity) {
+        viewModelScope.launch {
+            container.taskRepository.update(task.copy(recurrenceRule = null))
+            _ui.value = _ui.value.copy(message = "\"${task.title.take(30)}\" will not repeat")
+        }
+    }
 
     // -- rules --------------------------------------------------------------
 

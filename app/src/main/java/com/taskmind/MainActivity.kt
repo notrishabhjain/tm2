@@ -229,6 +229,9 @@ class MainActivity : FragmentActivity() {
         /** Opens the task list with the new-task sheet up - the widget's "+". */
         const val ROUTE_NEW_TASK = "new"
 
+        /** Opens the task list with the brain-dump sheet up - the launcher shortcut. */
+        const val ROUTE_DUMP = "dump"
+
         private const val MAX_SHARED_CHARS = 20_000
     }
 }
@@ -273,10 +276,13 @@ private fun TopLevel(
     val pending by container.database.reviewItemDao()
         .observePendingCount()
         .collectAsStateWithLifecycle(initialValue = 0)
+    val inbox by container.database.taskDao()
+        .observeInboxCount()
+        .collectAsStateWithLifecycle(initialValue = 0)
 
     MainShell(
         current = tab,
-        reviewBadge = pending,
+        reviewBadge = pending + inbox,
         onSelect = { target ->
             navController.navigate(target.route) {
                 // Tabs are siblings, not a stack: switching between them
@@ -318,6 +324,8 @@ fun TaskMindNavHost(
     // The widget's "+" asks for the new-task sheet; the list clears this once
     // it has opened it, so coming back to the list does not open it again.
     var wantNewTask by remember { mutableStateOf(startRoute == MainActivity.ROUTE_NEW_TASK) }
+    // The launcher shortcut's "Brain dump": open the task list with the sheet up.
+    var wantDump by remember { mutableStateOf(startRoute == MainActivity.ROUTE_DUMP) }
 
     // Links that arrive while the app is already open (it is singleTask, so
     // they never pass through the start destination above).
@@ -331,6 +339,10 @@ fun TaskMindNavHost(
             }
             route == MainActivity.ROUTE_NEW_TASK -> {
                 wantNewTask = true
+                navController.navigate(Routes.TASKS) { launchSingleTop = true }
+            }
+            route == MainActivity.ROUTE_DUMP -> {
+                wantDump = true
                 navController.navigate(Routes.TASKS) { launchSingleTop = true }
             }
             route == "status" -> navController.navigate(Routes.STATUS)
@@ -370,6 +382,8 @@ fun TaskMindNavHost(
                     onAsk = { question -> navController.navigate(Routes.ask(question)) },
                     startWithEditor = wantNewTask,
                     onEditorRequestHandled = { wantNewTask = false },
+                    startWithDump = wantDump,
+                    onDumpRequestHandled = { wantDump = false },
                 )
             }
         }
@@ -388,7 +402,11 @@ fun TaskMindNavHost(
         composable(Routes.REVIEW) {
             val vm: ReviewViewModel = viewModel(factory = AppViewModels.factory)
             TopLevel(MainTab.REVIEW, navController) {
-                ReviewScreen(viewModel = vm, onBack = { navController.popBackStack() })
+                ReviewScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenTask = { id -> navController.navigate(Routes.taskDetail(id)) },
+                )
             }
         }
 

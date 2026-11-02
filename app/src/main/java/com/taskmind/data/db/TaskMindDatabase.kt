@@ -45,7 +45,7 @@ import java.util.Locale
         TagEntity::class,
         SeenPackageEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -194,7 +194,22 @@ abstract class TaskMindDatabase : RoomDatabase() {
             }
         }
 
-        private val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+        /**
+         * Areas, the Today plan and the Inbox flag (v1.26). Purely additive:
+         * three nullable or defaulted columns on tasks, one on review items.
+         * Every existing task starts outside the Inbox, with no area and no
+         * plan, which is exactly how it looked before.
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `area` TEXT")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `plannedFor` TEXT")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `inbox` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `review_items` ADD COLUMN `area` TEXT")
+            }
+        }
+
+        private val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         /**
          * Copies the database file aside before any recovery attempt. Returns

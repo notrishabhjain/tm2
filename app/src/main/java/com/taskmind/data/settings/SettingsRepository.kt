@@ -44,6 +44,7 @@ class SettingsRepository(private val context: Context) {
         val allowedPackages = stringSetPreferencesKey("allowed_packages")
         val ownNames = stringSetPreferencesKey("own_names")
         val aboutMe = stringPreferencesKey("about_me")
+        val areas = stringPreferencesKey("areas")
         val groupPolicy = stringPreferencesKey("group_policy")
         val groupsAlwaysWatch = stringSetPreferencesKey("groups_always_watch")
         val groupsNeverWatch = stringSetPreferencesKey("groups_never_watch")
@@ -111,6 +112,7 @@ class SettingsRepository(private val context: Context) {
             allowedPackages = this[K.allowedPackages] ?: d.allowedPackages,
             ownNames = this[K.ownNames] ?: d.ownNames,
             aboutMe = this[K.aboutMe] ?: d.aboutMe,
+            areas = this[K.areas]?.let { com.taskmind.core.Areas.parse(it) }?.takeIf { it.isNotEmpty() } ?: d.areas,
             // A stored name that no longer matches an entry falls back rather
             // than crashing - a saved value can outlive the enum it came from.
             groupPolicy = PreFilter.GroupPolicy.byName(this[K.groupPolicy]) ?: d.groupPolicy,
@@ -164,6 +166,9 @@ class SettingsRepository(private val context: Context) {
     /** Trimmed and de-duplicated here so the matcher never has to. */
     /** The user's own words about their work, fed to every capture prompt. */
     suspend fun setAboutMe(text: String) = edit { it[K.aboutMe] = text.trim().take(Prompts.MAX_ABOUT_ME) }
+
+    /** Saved as typed, read back through Areas.parse; an empty list falls back to the defaults. */
+    suspend fun setAreas(areas: List<String>) = edit { it[K.areas] = com.taskmind.core.Areas.format(areas) }
 
     suspend fun setOwnNames(names: Set<String>) = edit { prefs ->
         prefs[K.ownNames] = names.map { it.trim() }.filter { it.length >= 2 }.toSet()

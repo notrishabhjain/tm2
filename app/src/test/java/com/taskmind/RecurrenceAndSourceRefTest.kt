@@ -60,7 +60,7 @@ class RecurrenceAndSourceRefTest {
         assertNull(Recurrence.next("", anchor))
         assertNull(Recurrence.next("EVERY_OTHER_TUESDAY", anchor))
         assertNull(Recurrence.next("CUSTOM:xd", anchor))
-        assertFalse(Recurrence.isValid("CUSTOM:3y"))
+        assertFalse(Recurrence.isValid("CUSTOM:3h"))
         assertTrue(Recurrence.isValid("CUSTOM:14d"))
     }
 

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.taskmind.di.AppContainer
 import com.taskmind.ui.ask.AskViewModel
+import com.taskmind.ui.braindump.BrainDumpViewModel
 import com.taskmind.ui.calls.CallsViewModel
 import com.taskmind.ui.diagnostics.DiagnosticsViewModel
 import com.taskmind.ui.importer.ImportViewModel
@@ -49,5 +50,6 @@ object AppViewModels {
         initializer { DiagnosticsViewModel(container()) }
         initializer { RecordingsViewModel(container()) }
         initializer { AskViewModel(container()) }
+        initializer { BrainDumpViewModel(container()) }
     }
 }

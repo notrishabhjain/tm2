@@ -145,6 +145,7 @@ Respond with ONLY this JSON, no markdown:
   "updates": "<T number of the open task this message is about, or null>",
   "doneHint": "<T number of an open task this message says is done, or null>",
   "matter": "<M number, a new 2-4 word matter name, or null>",
+  "area": "<one of the user's areas, when the message gives \"The user's areas:\", or null>",
   "confidence": <0.0-1.0. 0.85+ a real commitment, clearly the user's - it goes straight
                  onto their list; 0.5-0.75 a maybe worth one glance in the evening
                  digest; below 0.5 you would not mention it, so say isTask=false
@@ -310,6 +311,7 @@ Return ONLY this JSON, no markdown:
       "notes": "<names, amounts, references; null if none>",
       "updates": "<T number of the open task this is, or null>",
       "matter": "<M number, a new 2-4 word matter name, or null>",
+      "area": "<one of the user's areas, or null>",
       "confidence": <0.0-1.0. 0.85+ clearly spoken, clearly committed; 0.5-0.8 a real
                      commitment with doubt about who or when, or audio that is hard to
                      read. Below 0.5, leave it out.>
@@ -388,6 +390,8 @@ Return ONLY JSON:
         context: String = "",
         /** [Rules.promptBlock]: the rules the user approved. */
         rules: String = "",
+        /** The user's areas, for filing the task (Work, Home...). */
+        areas: List<String> = emptyList(),
     ): String {
         val time = DateResolver.formatForPrompt(occurredAtMillis)
         val where = if (groupName.isNullOrBlank()) {
@@ -397,7 +401,7 @@ Return ONLY JSON:
         }
         val names = userNames.map { it.trim() }.filter { it.isNotEmpty() }
         val who = if (names.isEmpty()) "" else "You are known as: ${names.joinToString(", ")}\n"
-        return aboutBlock(aboutMe) + rules + context + "[$time IST] $who$where: \"$messageText\""
+        return aboutBlock(aboutMe) + rules + Areas.promptLine(areas) + context + "[$time IST] $who$where: \"$messageText\""
     }
 
     fun callUser(
@@ -407,11 +411,13 @@ Return ONLY JSON:
         aboutMe: String = "",
         context: String = "",
         rules: String = "",
+        areas: List<String> = emptyList(),
     ): String {
         val time = DateResolver.formatForPrompt(occurredAtMillis)
         return buildString {
             append(aboutBlock(aboutMe))
             append(rules)
+            append(Areas.promptLine(areas))
             append(context)
             append("Call with ").append(contactLabel).append('\n')
             append("Call date and time: ").append(time).append(" IST\n\n")
