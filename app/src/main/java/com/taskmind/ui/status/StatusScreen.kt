@@ -152,6 +152,13 @@ fun StatusScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                state.email?.let {
+                    Text(
+                        "Mailbox: $it",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.emailFailing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             SectionCard(title = "Permissions", subtitle = "Re-checked every time you open this screen.") {

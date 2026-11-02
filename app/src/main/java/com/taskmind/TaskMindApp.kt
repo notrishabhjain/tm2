@@ -58,6 +58,10 @@ class TaskMindApp : Application() {
             // boot receiver starts this process.
             runCatching { DailyBrief.schedule(this@TaskMindApp) }
             OngoingReminder.cancel(this@TaskMindApp)
+            runCatching {
+                val email = container.emailStore.current()
+                Scheduler.ensureEmailWork(this@TaskMindApp, email.connected, email.intervalHours)
+            }
 
             val settings = container.settingsRepository.current()
             if (settings.cloudConsent && settings.captureCalls) {

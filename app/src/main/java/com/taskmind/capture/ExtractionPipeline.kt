@@ -3,6 +3,7 @@ package com.taskmind.capture
 import com.taskmind.ai.AiResult
 import com.taskmind.ai.errorText
 import com.taskmind.ai.DoneHint
+import com.taskmind.ai.EmailInput
 import com.taskmind.ai.ExtractedTask
 import com.taskmind.ai.MessageInput
 import com.taskmind.ai.TaskExtractor
@@ -14,6 +15,8 @@ import com.taskmind.core.CaptureState
 import com.taskmind.core.ChatContext
 import com.taskmind.core.EvidenceMatcher
 import com.taskmind.core.DateResolver
+import com.taskmind.core.EmailApps
+import com.taskmind.core.EmailText
 import com.taskmind.core.LogLevel
 import com.taskmind.core.SourceRef
 import com.taskmind.core.ProviderDiagnosis
@@ -55,6 +58,8 @@ class ExtractionPipeline(
     private val memory: ChatMemory? = null,
     /** The approved rules as prompt text; empty when there are none. */
     private val rules: () -> String = { "" },
+    /** The user's email addresses, so the model can see whether a mail was sent to them. */
+    private val emailAddresses: suspend () -> Set<String> = { emptySet() },
 ) {
 
     sealed interface Outcome {
@@ -172,6 +177,8 @@ class ExtractionPipeline(
                 processMessage(capture, text, settings.verifyPass, settings.ownNames, now, todayKey, settings.aboutMe, block)
             SourceType.CALL, SourceType.CLIPBOARD ->
                 processTranscript(capture, text, settings.verifyPass, now, todayKey, settings.aboutMe, block)
+            SourceType.EMAIL ->
+                processEmail(capture, text, settings, now, todayKey, block)
             SourceType.MANUAL, SourceType.REVIEW -> {
                 rawCaptureDao.setState(capture.id, CaptureState.DONE)
                 Outcome.Done(0, 0, 0)
@@ -328,6 +335,66 @@ class ExtractionPipeline(
 
         val candidates = verifyAndCorrect(fresh, transcript, verifyPass, now, todayKey, capture.sourceApp)
         return submitAll(capture, candidates, transcript, label, block).withUpdated(updated + marked, capture)
+    }
+
+    // --------------------------------------------------------------- email
+
+    /**
+     * One email, read like a short transcript: any number of asks and
+     * promises, follow-ups to open tasks, and done hints - with the subject
+     * kept in the notes so the task says which mail it came from.
+     */
+    private suspend fun processEmail(
+        capture: RawCaptureEntity,
+        text: String,
+        settings: com.taskmind.data.settings.Settings,
+        now: Long,
+        todayKey: String,
+        block: ChatContext.Block,
+    ): Outcome {
+        val meta = EmailText.parseContext(capture.contextLabel)
+        val channel = EmailApps.label(capture.sourceApp) ?: "Email"
+        logger.write(Stage.EXTRACT, LogLevel.DEBUG, "LLM call for email", "engine=${extractor.originLabel} from=${meta.sender}")
+        val addresses = runCatching { emailAddresses() }.getOrDefault(emptySet())
+        val result = extractor.extractFromEmail(
+            EmailInput(
+                channel = channel,
+                text = text,
+                occurredAt = capture.occurredAt,
+                rawCaptureId = capture.id,
+                sourceLabel = capture.sourceLabel,
+                userNames = settings.ownNames,
+                addresses = addresses,
+                aboutMe = settings.aboutMe,
+                context = ChatContext.render(block),
+                rules = rules(),
+                areas = settings.areas,
+            ),
+        )
+        settingsRepository.recordLlmCall(todayKey, capture.sourceApp)
+
+        val extraction = when (result) {
+            is AiResult.Ok -> result.value
+            else -> return failure(capture, result, now)
+        }
+        logger.write(
+            Stage.EXTRACT,
+            LogLevel.INFO,
+            "email: ${extraction.tasks.size} candidate(s)",
+            "tokens=${extraction.tokens ?: "?"} summary=${extraction.summary?.take(300)}",
+        )
+
+        val who = meta.sender
+        val marked = extraction.done.sumOf { markDone(capture, it, text, block, who) }
+        val (fresh, updated) = applyUpdates(capture, extraction.tasks, text, block, who)
+        if (fresh.isEmpty()) {
+            rawCaptureDao.setState(capture.id, CaptureState.DONE)
+            return Outcome.Done(0, 0, 0, updated + marked)
+        }
+        val candidates = verifyAndCorrect(fresh, text, settings.verifyPass, now, todayKey, capture.sourceApp)
+            .map { t -> if (t.notes.isNullOrBlank() && meta.subject != null) t.copy(notes = "Email: ${meta.subject}") else t }
+        val label = capture.sourceLabel ?: "${meta.sender} - $channel"
+        return submitAll(capture, candidates, text, label, block).withUpdated(updated + marked, capture)
     }
 
     // -------------------------------------------------------------- verify

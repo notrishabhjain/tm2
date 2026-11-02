@@ -109,7 +109,11 @@ class SyncEngine(
         // back the row the push had just flattened. Pulling first merges the
         // edit into the local task, so the push sends the merged result up.
 
-        val pulled = when (val out = SyncPull(container, store, api, state.projectUrl, secrets.anonKey, token).run()) {
+        // Browser edits to area, Today and Inbox are applied only once an
+        // earlier run has filled those columns - before that the server holds
+        // their defaults, and applying them would wipe the phone's values.
+        val todayKnown = store.todayKnown()
+        val pulled = when (val out = SyncPull(container, store, api, state.projectUrl, secrets.anonKey, token, todayKnown).run()) {
             is SupabaseApi.Outcome.Ok -> out.value
             is SupabaseApi.Outcome.Failed -> return@withContext fail(out.message, out.retryable)
         }
@@ -132,6 +136,18 @@ class SyncEngine(
         val resend = store.noteMattersSchema(hasMatters)
         if (resend) {
             container.logger.write(Stage.SYSTEM, LogLevel.INFO, "Web sync: matters found on the server, re-sending tasks once")
+        }
+        // The Today columns (schema_v5.sql). A missing column is a 400 naming
+        // it; anything else fails the run as before.
+        val hasToday = when (val probe = api.select(state.projectUrl, secrets.anonKey, token, "tasks", "inbox=eq.false&area=is.null&planned_for=is.null", 1)) {
+            is SupabaseApi.Outcome.Ok -> true
+            is SupabaseApi.Outcome.Failed ->
+                if (probe.message.startsWith("HTTP 400") && probe.message.contains("does not exist")) false
+                else return@withContext fail(probe.message, probe.retryable)
+        }
+        val resendToday = store.noteTodaySchema(hasToday)
+        if (resendToday) {
+            container.logger.write(Stage.SYSTEM, LogLevel.INFO, "Web sync: Today and Inbox columns found, re-sending tasks once")
         }
         if (hasMatters) {
             val projects = container.database.projectDao().all()
@@ -156,12 +172,12 @@ class SyncEngine(
 
         // ---- tasks --------------------------------------------------------
 
-        val pushedThrough = if (resend) 0L else state.pushedThrough
+        val pushedThrough = if (resend || resendToday) 0L else state.pushedThrough
         val changed = allTasks.filter { it.updatedAt > pushedThrough }
 
         val taskPush = api.upsert(
             state.projectUrl, secrets.anonKey, token, "tasks",
-            JsonArray(changed.map { taskJson(it, hasMatters) }),
+            JsonArray(changed.map { taskJson(it, hasMatters, hasToday) }),
         )
         if (taskPush is SupabaseApi.Outcome.Failed) return@withContext fail(taskPush.message, taskPush.retryable)
 
@@ -244,9 +260,23 @@ class SyncEngine(
 
     // -- mapping ------------------------------------------------------------
 
-    /** [withMatter] only once the server has the column (schema_v4.sql); before that it would reject the row. */
-    private fun taskJson(task: TaskEntity, withMatter: Boolean): JsonObject = JsonObject(
-        (if (withMatter) mapOf("matter_id" to str(task.projectId)) else emptyMap()) + mapOf(
+    /**
+     * [withMatter] and [withToday] only once the server has those columns
+     * (schema_v4.sql, schema_v5.sql); before that it would reject the row.
+     */
+    private fun taskJson(task: TaskEntity, withMatter: Boolean, withToday: Boolean): JsonObject = JsonObject(
+        (if (withMatter) mapOf("matter_id" to str(task.projectId)) else emptyMap()) +
+            (
+                if (withToday) {
+                    mapOf(
+                        "area" to str(task.area),
+                        "planned_for" to str(task.plannedFor),
+                        "inbox" to JsonPrimitive(task.inbox),
+                    )
+                } else {
+                    emptyMap()
+                }
+                ) + mapOf(
             "id" to JsonPrimitive(task.id),
             "title" to JsonPrimitive(task.title),
             "notes" to str(task.notes),

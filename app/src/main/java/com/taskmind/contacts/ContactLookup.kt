@@ -60,6 +60,41 @@ object ContactLookup {
         launch(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$digits")))
     }
 
+    /**
+     * Opens WhatsApp with [text] typed in. With a [number] it is that chat;
+     * without one WhatsApp asks which chat. The user presses send - never us.
+     */
+    fun whatsappWithText(context: Context, number: String?, text: String): Boolean {
+        val digits = com.taskmind.core.Nudge.whatsappNumber(number)
+        val intent = if (digits != null) {
+            Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$digits?text=" + Uri.encode(text)))
+        } else {
+            Intent(Intent.ACTION_SEND).setType("text/plain").setPackage("com.whatsapp").putExtra(Intent.EXTRA_TEXT, text)
+        }
+        return runCatching {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        }.getOrDefault(false)
+    }
+
+    /** Opens the mail app with a reply drafted. */
+    fun email(context: Context, address: String?, subject: String?, text: String): Boolean {
+        val to = address.orEmpty().filter { !it.isWhitespace() && it != '?' && it != '&' }
+        val uri = Uri.parse("mailto:$to?subject=" + Uri.encode(subject.orEmpty()) + "&body=" + Uri.encode(text))
+        return runCatching {
+            context.startActivity(Intent(Intent.ACTION_SENDTO, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        }.getOrDefault(false)
+    }
+
+    /** The share sheet, for any other app. */
+    fun share(context: Context, text: String) {
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+        runCatching {
+            context.startActivity(Intent.createChooser(send, "Send with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
     /** Opens an app by package - for a group, whose chat cannot be linked to. */
     fun openApp(context: Context, packageName: String) {
         context.packageManager.getLaunchIntentForPackage(packageName)?.let { launch(context, it) }

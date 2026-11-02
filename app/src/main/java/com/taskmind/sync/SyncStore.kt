@@ -71,6 +71,7 @@ class SyncStore(private val context: Context) {
 
         /** Whether the server's `matters` table has been seen (schema_v4.sql). */
         val mattersSeen = booleanPreferencesKey("matters_seen")
+        val todaySeen = booleanPreferencesKey("today_seen")
 
         val lastAttemptAt = longPreferencesKey("last_attempt_at")
         val lastSuccessAt = longPreferencesKey("last_success_at")
@@ -161,6 +162,23 @@ class SyncStore(private val context: Context) {
         }
         return present
     }
+
+    /**
+     * The same, for the area / planned_for / inbox columns (schema_v5.sql).
+     * Returns true the first time they are seen, when every task is re-sent.
+     */
+    suspend fun noteTodaySchema(present: Boolean): Boolean {
+        val seen = context.syncDataStore.data.first()[K.todaySeen] ?: false
+        if (present == seen) return false
+        context.syncDataStore.edit {
+            it[K.todaySeen] = present
+            if (present) it[K.pushedThrough] = 0L
+        }
+        return present
+    }
+
+    /** Whether a previous run already found, and filled, the Today columns. */
+    suspend fun todayKnown(): Boolean = context.syncDataStore.data.first()[K.todaySeen] ?: false
 
     /** Advanced only after every pulled row has been applied. */
     suspend fun recordPulled(through: String) {

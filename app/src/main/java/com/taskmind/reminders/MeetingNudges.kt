@@ -73,11 +73,15 @@ object MeetingNudges {
         )
 
     /** Today's timed meetings you have not declined, with who is invited. */
-    fun today(context: Context, now: Long): List<Event> {
+    fun today(context: Context, now: Long): List<Event> =
+        between(context, DateResolver.startOfDay(now), DateResolver.endOfDay(now), withAttendees = true)
+
+    /** Timed events between [from] and [to]; attendees only when asked for (a query per event). */
+    fun between(context: Context, from: Long, to: Long, withAttendees: Boolean = false): List<Event> {
         if (!CalendarToday.granted(context)) return emptyList()
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also {
-            ContentUris.appendId(it, DateResolver.startOfDay(now))
-            ContentUris.appendId(it, DateResolver.endOfDay(now))
+            ContentUris.appendId(it, from)
+            ContentUris.appendId(it, to)
         }.build()
         val events = runCatching {
             context.contentResolver.query(
@@ -102,7 +106,7 @@ object MeetingNudges {
                 }
             }.orEmpty()
         }.getOrDefault(emptyList())
-        return events.map { it.copy(attendees = attendees(context, it.id)) }
+        return if (withAttendees) events.map { it.copy(attendees = attendees(context, it.id)) } else events
     }
 
     private fun attendees(context: Context, eventId: Long): List<String> = runCatching {

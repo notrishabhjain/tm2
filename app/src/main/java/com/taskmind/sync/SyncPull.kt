@@ -38,6 +38,8 @@ class SyncPull(
     private val projectUrl: String,
     private val anonKey: String,
     private val accessToken: String,
+    /** Apply area, planned_for and inbox from the browser (schema_v5.sql, already filled). */
+    private val withToday: Boolean = false,
 ) {
 
     data class Applied(val created: Int, val decided: Int, val edited: Int, val skipped: Int) {
@@ -255,6 +257,9 @@ class SyncPull(
             dueAt = if (row.has("due_at")) row.millis("due_at") else current.dueAt,
             reminderAt = if (row.has("reminder_at")) row.millis("reminder_at") else current.reminderAt,
             priority = row.priority("priority", current.priority),
+            area = if (withToday && row.has("area")) row.str("area") else current.area,
+            plannedFor = if (withToday && row.has("planned_for")) row.str("planned_for")?.take(10) else current.plannedFor,
+            inbox = if (withToday && row.has("inbox")) row.bool("inbox") ?: current.inbox else current.inbox,
         )
         // update() stamps a fresh updatedAt, so guarding on equality keeps a
         // no-op pull from looking like a local edit and bouncing back up.
@@ -281,6 +286,12 @@ class SyncPull(
     private fun JsonObject.millis(key: String): Long? {
         val text = str(key) ?: return null
         return runCatching { OffsetDateTime.parse(text).toInstant().toEpochMilli() }.getOrNull()
+    }
+
+    private fun JsonObject.bool(key: String): Boolean? {
+        val value = this[key] as? JsonPrimitive ?: return null
+        if (value is JsonNull) return null
+        return value.content.toBooleanStrictOrNull()
     }
 
     private fun JsonObject.priority(key: String, fallback: Priority = Priority.MEDIUM): Priority {

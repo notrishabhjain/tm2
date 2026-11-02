@@ -24,6 +24,9 @@ interface TaskExtractor {
 
     suspend fun extractFromTranscript(input: TranscriptInput): AiResult<TranscriptExtraction>
 
+    /** One email: the same many-tasks answer a transcript gets. */
+    suspend fun extractFromEmail(input: EmailInput): AiResult<TranscriptExtraction>
+
     /** Spec 14.5. A no-op implementation is a legitimate one. */
     /**
      * [userNames] defaults to empty so a caller that has none still compiles,
@@ -64,6 +67,22 @@ data class TranscriptInput(
     val sourceLabel: String? = null,
     val aboutMe: String = "",
     /** The rendered context: open tasks with this person, matters. */
+    val context: String = "",
+    val rules: String = "",
+    val areas: List<String> = emptyList(),
+)
+
+data class EmailInput(
+    /** "Gmail", "Outlook" or "Email": how it reached the phone. */
+    val channel: String,
+    /** The capture text: From, To, Cc, Subject, then the body. */
+    val text: String,
+    val occurredAt: Long,
+    val rawCaptureId: String? = null,
+    val sourceLabel: String? = null,
+    val userNames: Set<String> = emptySet(),
+    val addresses: Set<String> = emptySet(),
+    val aboutMe: String = "",
     val context: String = "",
     val rules: String = "",
     val areas: List<String> = emptyList(),
@@ -216,6 +235,39 @@ class CloudTaskExtractor(
                 kind = RecordedCall.KIND_TRANSCRIPT,
                 rawCaptureId = input.rawCaptureId,
                 sourceLabel = input.sourceLabel ?: input.contactLabel,
+            ),
+        )
+        return when (result) {
+            is AiResult.Ok -> parseTranscript(result.value)
+            is AiResult.HttpError -> result
+            is AiResult.NetworkError -> result
+            is AiResult.BadResponse -> result
+        }
+    }
+
+    override suspend fun extractFromEmail(input: EmailInput): AiResult<TranscriptExtraction> {
+        val config = configProvider()
+        cachedOrigin = "cloud:${config.model}"
+        val user = Prompts.emailUser(
+            occurredAtMillis = input.occurredAt,
+            channel = input.channel,
+            email = input.text,
+            userNames = input.userNames,
+            addresses = input.addresses,
+            aboutMe = input.aboutMe,
+            context = input.context,
+            rules = input.rules,
+            areas = input.areas,
+        )
+        val result = llm.complete(
+            config = config,
+            systemPrompt = promptProvider().emailSystem,
+            userPrompt = user,
+            maxTokens = 1500,
+            trace = TraceContext(
+                kind = RecordedCall.KIND_EMAIL,
+                rawCaptureId = input.rawCaptureId,
+                sourceLabel = input.sourceLabel,
             ),
         )
         return when (result) {

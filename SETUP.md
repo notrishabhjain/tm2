@@ -41,9 +41,13 @@ column for them in the database, so this cannot start happening by accident.
 6. And `supabase/schema_v4.sql` — matters, so the web app can list tasks by
    matter with the phone's one-line summary. Optional: sync works without it,
    and the phone starts sending matters on its own once it is there.
+7. And `supabase/schema_v5.sql` — Today, the Inbox and areas, so the web page
+   shows what is on today's list, lets you send Inbox items to Today, Later or
+   Drop, and filters by area. Optional in the same way: the phone sends these
+   only once the columns exist, and re-sends every task once when they appear.
 
 You should see "Success. No rows returned" each time. If you get an error, fix
-it and run the whole file again — every statement in all four files is safe to
+it and run the whole file again — every statement in all five files is safe to
 run twice.
 
 > **Already set this up?** Run only the files you have not run yet, in order.
@@ -149,6 +153,9 @@ Tap a tag under the view chips to filter by it; tap it again to clear.
 - **Approve or reject** a review item.
 - **Add a task.** It shows as "not on your phone yet" until the phone picks it
   up, because the phone is what actually creates it.
+- **Decide on the Inbox** (with `schema_v5.sql`): send a captured item to
+  **Today**, keep it for **Later**, or **Drop** it - and put any task on or off
+  today's list. Filter by area.
 
 Changes are not instant on the phone — they arrive on its next sync, which
 happens when you open and leave the app, or hourly. The page marks anything

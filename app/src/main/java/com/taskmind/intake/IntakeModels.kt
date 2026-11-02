@@ -131,6 +131,8 @@ data class FunnelConfig(
     fun toleranceFor(sourceType: SourceType): Double = when (sourceType) {
         SourceType.NOTIFICATION -> notificationTolerance
         SourceType.CLIPBOARD -> clipboardTolerance
+        // Typed text, like a paste: quoted accurately or not at all.
+        SourceType.EMAIL -> clipboardTolerance
         SourceType.CALL -> callTolerance
         // A review item inherits its original source's text; be no stricter
         // than the loosest, because the user has already eyeballed it.

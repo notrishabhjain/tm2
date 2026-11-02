@@ -13,12 +13,15 @@ data class PromptSet(
     val notificationSystem: String,
     val callSystem: String,
     val verifySystem: String,
+    /** Last, with a default, so a set built before email existed still compiles and reads. */
+    val emailSystem: String = Prompts.DEFAULT_EMAIL_SYSTEM,
 ) {
     companion object {
         val DEFAULT = PromptSet(
             notificationSystem = Prompts.DEFAULT_NOTIFICATION_SYSTEM,
             callSystem = Prompts.DEFAULT_CALL_SYSTEM,
             verifySystem = Prompts.DEFAULT_VERIFY_SYSTEM,
+            emailSystem = Prompts.DEFAULT_EMAIL_SYSTEM,
         )
     }
 }
@@ -47,6 +50,14 @@ enum class PromptKind(
         caution = "Same grounding rule as above. Also note the transcript will contain speech-recognition " +
             "errors — the instruction to skip garbled sections rather than guess is what stops invented tasks.",
     ),
+    EMAIL(
+        key = "email_system",
+        title = "Email extraction",
+        purpose = "Pulls the asks and promises out of one email - read from your mailbox, or from a mail " +
+            "app's notification. Runs once per email that gets past the newsletter and robot filter.",
+        caution = "Same grounding rule as the others: the quote must be copied from the email. The " +
+            "\"WHOSE TASK IS IT\" section is what keeps a Cc or a request to a colleague off your list.",
+    ),
     VERIFY(
         key = "verify_system",
         title = "Second-opinion review",
@@ -59,12 +70,14 @@ enum class PromptKind(
     fun defaultText(): String = when (this) {
         NOTIFICATION -> Prompts.DEFAULT_NOTIFICATION_SYSTEM
         CALL -> Prompts.DEFAULT_CALL_SYSTEM
+        EMAIL -> Prompts.DEFAULT_EMAIL_SYSTEM
         VERIFY -> Prompts.DEFAULT_VERIFY_SYSTEM
     }
 
     fun textIn(set: PromptSet): String = when (this) {
         NOTIFICATION -> set.notificationSystem
         CALL -> set.callSystem
+        EMAIL -> set.emailSystem
         VERIFY -> set.verifySystem
     }
 }

@@ -41,6 +41,7 @@ class PromptStore(private val context: Context) {
                     ?: PromptKind.NOTIFICATION.defaultText(),
                 callSystem = prefs[key(PromptKind.CALL)] ?: PromptKind.CALL.defaultText(),
                 verifySystem = prefs[key(PromptKind.VERIFY)] ?: PromptKind.VERIFY.defaultText(),
+                emailSystem = prefs[key(PromptKind.EMAIL)] ?: PromptKind.EMAIL.defaultText(),
             )
         }
 

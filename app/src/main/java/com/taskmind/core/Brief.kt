@@ -22,7 +22,13 @@ object Brief {
     enum class Kind { MORNING, EVENING }
 
     /** The few facts about a task a brief needs. */
-    data class Item(val title: String, val dueAt: Long?, val waitingOn: Boolean)
+    data class Item(
+        val title: String,
+        val dueAt: Long?,
+        val waitingOn: Boolean,
+        /** On today's list: left undone tonight, it is what slipped too. */
+        val plannedToday: Boolean = false,
+    )
 
     data class Message(
         val title: String,
@@ -118,8 +124,10 @@ object Brief {
         // due earlier today and the backlog from before. Waiting-on tasks are
         // left out - they slip because someone else has not done something,
         // and moving them does not chase anybody.
-        val slipped = active.filter { !it.waitingOn && it.dueAt != null && it.dueAt <= endOfToday }
-            .sortedBy { it.dueAt }
+        // And what was put on today's list and not done: the plan for today
+        // slipped as surely as a deadline did.
+        val slipped = active.filter { !it.waitingOn && ((it.dueAt != null && it.dueAt <= endOfToday) || it.plannedToday) }
+            .sortedBy { it.dueAt ?: Long.MAX_VALUE }
         if (slipped.isEmpty() && maybes == 0) return null
         val title = listOfNotNull(
             slipped.size.takeIf { it > 0 }?.let { if (it == 1) "1 thing still open" else "$it things still open" },

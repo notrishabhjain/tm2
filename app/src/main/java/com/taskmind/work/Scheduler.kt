@@ -13,9 +13,11 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.taskmind.capture.ReminderReceiver
 import com.taskmind.capture.WatchdogReceiver
 import com.taskmind.di.AppContainer
+import com.taskmind.email.EmailWorker
 import com.taskmind.reminders.OngoingReminderWorker
 import com.taskmind.sync.SyncWorker
 import java.util.concurrent.TimeUnit
@@ -39,6 +41,7 @@ object Scheduler {
     private const val WORK_UPDATE = "taskmind.update_check"
     private const val WORK_SYNC = "taskmind.web_sync"
     private const val WORK_ONGOING = "taskmind.ongoing_reminder"
+    private const val WORK_EMAIL = "taskmind.email"
 
     private fun wm(context: Context): WorkManager = WorkManager.getInstance(context.applicationContext)
 
@@ -154,6 +157,37 @@ object Scheduler {
         )
     }
 
+    /**
+     * The mailbox check, every [intervalHours] while a mailbox is connected.
+     * UPDATE rather than KEEP, so changing the interval takes effect at once.
+     */
+    fun ensureEmailWork(context: Context, enabled: Boolean, intervalHours: Int) {
+        if (!enabled) {
+            wm(context).cancelUniqueWork(WORK_EMAIL)
+            return
+        }
+        wm(context).enqueueUniquePeriodicWork(
+            WORK_EMAIL,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            PeriodicWorkRequestBuilder<EmailWorker>(intervalHours.coerceIn(1, 24).toLong(), TimeUnit.HOURS)
+                .setConstraints(connected)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
+                .build(),
+        )
+    }
+
+    /** One check now, for the "Check now" button and right after connecting. */
+    fun enqueueEmailNow(context: Context) {
+        wm(context).enqueueUniqueWork(
+            WORK_EMAIL + ".now",
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<EmailWorker>()
+                .setInputData(workDataOf(EmailWorker.KEY_MANUAL to true))
+                .setConstraints(connected)
+                .build(),
+        )
+    }
+
     fun ensureWatchdog(context: Context) {
         WatchdogReceiver.schedule(context)
     }
@@ -168,7 +202,7 @@ object Scheduler {
      * for.
      */
     fun scheduledWorkNames(context: Context): List<String> =
-        listOf(WORK_MAINTENANCE, WORK_RETENTION, WORK_UPDATE, WORK_SYNC).filter { name ->
+        listOf(WORK_MAINTENANCE, WORK_RETENTION, WORK_UPDATE, WORK_SYNC, WORK_EMAIL).filter { name ->
             runCatching {
                 wm(context).getWorkInfosForUniqueWork(name).get()
                     .any { !it.state.isFinished }

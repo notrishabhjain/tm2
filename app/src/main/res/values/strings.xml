@@ -5,10 +5,14 @@
     <string name="widget_title">Pending</string>
     <string name="widget_add">+</string>
     <string name="widget_add_description">New task</string>
+    <string name="widget_dump">🎤</string>
+    <string name="widget_dump_description">Brain dump: say everything on your mind</string>
     <string name="share_label">Find tasks</string>
     <string name="shortcut_dump_short">Brain dump</string>
     <string name="shortcut_dump_long">Say everything on your mind</string>
     <string name="shortcut_inbox_short">Inbox</string>
+    <string name="shortcut_plan_short">Plan my day</string>
+    <string name="shortcut_plan_long">Plan today around my meetings</string>
     <string name="widget_empty">Nothing pending. New tasks appear here on their own.</string>
     <string name="widget_tick">✓</string>
     <string name="widget_prev">‹</string>

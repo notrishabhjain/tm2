@@ -334,6 +334,88 @@ If nobody committed to anything, return "tasks": []. That is a normal answer for
 call or a call that only discussed things.
 """.trim()
 
+    val DEFAULT_EMAIL_SYSTEM: String = """
+You read ONE email for a busy Indian professional and pull out what it puts on THEIR to-do
+list. Most email puts nothing there, and an empty list is the right answer for most email.
+
+The email comes with its From, To, Cc and Subject lines, then its body. Quoted earlier
+messages, signatures and legal footers have already been removed. A forwarded message is
+kept whole: then the words that count are the original sender's, not the forwarder's.
+
+When "You are known as: ..." is given, those are the user's names. "The user's addresses"
+are their email addresses - use them to see whether the user is in To, in Cc, or the sender.
+
+WHOSE TASK IS IT? Settle this first.
+- Sent TO the user and asking them for something -> the user's task.
+- The user only in Cc -> usually information. A task only when they are asked by name.
+- Asking a named person who is not the user ("Rahul, please send the file") -> not the user's
+  task, even when the user is in To.
+- "Email YOU sent" means the user wrote it. Capture what THEY promised ("I'll share the deck
+  by Friday") with assignedToMe=true. A request they made of someone else that they will
+  need to chase is a waiting-on task: assignedToMe=false, confidence 0.5-0.7.
+- A promise the sender makes to the user ("I will send the quote by Monday") is a waiting-on
+  task for the user to chase: assignedToMe=false, confidence 0.5-0.7.
+
+WHAT COUNTS: a concrete deliverable, decision or action the user must do or chase, that
+outlives the email - a verb and an object you could tick off. Each distinct ask is its own
+task; most emails have none or one, rarely more than three.
+
+NOT TASKS: newsletters, marketing, receipts, order and delivery updates, OTPs, bank and card
+statements, social and app notifications, FYIs and status updates, thank-you notes, "noted",
+meeting invitations (the calendar already has them), and anything already done.
+BUT a machine email that asks the user to act - sign a document, approve a request, pay a
+bill by a date, review a pull request, renew before expiry - IS a task.
+
+Confidence decides where a task goes: 0.8 and above goes straight onto the user's list,
+0.5-0.75 into the evening digest, below 0.5 leave it out.
+
+When the email is prefixed with "About the user:", use it to judge what matters; anything
+they list as things to ignore is not a task. When it is prefixed with "Rules the user
+approved:", follow them.
+
+WHAT CAME BEFORE. "Earlier in this chat" holds earlier emails in the same thread, oldest
+first - use them to understand a short reply, but never make a task from them. "The user's
+open tasks with this person or group" are numbered T1, T2: an email about one of them (a
+chase, a new date, a change) is NOT a new task - return it with "updates" set to its number
+and that task's title. An open task the email says is done goes in "done", with the words
+that say so. "Matters the user tracks" are numbered M1, M2: set "matter" to the number, a
+new 2-4 word name for ongoing work that is not listed, or null for a one-off.
+
+You are given when the email was sent. Resolve "tomorrow", "by Friday", "EOD", "next week"
+against THAT moment. A date with no time means 18:00. All times are India Standard Time.
+
+GROUNDING:
+- "evidence" is copied EXACTLY from the email - the subject or the body - word for word.
+  Software checks it; a quote that cannot be found sends the task for review instead.
+- Quote the shortest span that carries the ask, usually 5 to 15 words.
+- Never invent an amount, name, date or recipient that is not in the email.
+
+Return ONLY this JSON, no markdown:
+{
+  "reasoning": "<who asks whom for what, or why there is nothing>",
+  "summary": "<one sentence on what the email is about>",
+  "topics": ["<short phrase>"],
+  "tasks": [
+    {
+      "title": "<imperative, <=60 chars, naming the specifics, in English>",
+      "evidence": "<exact quote from the email>",
+      "priority": "URGENT|HIGH|MEDIUM|LOW",
+      "dueDate": "<ISO 8601 with +05:30, or null>",
+      "assignedToMe": <true if the user must act, false if someone else promised>,
+      "notes": "<amounts, references, who asked; null if none>",
+      "updates": "<T number, or null>",
+      "matter": "<M number, a new 2-4 word name, or null>",
+      "area": "<one of the user's areas, or null>",
+      "confidence": <0.0-1.0>
+    }
+  ],
+  "done": [{"task": "<T number>", "evidence": "<exact quote>"}]
+}
+
+Priority: URGENT = within 24h, or urgent/ASAP. HIGH = 1-3 days, or clearly important.
+MEDIUM = a real task with no stated urgency. LOW = optional.
+""".trim()
+
     val DEFAULT_VERIFY_SYSTEM: String = """
 You are a strict reviewer of tasks extracted from a source text. You receive the source and
 a list of candidate tasks. For each candidate, judge it against the source:
@@ -427,6 +509,36 @@ Return ONLY JSON:
             append("Call date and time: ").append(time).append(" IST\n\n")
             append("TRANSCRIPT:\n")
             append(transcript)
+        }
+    }
+
+    /**
+     * The user-role message for one email. [email] is the capture text: From,
+     * To, Cc and Subject lines, then the cleaned body.
+     */
+    fun emailUser(
+        occurredAtMillis: Long,
+        channel: String,
+        email: String,
+        userNames: Collection<String> = emptyList(),
+        addresses: Collection<String> = emptyList(),
+        aboutMe: String = "",
+        context: String = "",
+        rules: String = "",
+        areas: List<String> = emptyList(),
+    ): String {
+        val time = DateResolver.formatForPrompt(occurredAtMillis)
+        return buildString {
+            append(aboutBlock(aboutMe))
+            append(rules)
+            append(Areas.promptLine(areas))
+            append(context)
+            val names = userNames.map { it.trim() }.filter { it.isNotEmpty() }
+            if (names.isNotEmpty()) append("You are known as: ").append(names.joinToString(", ")).append('\n')
+            val mine = addresses.map { it.trim() }.filter { it.isNotEmpty() }
+            if (mine.isNotEmpty()) append("The user's addresses: ").append(mine.joinToString(", ")).append('\n')
+            append('[').append(time).append(" IST] Email via ").append(channel).append(":\n")
+            append(email.trim())
         }
     }
 

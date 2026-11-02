@@ -202,6 +202,10 @@ interface RawCaptureDao {
     @Query("SELECT * FROM raw_captures ORDER BY capturedAt DESC LIMIT :limit")
     suspend fun recent(limit: Int): List<RawCaptureEntity>
 
+    /** Messages, mails and transcripts with their text still kept, newest first: what the twin can recall. */
+    @Query("SELECT * FROM raw_captures WHERE rawText IS NOT NULL AND occurredAt >= :from ORDER BY occurredAt DESC LIMIT :limit")
+    suspend fun recentWithText(from: Long, limit: Int): List<RawCaptureEntity>
+
     @Query("DELETE FROM raw_captures")
     suspend fun deleteAll()
 }

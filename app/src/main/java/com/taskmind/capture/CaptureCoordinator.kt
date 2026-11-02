@@ -1,6 +1,9 @@
 package com.taskmind.capture
 
 import com.taskmind.core.CaptureState
+import com.taskmind.core.EmailApps
+import com.taskmind.core.EmailFilter
+import com.taskmind.core.EmailText
 import com.taskmind.core.LogLevel
 import com.taskmind.core.Mention
 import com.taskmind.core.NotificationResolver
@@ -29,6 +32,11 @@ class CaptureCoordinator(
     private val seenPackageDao: SeenPackageDao,
     private val logger: ActivityLogger,
 ) {
+
+    companion object {
+        /** What mail read from the mailbox carries as its "app". */
+        const val EMAIL_APP = "email"
+    }
 
     sealed interface Outcome {
         data class Captured(val rawCaptureId: String, val sourceRef: String) : Outcome
@@ -70,14 +78,18 @@ class CaptureCoordinator(
         // line. The activity log keeps 500 entries; that noise was evicting the
         // capture and extraction entries the log exists to show. A package that
         // is not being watched should cost nothing at all, including a log line.
+        // A mail app is read as email when that is switched on, allow-list or
+        // not: its notifications are shaped differently from a chat's.
+        val asEmail = settings.captureEmailApps && EmailApps.isEmailApp(fields.packageName)
         val packageVerdict = PreFilter.evaluatePackage(
             packageName = fields.packageName,
-            isAllowListed = fields.packageName in settings.allowedPackages,
+            isAllowListed = asEmail || fields.packageName in settings.allowedPackages,
             ownPackageName = ownPackageName,
         )
         if (packageVerdict is PreFilter.Verdict.Reject) {
             return Outcome.Rejected(packageVerdict.rule)
         }
+        if (asEmail) return handleEmailNotification(fields, appLabel, settings, ownPackageName)
 
         val resolved = NotificationResolver.resolve(fields)
         if (resolved == null) {
@@ -188,6 +200,111 @@ class CaptureCoordinator(
             "captured notification from ${resolved.senderKey}",
             "pkg=${fields.packageName} via=${resolved.textSource} text=${resolved.messageText.take(200)}",
         )
+        return Outcome.Captured(id, sourceRef)
+    }
+
+    /**
+     * One mail, from a mail app's notification. The cheap rules still run
+     * first - OTPs, receipts, promotions - and an account whose mailbox is
+     * read directly is skipped, since the full mail arrives from there.
+     */
+    private suspend fun handleEmailNotification(
+        fields: NotificationResolver.Fields,
+        appLabel: String?,
+        settings: Settings,
+        ownPackageName: String,
+    ): Outcome {
+        if (fields.isGroupSummary) return Outcome.Rejected("group summary")
+        if (fields.isOngoing || fields.isMediaStyle) return Outcome.Rejected("not a mail")
+        val mail = EmailApps.read(fields.title, fields.text, fields.bigText, fields.subText)
+        if (mail == null) {
+            logger.write(Stage.PREFILTER, LogLevel.DEBUG, "no usable email text", fields.packageName)
+            return Outcome.Unusable
+        }
+        val connected = settings.emailConnectedAddress
+        if (connected.isNotBlank() && mail.account != null && EmailFilter.isMine(mail.account, setOf(connected))) {
+            logger.write(Stage.PREFILTER, LogLevel.DEBUG, "email skipped: that mailbox is read directly", mail.account)
+            return Outcome.Rejected("mailbox read directly")
+        }
+        val verdict = PreFilter.evaluate(
+            PreFilter.Input(
+                packageName = fields.packageName,
+                senderKey = mail.sender,
+                text = (mail.subject + "\n" + mail.body).trim(),
+                isAllowListed = true,
+                ownPackageName = ownPackageName,
+            ),
+        )
+        if (verdict is PreFilter.Verdict.Reject) {
+            logger.write(
+                Stage.PREFILTER,
+                LogLevel.DEBUG,
+                "email rejected: ${verdict.rule}",
+                "pkg=${fields.packageName} sender=${mail.sender} subject=${mail.subject.take(120)}",
+            )
+            return Outcome.Rejected(verdict.rule)
+        }
+
+        val text = EmailApps.captureText(mail)
+        val sourceRef = SourceRef.forNotification(fields.packageName, mail.sender, text)
+        rawCaptureDao.bySourceRef(SourceType.EMAIL.name, sourceRef)?.let { return Outcome.Duplicate(it.id) }
+        val channel = EmailApps.label(fields.packageName) ?: appLabel ?: "Email"
+        val id = UUID.randomUUID().toString()
+        val inserted = rawCaptureDao.insert(
+            RawCaptureEntity(
+                id = id,
+                sourceType = SourceType.EMAIL,
+                sourceRef = sourceRef,
+                sourceApp = fields.packageName,
+                sourceLabel = "${mail.sender} - $channel",
+                rawText = text,
+                capturedAt = System.currentTimeMillis(),
+                occurredAt = if (fields.postTime > 0) fields.postTime else System.currentTimeMillis(),
+                state = CaptureState.PENDING_EXTRACTION,
+                contextLabel = EmailText.contextLabel(mail.sender, null, mail.subject, sent = false),
+            ),
+        )
+        if (inserted == -1L) {
+            val winner = rawCaptureDao.bySourceRef(SourceType.EMAIL.name, sourceRef)
+            return if (winner != null) Outcome.Duplicate(winner.id) else Outcome.Rejected("insert conflict")
+        }
+        logger.write(Stage.CAPTURE, LogLevel.INFO, "captured email from ${mail.sender}", "via=$channel subject=${mail.subject.take(160)}")
+        return Outcome.Captured(id, sourceRef)
+    }
+
+    /**
+     * One mail read from the mailbox. [sourceRef] is built from its
+     * Message-ID, so the same mail met twice - in the inbox and the sent
+     * folder, or on a second pass - is captured once.
+     */
+    suspend fun captureEmail(
+        sourceRef: String,
+        label: String,
+        text: String,
+        occurredAt: Long,
+        contextLabel: String,
+    ): Outcome {
+        rawCaptureDao.bySourceRef(SourceType.EMAIL.name, sourceRef)?.let { return Outcome.Duplicate(it.id) }
+        val id = UUID.randomUUID().toString()
+        val inserted = rawCaptureDao.insert(
+            RawCaptureEntity(
+                id = id,
+                sourceType = SourceType.EMAIL,
+                sourceRef = sourceRef,
+                sourceApp = EMAIL_APP,
+                sourceLabel = label,
+                rawText = text,
+                capturedAt = System.currentTimeMillis(),
+                occurredAt = occurredAt,
+                state = CaptureState.PENDING_EXTRACTION,
+                contextLabel = contextLabel,
+            ),
+        )
+        if (inserted == -1L) {
+            val winner = rawCaptureDao.bySourceRef(SourceType.EMAIL.name, sourceRef)
+            return if (winner != null) Outcome.Duplicate(winner.id) else Outcome.Rejected("insert conflict")
+        }
+        logger.write(Stage.CAPTURE, LogLevel.INFO, "captured email", label)
         return Outcome.Captured(id, sourceRef)
     }
 

@@ -56,6 +56,19 @@
             android:textColor="@color/widget_on_accent"
             android:visibility="gone" />
 
+        <!-- Brain dump: say everything on your mind. -->
+        <TextView
+            android:id="@+id/widget_dump"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="6dp"
+            android:gravity="center"
+            android:text="@string/widget_dump"
+            android:contentDescription="@string/widget_dump_description"
+            android:textSize="18sp"
+            android:background="@drawable/widget_badge"
+            android:textColor="@color/widget_on_accent" />
+
         <!-- New task. A TextView, like every other control here: RemoteViews
              accepts it everywhere, and it needs no drawable. -->
         <TextView

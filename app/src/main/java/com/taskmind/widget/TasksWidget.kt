@@ -159,6 +159,7 @@ class TasksWidget : AppWidgetProvider() {
             if (WidgetPaging.scrolling(context)) bindList(context, this, widgetId)
             setOnClickPendingIntent(R.id.widget_title, openApp(context, Routes.TASKS))
             setOnClickPendingIntent(R.id.widget_add, openApp(context, MainActivity.ROUTE_NEW_TASK))
+            setOnClickPendingIntent(R.id.widget_dump, openApp(context, MainActivity.ROUTE_DUMP))
         }
 
     private fun render(context: Context, snapshot: WidgetData.Snapshot, widgetId: Int): RemoteViews {
@@ -169,7 +170,7 @@ class TasksWidget : AppWidgetProvider() {
         views.setTextViewText(R.id.widget_summary, counts.summary)
 
         if (counts.awaitingApproval > 0) {
-            views.setTextViewText(R.id.widget_review_badge, "${counts.awaitingApproval} to approve")
+            views.setTextViewText(R.id.widget_review_badge, "${counts.awaitingApproval} in Inbox")
             views.setViewVisibility(R.id.widget_review_badge, View.VISIBLE)
             views.setOnClickPendingIntent(R.id.widget_review_badge, openApp(context, Routes.REVIEW))
         } else {
@@ -185,6 +186,7 @@ class TasksWidget : AppWidgetProvider() {
         views.setOnClickPendingIntent(R.id.widget_title, openApp(context, Routes.TASKS))
         // The one thing a home-screen list could not do before: add to it.
         views.setOnClickPendingIntent(R.id.widget_add, openApp(context, MainActivity.ROUTE_NEW_TASK))
+        views.setOnClickPendingIntent(R.id.widget_dump, openApp(context, MainActivity.ROUTE_DUMP))
         views.setOnClickPendingIntent(R.id.widget_summary, openApp(context, Routes.TASKS))
         views.setOnClickPendingIntent(R.id.widget_empty, openApp(context, Routes.TASKS))
 

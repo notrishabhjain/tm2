@@ -337,6 +337,14 @@ class CallPipeline(
                 "no recording found for ${record.contactName ?: record.phoneNumber}",
                 "Is call recording enabled in your phone app?",
             )
+            // With no recording to read, ask the person instead - once, while
+            // the call is still fresh, and only for a real conversation.
+            val who = listOfNotNull(record.contactName, record.phoneNumber).firstOrNull { it.isNotBlank() }
+            val talked = (record.durationSeconds ?: 0L) >= AFTER_CALL_MIN_SECONDS
+            val fresh = System.currentTimeMillis() - callEnd < AFTER_CALL_WINDOW_MILLIS
+            if (who != null && talked && fresh) {
+                runCatching { com.taskmind.di.AppContainer.get(context).notifier.postCallFollowUp(who) }
+            }
         }
         false
     }
@@ -373,6 +381,10 @@ class CallPipeline(
         val DISCOVERY_DELAYS = listOf(3_000L, 3_000L, 4_000L, 10_000L)
 
         const val PENDING_MARKER_MILLIS = 5 * 60 * 1000L
+
+        /** A call this long is a conversation worth asking about. */
+        const val AFTER_CALL_MIN_SECONDS = 60L
+        const val AFTER_CALL_WINDOW_MILLIS = 2 * 60 * 60 * 1000L
         /**
          * How far back each sweep re-reads the call log.
          *

@@ -27,8 +27,8 @@ import androidx.navigation.navArgument
 import androidx.navigation.compose.rememberNavController
 import androidx.fragment.app.FragmentActivity
 import com.taskmind.di.AppContainer
-import com.taskmind.ui.ask.AskScreen
-import com.taskmind.ui.ask.AskViewModel
+import com.taskmind.ui.twin.TwinScreen
+import com.taskmind.ui.twin.TwinViewModel
 import com.taskmind.security.AppLock
 import com.taskmind.security.LockGate
 import com.taskmind.widget.TasksWidget
@@ -248,6 +248,9 @@ class MainActivity : FragmentActivity() {
         /** Opens the task list with the brain-dump sheet up - the launcher shortcut. */
         const val ROUTE_DUMP = "dump"
 
+        /** Opens the twin; "twin|plan", "twin|week" and "twin|nudge:<id>" start it on something. */
+        const val ROUTE_TWIN = "twin"
+
         private const val MAX_SHARED_CHARS = 20_000
     }
 }
@@ -268,11 +271,18 @@ object Routes {
     const val HOW_IT_WORKS = "how_it_works"
     const val DIAGNOSTICS = "diagnostics"
     const val RECORDINGS = "recordings"
-    const val ASK = "ask?q={q}"
+    const val TWIN = "twin?q={q}&start={start}"
 
     fun taskDetail(id: String) = "task/$id"
     fun settingsPage(page: String) = "settings?page=$page"
-    fun ask(question: String) = "ask?q=${android.net.Uri.encode(question)}"
+    fun twin(question: String? = null, start: String? = null): String = buildString {
+        append("twin")
+        val params = listOfNotNull(
+            question?.let { "q=" + android.net.Uri.encode(it) },
+            start?.let { "start=" + android.net.Uri.encode(it) },
+        )
+        if (params.isNotEmpty()) append('?').append(params.joinToString("&"))
+    }
 }
 
 /**
@@ -330,6 +340,7 @@ fun TaskMindNavHost(
         sharedText != null || sharedImages.isNotEmpty() -> Routes.IMPORT
         startRoute == "status" -> Routes.STATUS
         startRoute == "review" -> Routes.REVIEW
+        startRoute != null && startRoute.startsWith(MainActivity.ROUTE_TWIN) -> Routes.TWIN
         // The widget opens a specific task. Matched by prefix rather than
         // listed, because the id is part of the route.
         startRoute != null && startRoute.startsWith("task/") -> startRoute
@@ -346,6 +357,10 @@ fun TaskMindNavHost(
     var wantDump by remember { mutableStateOf(startRoute?.startsWith(MainActivity.ROUTE_DUMP) == true) }
     // Text the dump opens with: "From \"Vendor sync\": " after a meeting.
     var dumpText by remember { mutableStateOf(startRoute?.substringAfter('|', "").orEmpty()) }
+    // What the twin starts with: "plan", "week" or "nudge:<id>", from a notification.
+    var twinStart by remember {
+        mutableStateOf(startRoute?.takeIf { it.startsWith(MainActivity.ROUTE_TWIN) }?.substringAfter('|', "")?.ifBlank { null })
+    }
 
     // Links that arrive while the app is already open (it is singleTask, so
     // they never pass through the start destination above).
@@ -369,6 +384,10 @@ fun TaskMindNavHost(
                 dumpText = route.substringAfter('|', "")
                 wantDump = true
                 navController.navigate(Routes.TASKS) { launchSingleTop = true }
+            }
+            route != null && route.startsWith(MainActivity.ROUTE_TWIN) -> {
+                twinStart = route.substringAfter('|', "").ifBlank { null }
+                navController.navigate(Routes.twin()) { launchSingleTop = true }
             }
             route == "status" -> navController.navigate(Routes.STATUS)
             route == "review" -> navController.navigate(Routes.REVIEW) { launchSingleTop = true }
@@ -404,12 +423,16 @@ fun TaskMindNavHost(
                     onOpenCalls = { navController.navigate(Routes.CALLS) },
                     onOpenImport = { navController.navigate(Routes.IMPORT) },
                     onOpenNameSettings = { navController.navigate(Routes.settingsPage("YOU")) },
-                    onAsk = { question -> navController.navigate(Routes.ask(question)) },
+                    onAsk = { question -> navController.navigate(Routes.twin(question)) { launchSingleTop = true } },
                     startWithEditor = wantNewTask,
                     onEditorRequestHandled = { wantNewTask = false },
                     startWithDump = wantDump,
                     dumpText = dumpText,
                     onDumpRequestHandled = { wantDump = false },
+                    onPlanDay = {
+                        twinStart = "plan"
+                        navController.navigate(Routes.twin()) { launchSingleTop = true }
+                    },
                 )
             }
         }
@@ -422,6 +445,10 @@ fun TaskMindNavHost(
                 viewModel = vm,
                 onBack = { navController.popBackStack() },
                 onOpenTask = { id -> navController.navigate(Routes.taskDetail(id)) },
+                onNudge = { id ->
+                    twinStart = "nudge:$id"
+                    navController.navigate(Routes.twin()) { launchSingleTop = true }
+                },
             )
         }
 
@@ -544,22 +571,33 @@ fun TaskMindNavHost(
         }
 
         composable(
-            Routes.ASK,
+            Routes.TWIN,
             arguments = listOf(
                 navArgument("q") {
                     type = NavType.StringType
                     nullable = true
                     defaultValue = null
                 },
+                navArgument("start") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
             ),
         ) { backStackEntry ->
-            val vm: AskViewModel = viewModel(factory = AppViewModels.factory)
-            AskScreen(
-                viewModel = vm,
-                initialQuestion = backStackEntry.arguments?.getString("q"),
-                onBack = { navController.popBackStack() },
-                onOpenTask = { id -> navController.navigate(Routes.taskDetail(id)) },
-            )
+            val vm: TwinViewModel = viewModel(factory = AppViewModels.factory)
+            TopLevel(MainTab.TWIN, navController) {
+                TwinScreen(
+                    viewModel = vm,
+                    initialQuestion = backStackEntry.arguments?.getString("q"),
+                    startWith = twinStart ?: backStackEntry.arguments?.getString("start"),
+                    onStartHandled = {
+                        twinStart = null
+                        backStackEntry.arguments?.remove("start")
+                    },
+                    onOpenTask = { id -> navController.navigate(Routes.taskDetail(id)) },
+                )
+            }
         }
 
         composable(Routes.IMPORT) {

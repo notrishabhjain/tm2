@@ -1,6 +1,7 @@
 package com.taskmind.data.repo
 
 import com.taskmind.core.ChatContext
+import com.taskmind.core.EmailText
 import com.taskmind.core.FollowUp
 import com.taskmind.core.Priority
 import com.taskmind.core.SourceType
@@ -27,15 +28,19 @@ class ChatMemory(
     private val rawCaptureDao: RawCaptureDao,
     private val taskDao: TaskDao,
     private val projectDao: ProjectDao,
+    /** Where a change made to an existing task is written down, so it can be undone. */
+    private val journal: TwinJournal? = null,
 ) {
 
     /** The context for one capture. Empty when nothing relevant is known. */
     suspend fun contextFor(capture: RawCaptureEntity): ChatContext.Block {
         val chat = when (capture.sourceType) {
-            SourceType.NOTIFICATION -> ChatContext.parseLabel(capture.contextLabel)
+            SourceType.NOTIFICATION, SourceType.EMAIL -> ChatContext.parseLabel(capture.contextLabel)
             else -> ChatContext.Chat(callee(capture), null)
         }
-        val recent = if (capture.sourceType == SourceType.NOTIFICATION && capture.sourceApp != null) {
+        val recent = if (capture.sourceType == SourceType.EMAIL && capture.sourceApp != null) {
+            emailThread(capture)
+        } else if (capture.sourceType == SourceType.NOTIFICATION && capture.sourceApp != null) {
             rawCaptureDao.recentFromApp(
                 app = capture.sourceApp,
                 from = capture.occurredAt - ChatContext.RECENT_WINDOW_MILLIS,
@@ -59,6 +64,28 @@ class ChatMemory(
             .map { ChatContext.OpenTask(it.id, it.title, it.dueAt, it.projectId?.let(names::get)) }
 
         return ChatContext.block(recent, tasks, projects.map { ChatContext.Matter(it.id, it.name) })
+    }
+
+    /**
+     * Earlier mail in the same thread, by its clean subject: what a short
+     * "sounds good, go ahead" is answering. Bodies only - the headers would
+     * cost tokens and say nothing new.
+     */
+    private suspend fun emailThread(capture: RawCaptureEntity): List<ChatContext.Line> {
+        val app = capture.sourceApp ?: return emptyList()
+        val thread = EmailText.parseContext(capture.contextLabel).thread ?: return emptyList()
+        return rawCaptureDao.recentFromApp(
+            app = app,
+            from = capture.occurredAt - EMAIL_THREAD_WINDOW_MILLIS,
+            to = capture.occurredAt,
+            excludeId = capture.id,
+            limit = RECENT_SCAN,
+        ).mapNotNull { c ->
+            val meta = EmailText.parseContext(c.contextLabel)
+            val text = c.rawText?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            if (meta.thread != thread) return@mapNotNull null
+            ChatContext.Line(c.occurredAt, if (meta.sent) "You" else meta.sender, EmailText.bodyOf(text))
+        }
     }
 
     /**
@@ -99,7 +126,15 @@ class ChatMemory(
         val project = projectId ?: task.projectId
         val changes = patch.changes + if (project != task.projectId) listOf("matter") else emptyList()
         if (changes.isEmpty()) return emptyList()
-        taskDao.update(task.with(patch).copy(projectId = project, updatedAt = now))
+        val updated = task.with(patch).copy(projectId = project, updatedAt = now)
+        taskDao.update(updated)
+        runCatching {
+            journal?.record(
+                TwinJournal.SOURCE_CAPTURE,
+                "\"${task.title}\": ${changes.joinToString()} - from ${who.ifBlank { "a message" }}",
+                listOf(TwinJournal.changed(task, updated)),
+            )
+        }
         return changes
     }
 
@@ -108,7 +143,15 @@ class ChatMemory(
         val task = taskDao.byId(taskId)?.takeIf { it.status == TaskStatus.ACTIVE } ?: return null
         val patch = FollowUp.maybeDone(task.current(), who, quote, at)
         if (patch.changes.isEmpty()) return emptyList()
-        taskDao.update(task.with(patch).copy(updatedAt = System.currentTimeMillis()))
+        val updated = task.with(patch).copy(updatedAt = System.currentTimeMillis())
+        taskDao.update(updated)
+        runCatching {
+            journal?.record(
+                TwinJournal.SOURCE_CAPTURE,
+                "\"${task.title}\" may be done - ${who.ifBlank { "a message" }} said so",
+                listOf(TwinJournal.changed(task, updated)),
+            )
+        }
         return patch.changes
     }
 
@@ -152,5 +195,8 @@ class ChatMemory(
         /** Wider than the context, because other chats in the same app are filtered out after. */
         const val RECENT_SCAN = 60
         const val OPEN_SCAN = 300
+
+        /** A thread goes on for days, not the two a chat's context covers. */
+        const val EMAIL_THREAD_WINDOW_MILLIS = 14L * 24 * 60 * 60 * 1000
     }
 }

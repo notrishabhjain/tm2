@@ -14,7 +14,7 @@ import {
   type TaskPatch,
 } from "@/lib/mutations";
 import { bundles, isWaitingOn } from "@/lib/relate";
-import { due, fullDate, isOverdue, isToday, priorityLabel, relative } from "@/lib/format";
+import { due, fullDate, isOverdue, isToday, priorityLabel, relative, todayKey } from "@/lib/format";
 
 const PRIORITIES: Priority[] = ["URGENT", "HIGH", "MEDIUM", "LOW"];
 
@@ -133,6 +133,8 @@ function Dashboard({ email }: { email: string }) {
   const [matters, setMatters] = useState<Matter[]>([]);
   // On by default, as on the phone; with no matters it changes nothing.
   const [byMatter, setByMatter] = useState(true);
+  // Work, Home, Money... from schema_v5.sql; null shows every area.
+  const [area, setArea] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [t, r, q] = await Promise.all([
@@ -199,6 +201,7 @@ function Dashboard({ email }: { email: string }) {
       // it. Reaching into undefined would white-screen the whole app over a
       // migration step that has not happened yet.
       const auto = t.auto_tags ?? [];
+      if (area && (t.area ?? null) !== area) return false;
       if (tag && !auto.some((x) => x.toLowerCase() === tag.toLowerCase()) &&
           !t.tags.some((x) => x.toLowerCase() === tag.toLowerCase())) {
         return false;
@@ -213,9 +216,24 @@ function Dashboard({ email }: { email: string }) {
         t.tags.some((x) => x.toLowerCase().includes(q))
       );
     });
-  }, [tasks, search, tag]);
+  }, [tasks, search, tag, area]);
 
-  const active = useMemo(() => visible.filter((t) => t.status === "ACTIVE"), [visible]);
+  // Captured and not yet decided on: the Inbox, as on the phone. Everything
+  // below works on the rest - your list.
+  const allActive = useMemo(() => visible.filter((t) => t.status === "ACTIVE"), [visible]);
+  const inbox = useMemo(() => allActive.filter((t) => t.inbox === true), [allActive]);
+  const active = useMemo(() => allActive.filter((t) => t.inbox !== true), [allActive]);
+  // What you put on today's list, shown first.
+  const planned = useMemo(() => {
+    const today = todayKey();
+    return active.filter((t) => t.planned_for === today);
+  }, [active]);
+  const areas = useMemo(() => {
+    const names = new Set<string>();
+    for (const t of tasks) if (t.status === "ACTIVE" && t.area) names.add(t.area);
+    return [...names].sort();
+  }, [tasks]);
+  const hasToday = useMemo(() => tasks.some((t) => t.inbox !== undefined), [tasks]);
   // Archived tasks predate archive being removed; they count as done.
   const done = useMemo(
     () => visible.filter((t) => t.status === "COMPLETED" || t.status === "ARCHIVED"),
@@ -276,14 +294,16 @@ function Dashboard({ email }: { email: string }) {
   const groups = useMemo(() => {
     // Other people's moves get their own group, as on the phone, rather than
     // sitting among the things you have to do.
-    const waiting = active.filter((t) => isWaitingOn(t));
-    const mine = active.filter((t) => !isWaitingOn(t));
+    const onToday = new Set(planned.map((t) => t.id));
+    const rest = active.filter((t) => !onToday.has(t.id));
+    const waiting = rest.filter((t) => isWaitingOn(t));
+    const mine = rest.filter((t) => !isWaitingOn(t));
     const overdue = mine.filter((t) => isOverdue(t.due_at));
     const today = mine.filter((t) => !isOverdue(t.due_at) && isToday(t.due_at));
     const upcoming = mine.filter((t) => t.due_at && !isOverdue(t.due_at) && !isToday(t.due_at));
     const undated = mine.filter((t) => !t.due_at);
     return { overdue, today, upcoming, undated, waiting };
-  }, [active]);
+  }, [active, planned]);
 
   const grouped = useMemo(() => (related ? bundles(active) : null), [active, related]);
 
@@ -293,7 +313,9 @@ function Dashboard({ email }: { email: string }) {
     if (!byMatter || related || matters.length === 0) return null;
     const known = new Map(matters.map((m) => [m.id, m]));
     const groupsByMatter = new Map<string, Task[]>();
+    const onToday = new Set(planned.map((t) => t.id));
     for (const t of active) {
+      if (onToday.has(t.id)) continue;
       const id = t.matter_id ?? null;
       if (id && known.has(id)) groupsByMatter.set(id, [...(groupsByMatter.get(id) ?? []), t]);
     }
@@ -305,7 +327,7 @@ function Dashboard({ email }: { email: string }) {
       .sort((a, b) => soonest(a.tasks).localeCompare(soonest(b.tasks)) || a.matter.name.localeCompare(b.matter.name));
     const taken = new Set(list.flatMap((g) => g.tasks.map((t) => t.id)));
     return { list, taken };
-  }, [active, byMatter, related, matters]);
+  }, [active, planned, byMatter, related, matters]);
 
   // The date groups, less anything already shown under a matter.
   const loose = useMemo(() => {
@@ -342,7 +364,7 @@ function Dashboard({ email }: { email: string }) {
 
       <div className="tabs" role="tablist">
         <button className="tab" role="tab" aria-selected={tab === "tasks"} onClick={() => setTab("tasks")}>
-          Tasks<span className="count">{active.length + queued.length}</span>
+          Tasks<span className="count">{active.length + inbox.length + queued.length}</span>
         </button>
         <button className="tab" role="tab" aria-selected={tab === "review"} onClick={() => setTab("review")}>
           Review<span className="count">{reviews.length}</span>
@@ -384,6 +406,18 @@ function Dashboard({ email }: { email: string }) {
               Group related
             </button>
           </div>
+          {areas.length > 0 && (
+            <div className="tagrow">
+              <button className={area === null ? "tagchip on" : "tagchip"} onClick={() => setArea(null)}>
+                All areas
+              </button>
+              {areas.map((a) => (
+                <button key={a} className={area === a ? "tagchip on" : "tagchip"} onClick={() => setArea(area === a ? null : a)}>
+                  {a}
+                </button>
+              ))}
+            </div>
+          )}
           {(showFilters || tag) && tagCloud.length > 0 && (
             <div className="tagrow">
               {tagCloud.map((t) => (
@@ -443,7 +477,24 @@ function Dashboard({ email }: { email: string }) {
             </>
           )}
 
-          {active.length === 0 && done.length === 0 && queued.length === 0 ? (
+          {inbox.length > 0 && (
+            <>
+              <div className="group-head">
+                Inbox
+                <span className="count">{inbox.length}</span>
+              </div>
+              <div className="group-sub">Captured and waiting for you: send each to Today, keep it for later, or drop it.</div>
+              <div className="card">
+                {inbox.map((t) => (
+                  <TaskRow key={t.id} task={t} mutate={mutate} triage />
+                ))}
+              </div>
+            </>
+          )}
+
+          {planned.length > 0 && !grouped && <Group title="On today's list" items={planned} mutate={mutate} />}
+
+          {active.length === 0 && done.length === 0 && queued.length === 0 && inbox.length === 0 ? (
             search.trim() || tag ? (
               <Empty
                 title="Nothing matches"
@@ -486,7 +537,7 @@ function Dashboard({ email }: { email: string }) {
                     />
                   ))}
                   <Group title="Overdue" alert items={loose.overdue} mutate={mutate} />
-                  <Group title="Today" items={loose.today} mutate={mutate} />
+                  <Group title={hasToday ? "Due today" : "Today"} items={loose.today} mutate={mutate} />
                   <Group title="Upcoming" items={loose.upcoming} mutate={mutate} />
                   <Group title="No date" items={loose.undated} mutate={mutate} />
                   <Group title="Waiting on others" items={loose.waiting} mutate={mutate} />
@@ -593,11 +644,14 @@ function Group({
   );
 }
 
-function TaskRow({ task, mutate }: { task: Task; mutate: Mutate }) {
+function TaskRow({ task, mutate, triage = false }: { task: Task; mutate: Mutate; triage?: boolean }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const completed = task.status === "COMPLETED";
   const overdue = !completed && isOverdue(task.due_at);
+  // Only once the phone sends these columns (schema_v5.sql).
+  const knowsToday = task.inbox !== undefined;
+  const onToday = task.planned_for === todayKey();
 
   return (
     <div className="row-wrap">
@@ -634,8 +688,26 @@ function TaskRow({ task, mutate }: { task: Task; mutate: Mutate }) {
                 #{tag}
               </span>
             ))}
+            {task.area && <span className="chip">{task.area}</span>}
+            {onToday && !triage && <span className="chip auto">today</span>}
           </span>
         </button>
+        {triage && (
+          <span className="triage">
+            <button
+              className="link"
+              onClick={() => void mutate(() => patchTask(task.id, { inbox: false, planned_for: todayKey() }))}
+            >
+              Today
+            </button>
+            <button className="link" onClick={() => void mutate(() => patchTask(task.id, { inbox: false }))}>
+              Later
+            </button>
+            <button className="link" onClick={() => void mutate(() => patchTask(task.id, { status: "DELETED" }))}>
+              Drop
+            </button>
+          </span>
+        )}
       </div>
 
       {open && !editing && (
@@ -651,6 +723,8 @@ function TaskRow({ task, mutate }: { task: Task; mutate: Mutate }) {
           {task.notes && <p className="notes">{task.notes}</p>}
           <dl className="facts">
             <Fact label="Due" value={fullDate(task.due_at)} />
+            {task.area && <Fact label="Area" value={task.area} />}
+            {task.planned_for && <Fact label="Planned for" value={onToday ? "today" : task.planned_for} />}
             {task.reminder_at && <Fact label="Reminder" value={fullDate(task.reminder_at)} />}
             {task.recurrence_rule && <Fact label="Repeats" value={task.recurrence_rule} />}
             {task.completed_at && <Fact label="Completed" value={fullDate(task.completed_at)} />}
@@ -665,6 +739,16 @@ function TaskRow({ task, mutate }: { task: Task; mutate: Mutate }) {
             <button className="btn" onClick={() => setEditing(true)}>
               Edit
             </button>
+            {knowsToday && !completed && (
+              <button
+                className="btn"
+                onClick={() =>
+                  void mutate(() => patchTask(task.id, { planned_for: onToday ? null : todayKey(), inbox: false }))
+                }
+              >
+                {onToday ? "Off today's list" : "On today's list"}
+              </button>
+            )}
             <button
               className="btn danger"
               onClick={() => void mutate(() => patchTask(task.id, { status: "DELETED" }))}

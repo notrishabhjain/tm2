@@ -59,9 +59,11 @@ object WidgetData {
             pending = tasks.size,
             overdue = tasks.count { it.dueAt != null && it.dueAt!! < now },
             dueToday = tasks.count { it.dueAt != null && it.dueAt!! in now..endOfToday },
+            // The Inbox badge: maybes waiting, plus captured tasks not yet decided on.
             awaitingApproval = runCatching {
                 runBlocking {
-                    AppContainer.get(context).database.reviewItemDao().observePendingCount().first()
+                    val db = AppContainer.get(context).database
+                    db.reviewItemDao().observePendingCount().first() + db.taskDao().observeInboxCount().first()
                 }
             }.getOrDefault(0),
         )
@@ -77,11 +79,15 @@ object WidgetData {
      * widget slices it for display.
      */
     fun pendingTasks(context: Context): List<TaskEntity> = runCatching {
+        val today = com.taskmind.core.DateResolver.dayKey(System.currentTimeMillis())
         runBlocking {
             AppContainer.get(context).database.taskDao().observeAll().first()
         }
-            .filter { it.status == TaskStatus.ACTIVE }
-            .sortedWith(compareBy({ it.dueAt ?: Long.MAX_VALUE }, { it.title }))
+            // Your list, not the Inbox: captured items wait there until you
+            // decide on them, and a task's steps live inside the task.
+            .filter { it.status == TaskStatus.ACTIVE && !it.inbox && it.parentTaskId == null }
+            // What you put on today first, then by date.
+            .sortedWith(compareBy({ if (it.plannedFor == today) 0 else 1 }, { it.dueAt ?: Long.MAX_VALUE }, { it.title }))
     }.getOrDefault(emptyList())
 
     private fun endOfDay(now: Long): Long {

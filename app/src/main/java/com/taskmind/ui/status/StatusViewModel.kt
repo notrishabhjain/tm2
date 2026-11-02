@@ -61,6 +61,9 @@ data class StatusUiState(
     val focusDone: Int? = null,
     /** Open tasks that look like duplicates, as text. */
     val duplicates: String? = null,
+    /** The mailbox check, as one line; null when no mailbox is connected. */
+    val email: String? = null,
+    val emailFailing: Boolean = false,
 )
 
 class StatusViewModel(private val container: AppContainer) : ViewModel() {
@@ -107,6 +110,14 @@ class StatusViewModel(private val container: AppContainer) : ViewModel() {
                 },
                 focusDone = runCatching { CaptureHealth.focusCompletion(container) }.getOrNull(),
                 duplicates = runCatching { CaptureHealth.duplicates(container) }.getOrNull(),
+                email = runCatching {
+                    val mail = container.emailStore.current()
+                    if (!mail.connected) null else buildString {
+                        append(mail.address).append(" - checked ").append(com.taskmind.email.EmailSync.formatWhen(mail.lastCheckAt))
+                        append(". ").append(mail.lastError.ifBlank { mail.lastResult })
+                    }
+                }.getOrNull(),
+                emailFailing = runCatching { container.emailStore.current().lastError.isNotBlank() }.getOrDefault(false),
             )
         }
     }

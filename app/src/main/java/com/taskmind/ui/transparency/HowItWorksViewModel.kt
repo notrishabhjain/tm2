@@ -171,6 +171,7 @@ class HowItWorksViewModel(private val container: AppContainer) : ViewModel() {
                 ),
                 Rule("Messages must match closely", "The text is exact, so the model has no excuse.", "${(s.notificationTolerance * 100).toInt()}%"),
                 Rule("Pasted transcripts", "Slightly looser: they have been through someone else's transcription.", "${(s.clipboardTolerance * 100).toInt()}%"),
+                Rule("Email", "Typed text, like a paste: the quote must be in the mail's subject or body.", "${(s.clipboardTolerance * 100).toInt()}%"),
                 Rule("Call transcripts", "Loosest, because speech recognition itself makes mistakes.", "${(s.callTolerance * 100).toInt()}%"),
                 Rule("Minimum quote length", "A quote shorter than this proves nothing and is rejected.", "${EvidenceMatcher.MIN_EVIDENCE_CHARS} characters"),
                 Rule("Manual tasks skip this", "You typed it, so there is nothing to verify it against."),
@@ -225,8 +226,19 @@ class HowItWorksViewModel(private val container: AppContainer) : ViewModel() {
             rules = listOf(
                 Rule(
                     "What leaves the device",
-                    "The text of watched messages and your call recordings, to the provider you " +
-                        "configured, and nowhere else. Nothing at all until you add a key.",
+                    "The text of watched messages, emails that pass the filter and your call recordings, " +
+                        "to the provider you configured, and nowhere else. Nothing at all until you add a key.",
+                ),
+                Rule(
+                    "What the twin sends",
+                    "A question or plan goes with your tasks (title, date, who, the short quote), today's " +
+                        "calendar and your matters - and, when it helps and you allow it, a few short snippets " +
+                        "of your own messages found on the phone. The web page gets none of that.",
+                ),
+                Rule(
+                    "Every change the twin or a message makes",
+                    "Written down with what it replaced, under Twin → What TaskMind changed, where each " +
+                        "one can be undone. Nothing is ever sent for you: nudges open WhatsApp or mail for you to send.",
                 ),
                 Rule("Message text, transcripts and recordings", "Deleted on this schedule.", "${s.retentionDays} days"),
                 Rule(

@@ -55,6 +55,11 @@ export function due(iso: string | null, now = new Date()): string {
   return `${dayMonth.format(d)} ${time.format(d)}`;
 }
 
+/** Today's IST date, "2026-11-02": the key the phone's Today list uses. */
+export function todayKey(now = new Date()): string {
+  return istDay(now);
+}
+
 export function fullDate(iso: string | null): string {
   return iso ? `${full.format(new Date(iso))} IST` : "—";
 }

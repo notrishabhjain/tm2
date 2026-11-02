@@ -88,4 +88,11 @@ class BriefTest {
         val m = Brief.compose(Brief.Kind.MORNING, emptyList(), nine, picks = listOf(Brief.Pick("Read contract", "High priority")))
         assertEquals("Your 1 thing today", m!!.title)
     }
+
+    @Test fun `the evening also counts what was put on today's list and not done`() {
+        val planned = tasks + Brief.Item("Draft the proposal", null, waitingOn = false, plannedToday = true)
+        val e = Brief.compose(Brief.Kind.EVENING, planned, seven)!!
+        assertTrue(e.lines.contains("Draft the proposal"))
+        assertEquals(Brief.compose(Brief.Kind.EVENING, tasks, seven)!!.slipped + 1, e.slipped)
+    }
 }

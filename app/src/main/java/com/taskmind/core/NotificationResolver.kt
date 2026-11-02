@@ -20,6 +20,8 @@ object NotificationResolver {
         val title: String? = null,
         val text: String? = null,
         val bigText: String? = null,
+        /** EXTRA_SUB_TEXT: mail apps put the account address here. */
+        val subText: String? = null,
         val textLines: List<String> = emptyList(),
         val conversationTitle: String? = null,
         val isGroupConversation: Boolean = false,

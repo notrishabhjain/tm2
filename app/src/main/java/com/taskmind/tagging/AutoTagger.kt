@@ -114,6 +114,7 @@ object AutoTagger {
         // A candidate the user approved by hand. Worth being able to find:
         // these are the ones the app was unsure about.
         SourceType.REVIEW -> "approved"
+        SourceType.EMAIL -> "email"
     }
 
     data class Parsed(val person: String?, val group: String?, val app: String?)
@@ -221,6 +222,9 @@ object AutoTagger {
         "com.google.android.apps.messaging" to "Messages",
         "com.android.mms" to "Messages",
         "com.google.android.gm" to "Gmail",
+        "com.microsoft.office.outlook" to "Outlook",
+        // Mail read over IMAP carries this instead of a package.
+        "email" to "Email",
         "com.microsoft.teams" to "Teams",
         "com.Slack" to "Slack",
         "com.slack" to "Slack",

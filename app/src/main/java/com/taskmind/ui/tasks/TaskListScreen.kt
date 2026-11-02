@@ -128,6 +128,8 @@ fun TaskListScreen(
     /** What the brain dump opens with, e.g. which meeting it is about. */
     dumpText: String = "",
     onDumpRequestHandled: () -> Unit = {},
+    /** Hand today to the twin: it picks, times and proposes, the user applies. */
+    onPlanDay: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val undo by viewModel.undo.collectAsStateWithLifecycle()
@@ -365,17 +367,26 @@ fun TaskListScreen(
                         state.view == TaskView.FOCUS -> {
                             if (state.todayTasks.isNotEmpty()) {
                                 item(key = "today-head") {
-                                    SectionHeading(label = "Today", count = state.todayTasks.size, urgent = false)
+                                    SectionHeading(
+                                        label = "Today",
+                                        count = state.todayTasks.size,
+                                        urgent = false,
+                                        action = "Plan with twin",
+                                        onAction = onPlanDay,
+                                    )
                                 }
                                 taskRows(state.todayTasks)
                             } else {
                                 item(key = "today-empty") {
-                                    Text(
-                                        "Nothing on today's list yet. Add from the suggestions below or from the Inbox.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = Space.edge, vertical = Space.step),
-                                    )
+                                    Column(Modifier.padding(horizontal = Space.edge, vertical = Space.step)) {
+                                        Text(
+                                            "Nothing on today's list yet. Add from the suggestions below or from the Inbox - " +
+                                                "or let the twin pick and time it around your meetings.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        TextButton(onClick = onPlanDay) { Text("Plan my day") }
+                                    }
                                 }
                             }
                             if (state.carriedTasks.isNotEmpty()) {

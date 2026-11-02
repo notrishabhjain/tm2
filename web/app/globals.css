@@ -332,3 +332,9 @@ button.link:hover { color: var(--text); text-decoration: underline; }
   background: rgba(179,38,30,0.12); color: var(--danger);
 }
 .foot { margin-top: 32px; font-size: 12px; color: var(--text-dim); text-align: center; }
+
+/* Inbox decisions sit at the end of the row, as on the phone. */
+.triage { display: flex; gap: 10px; align-items: center; padding-left: 8px; white-space: nowrap; }
+@media (max-width: 520px) {
+  .triage { gap: 6px; }
+}
