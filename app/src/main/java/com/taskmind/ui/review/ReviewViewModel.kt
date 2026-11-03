@@ -150,8 +150,8 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
             val count = container.taskRepository.dismissStaleReviewItems(cutoff)
             _message.value = when (count) {
                 0 -> "Nothing was past $days days"
-                1 -> "Dismissed 1 item - it is in the Dismissed tab"
-                else -> "Dismissed $count items - they are in the Dismissed tab"
+                1 -> "Dismissed 1 item - it is in the Dropped tab"
+                else -> "Dismissed $count items - they are in the Dropped tab"
             }
         }
     }
@@ -166,8 +166,8 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
             val count = container.taskRepository.dismissStaleReviewItems(System.currentTimeMillis() + 1)
             _message.value = when (count) {
                 0 -> "Nothing left to drop"
-                1 -> "Dropped 1 - it is in the Dismissed tab"
-                else -> "Dropped $count - they are in the Dismissed tab"
+                1 -> "Dropped 1 - it is in the Dropped tab"
+                else -> "Dropped $count - they are in the Dropped tab"
             }
         }
     }
