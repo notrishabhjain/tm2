@@ -734,7 +734,7 @@ private fun QualitySection(settings: Settings, viewModel: SettingsViewModel) {
             value = settings.autoCreateThreshold.toFloat(),
             onValueChange = { viewModel.setThresholds(it.toDouble(), settings.reviewThreshold) },
             valueRange = 0.3f..1f,
-            description = "Below this, a candidate goes to the review inbox instead of your list.",
+            description = "Below this, a candidate waits in Inbox \u2192 Maybes instead of becoming a task.",
         )
         SliderRow(
             label = "Discard below",
@@ -857,9 +857,8 @@ private fun RetentionSection(settings: Settings, viewModel: SettingsViewModel, o
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            "They move to Review \u2192 Dismissed rather than being deleted, so one you would " +
-                "have accepted can still be put back. Nothing in the review inbox expired before " +
-                "this, so the queue only ever grew.",
+            "They move to Inbox \u2192 Dropped rather than being deleted, so one you would " +
+                "have accepted can still be put back.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

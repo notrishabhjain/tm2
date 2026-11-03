@@ -179,15 +179,15 @@ class HowItWorksViewModel(private val container: AppContainer) : ViewModel() {
         ),
         Stage(
             name = "5. The decision",
-            summary = "One function creates every task in the app — from messages, calls, pasted " +
-                "transcripts, the review inbox and your own typing alike. There is no second path.",
+            summary = "One function creates every task in the app — from messages, calls, email, pasted " +
+                "transcripts, accepted maybes and your own typing alike. There is no second path.",
             rules = listOf(
                 Rule("Created without asking", "The model's confidence is at or above this.", "${(s.autoCreateThreshold * 100).toInt()}%"),
-                Rule("Sent to the review inbox", "Between the two thresholds: real enough to keep, not certain enough to assert."),
+                Rule("Sent to Maybes", "Between the two thresholds: real enough to keep, not certain enough to assert."),
                 Rule("Discarded", "Below this, it is logged and dropped.", "${(s.reviewThreshold * 100).toInt()}%"),
                 Rule(
                     "Missing confidence counts as uncertain",
-                    "If the model does not give a number, the task goes to review rather than to your list.",
+                    "If the model does not give a number, it goes to Maybes rather than becoming a task.",
                 ),
                 Rule(
                     "Duplicates",
@@ -248,8 +248,8 @@ class HowItWorksViewModel(private val container: AppContainer) : ViewModel() {
                     "${s.retentionDays} days",
                 ),
                 Rule(
-                    "Review items nobody answered",
-                    "Dismissed, not deleted - they stay in Review \u2192 Dismissed where you can put " +
+                    "Maybes nobody answered",
+                    "Dismissed, not deleted - they move to Inbox \u2192 Dropped where you can put " +
                         "one back.",
                     if (s.reviewExpiryDays == 0) "never" else "${s.reviewExpiryDays} days",
                 ),

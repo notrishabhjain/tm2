@@ -152,7 +152,7 @@ fun PromptScreen(
 
             SectionCard(
                 title = "Reset everything",
-                subtitle = "Puts all three prompts back to the versions that shipped with this build.",
+                subtitle = "Puts every prompt back to the version that shipped with this build.",
             ) {
                 OutlinedButton(onClick = viewModel::resetAll) { Text("Reset all prompts") }
             }

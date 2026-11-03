@@ -336,7 +336,7 @@ private fun CaseRow(result: TaskCreationTest.Result) {
                 append(
                     when {
                         result.createdTitle != null -> "\"${result.createdTitle}\""
-                        result.sentToReview -> "sent to the review inbox"
+                        result.sentToReview -> "sent to Maybes"
                         else -> result.rejectedBy ?: "no task"
                     },
                 )
