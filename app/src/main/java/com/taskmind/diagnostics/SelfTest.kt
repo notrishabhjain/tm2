@@ -365,7 +365,7 @@ class SelfTest(private val context: Context, private val container: AppContainer
         val awaiting = dao.countByState(CaptureState.PENDING_TRANSCRIPTION)
 
         val summary = "pending $pending, awaiting transcription $awaiting, " +
-            "blocked $blocked, held for budget $held, failed $failed"
+            "blocked $blocked, failed $failed" + if (held > 0) ", held by an older build $held" else ""
         if (blocked > 0) {
             return@timedSuspend false to
                 "$summary. The blocked ones are waiting on a provider setting - they retry " +
@@ -373,15 +373,12 @@ class SelfTest(private val context: Context, private val container: AppContainer
         }
 
         // A queue that is not draining looks identical to a broken queue. The
-        // commonest cause is the Wi-Fi-only rule on call audio: the work is
-        // scheduled with an unmetered network constraint, so on mobile data it
-        // waits indefinitely and says nothing at all.
-        val settings = container.settingsRepository.current()
-        if (awaiting > 0 && settings.wifiOnlyAsr && !NetworkState.isUnmetered(context)) {
+        // commonest cause now is Data Saver: with it on, Android blocks mobile
+        // data whenever TaskMind is in the background, and says nothing.
+        if (pending + awaiting > 0 && NetworkState.backgroundDataRestricted(context)) {
             return@timedSuspend false to
-                "$summary. The $awaiting waiting for transcription need Wi-Fi: \"Upload call audio " +
-                "on Wi-Fi only\" is on and this phone is on mobile data. They will transcribe as " +
-                "soon as you are on Wi-Fi, or turn that setting off in Settings -> Advanced -> Limits."
+                "$summary. Data Saver is on and TaskMind is not exempt, so in the background it can " +
+                "only reach the AI on Wi-Fi. Health -> Mobile data in the background -> Fix."
         }
         true to summary
     }

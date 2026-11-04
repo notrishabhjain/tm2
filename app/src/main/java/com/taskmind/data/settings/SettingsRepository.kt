@@ -63,10 +63,10 @@ class SettingsRepository(private val context: Context) {
         val callTolerance = doublePreferencesKey("call_tolerance")
         val verifyPass = booleanPreferencesKey("verify_pass")
 
-        val maxLlmCallsPerDay = intPreferencesKey("max_llm_calls_per_day")
-        val maxAsrMinutesPerDay = intPreferencesKey("max_asr_minutes_per_day")
-        val maxLlmCallsPerPackage = intPreferencesKey("max_llm_calls_per_package")
-        val wifiOnlyAsr = booleanPreferencesKey("wifi_only_asr")
+        // The old daily caps (max_llm_calls_per_day, max_asr_minutes_per_day,
+        // max_llm_calls_per_package, wifi_only_asr) are no longer read: v1.29
+        // removed them. Stored values are simply ignored.
+        val instantCapture = booleanPreferencesKey("instant_capture")
 
         val reviewExpiryDays = intPreferencesKey("review_expiry_days")
         val retentionDays = intPreferencesKey("retention_days")
@@ -133,10 +133,7 @@ class SettingsRepository(private val context: Context) {
             clipboardTolerance = this[K.clipboardTolerance] ?: d.clipboardTolerance,
             callTolerance = this[K.callTolerance] ?: d.callTolerance,
             verifyPass = this[K.verifyPass] ?: d.verifyPass,
-            maxLlmCallsPerDay = this[K.maxLlmCallsPerDay] ?: d.maxLlmCallsPerDay,
-            maxAsrMinutesPerDay = this[K.maxAsrMinutesPerDay] ?: d.maxAsrMinutesPerDay,
-            maxLlmCallsPerPackagePerDay = this[K.maxLlmCallsPerPackage] ?: d.maxLlmCallsPerPackagePerDay,
-            wifiOnlyAsr = this[K.wifiOnlyAsr] ?: d.wifiOnlyAsr,
+            instantCapture = this[K.instantCapture] ?: d.instantCapture,
             reviewExpiryDays = this[K.reviewExpiryDays] ?: d.reviewExpiryDays,
             retentionDays = this[K.retentionDays] ?: d.retentionDays,
             deleteRecordingsAfterTranscription = this[K.deleteRecordings] ?: d.deleteRecordingsAfterTranscription,
@@ -237,13 +234,7 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setVerifyPass(value: Boolean) = edit { it[K.verifyPass] = value }
 
-    suspend fun setBudgets(llmCalls: Int, asrMinutes: Int, perPackage: Int) = edit {
-        it[K.maxLlmCallsPerDay] = llmCalls
-        it[K.maxAsrMinutesPerDay] = asrMinutes
-        it[K.maxLlmCallsPerPackage] = perPackage
-    }
-
-    suspend fun setWifiOnlyAsr(value: Boolean) = edit { it[K.wifiOnlyAsr] = value }
+    suspend fun setInstantCapture(value: Boolean) = edit { it[K.instantCapture] = value }
     suspend fun setReviewExpiryDays(days: Int) = edit { it[K.reviewExpiryDays] = days }
 
     suspend fun setRetentionDays(days: Int) = edit { it[K.retentionDays] = days }

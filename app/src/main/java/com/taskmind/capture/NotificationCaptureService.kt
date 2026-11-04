@@ -118,6 +118,14 @@ class NotificationCaptureService : NotificationListenerService() {
         }
 
         if (outcome is CaptureCoordinator.Outcome.Captured) {
+            // The phone's own first read: a plain ask or promise becomes a task
+            // and a notification now, without waiting for the model. Off the
+            // main thread, and long done before the model's read, which waits
+            // for the chat to go quiet first.
+            container.applicationScope.launch(Dispatchers.IO) {
+                runCatching { container.instantCapture.onCaptured(outcome.rawCaptureId) }
+                    .onFailure { container.logger.write(Stage.CAPTURE, LogLevel.WARN, "first read failed", it.toString()) }
+            }
             Scheduler.enqueueExtraction(this)
         }
     }
@@ -187,7 +195,10 @@ class NotificationCaptureService : NotificationListenerService() {
                         settings = container.cachedSettings,
                         ownPackageName = packageName,
                     )
-                    if (outcome is CaptureCoordinator.Outcome.Captured) replayed++
+                    if (outcome is CaptureCoordinator.Outcome.Captured) {
+                        replayed++
+                        runCatching { container.instantCapture.onCaptured(outcome.rawCaptureId) }
+                    }
                 }
             }
             if (replayed > 0) {

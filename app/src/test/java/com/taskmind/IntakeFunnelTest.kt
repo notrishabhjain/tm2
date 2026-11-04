@@ -432,6 +432,24 @@ class IntakeFunnelTest {
     }
 
     @Test
+    fun `a first read made on the phone creates the task but leaves the capture for the model`() = runTest {
+        val h = Harness()
+        val r = h.funnel.submit(notificationCandidate(confidence = 0.88).copy(provisional = true, inbox = true))
+        assertTrue("$r", r is IntakeResult.Created)
+        assertEquals(1, h.notifier.notified.size)
+        assertTrue("the capture must stay unread", h.marker.marked.isEmpty())
+    }
+
+    @Test
+    fun `an unsure first read is left to the model, not sent to review`() = runTest {
+        val h = Harness()
+        val r = h.funnel.submit(notificationCandidate(confidence = 0.6).copy(provisional = true))
+        assertTrue("$r", r is IntakeResult.Discarded)
+        assertTrue(h.review.proposals.isEmpty())
+        assertTrue(h.marker.marked.isEmpty())
+    }
+
+    @Test
     fun `tunable thresholds actually move the gate`() = runTest {
         val strict = Harness(FunnelConfig(autoCreateThreshold = 0.99, reviewThreshold = 0.9))
         assertTrue(strict.funnel.submit(notificationCandidate(confidence = 0.95)) is IntakeResult.SentToReview)

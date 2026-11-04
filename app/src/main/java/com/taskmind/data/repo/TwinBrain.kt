@@ -199,9 +199,6 @@ class TwinBrain(private val container: AppContainer) {
         val settings = container.settingsRepository.current()
         if (!settings.cloudConsent) return "Cloud processing is off"
         if (!container.secretStore.hasLlmKey()) return "No AI key is set"
-        val today = DateResolver.dayKey(System.currentTimeMillis())
-        container.settingsRepository.rollBudgetIfNeeded(today)
-        if (container.settingsRepository.currentUsage().llmCalls >= settings.maxLlmCallsPerDay) return "Today's AI limit is used up"
         return null
     }
 

@@ -158,7 +158,7 @@ fun RecordingsScreen(
                         OutlinedButton(onClick = viewModel::clearSelection) { Text("Clear") }
                     }
                     Text(
-                        "Roughly ${ui.selectedMinutes} minute(s) of audio against your daily limit.",
+                        "Roughly ${ui.selectedMinutes} minute(s) of audio to transcribe.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -243,7 +243,7 @@ private fun describe(state: CaptureState): String = when (state) {
     // Only reachable for rows recorded before transcription became automatic;
     // the transcription worker moves them back into the queue on its next pass.
     CaptureState.AWAITING_SELECTION -> "about to be queued"
-    CaptureState.BUDGET_HELD -> "held for the daily limit"
+    CaptureState.BUDGET_HELD -> "queued"
     CaptureState.BLOCKED_CONFIG -> "blocked by a provider setting"
     CaptureState.FAILED_PERMANENT -> "failed"
     CaptureState.REJECTED -> "no task found"

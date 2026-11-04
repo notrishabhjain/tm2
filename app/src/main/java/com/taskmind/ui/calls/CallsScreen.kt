@@ -174,7 +174,7 @@ private fun statusLabel(row: CallRow): String = when (row.captureState) {
     CaptureState.PENDING_EXTRACTION -> "Transcribed - reading for tasks"
     CaptureState.PENDING_TRANSCRIPTION -> "Transcribing"
     CaptureState.AWAITING_SELECTION -> "Queueing"
-    CaptureState.BUDGET_HELD -> "Held for the daily limit"
+    CaptureState.BUDGET_HELD -> "Queued"
     CaptureState.BLOCKED_CONFIG -> "Blocked by a provider setting"
     CaptureState.FAILED_PERMANENT -> "Failed"
     CaptureState.REJECTED -> if (row.transcript.isNullOrBlank()) "No recording" else "No task found"

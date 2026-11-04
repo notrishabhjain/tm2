@@ -120,19 +120,16 @@ data class Settings(
     val callTolerance: Double = 0.75,
     val verifyPass: Boolean = true,
 
-    // -- cost and rate control (spec 9) ------------------------------------
-    val maxLlmCallsPerDay: Int = 300,
-    val maxAsrMinutesPerDay: Int = 60,
-    val maxLlmCallsPerPackagePerDay: Int = 60,
-
     /**
-     * Defaults to false: a call worth transcribing is worth a few hundred KB.
+     * The phone's own first read of a message (see QuickRead): a clear ask or
+     * promise becomes an Inbox task the moment the message arrives, and the
+     * model's read moments later rewrites it in better words or takes it back.
      *
-     * As a default this silently did nothing on mobile data - captures sat in
-     * the queue with no error, because a WorkManager constraint that is not met
-     * is not a failure, it is just a job that never starts.
+     * There are no daily caps any more. v1.29 removed the call, per-app and
+     * transcription limits and the Wi-Fi-only rule for call audio: each of
+     * them held real captures back for hours, and speed is the point.
      */
-    val wifiOnlyAsr: Boolean = false,
+    val instantCapture: Boolean = true,
 
     /**
      * How long a review candidate waits before the app answers for you.

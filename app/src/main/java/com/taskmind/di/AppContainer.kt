@@ -235,8 +235,12 @@ class AppContainer(context: Context) {
             memory = chatMemory,
             rules = { Rules.promptBlock(learningStore.rules.value) },
             emailAddresses = { emailStore.current().mine },
+            firstReads = instantCapture,
         )
     }
+
+    /** The phone's own first read of each message, settled by the model's read. */
+    val instantCapture: com.taskmind.capture.InstantCapture by lazy { com.taskmind.capture.InstantCapture(this) }
 
     val transcriptionPipeline: TranscriptionPipeline by lazy {
         TranscriptionPipeline(
@@ -261,6 +265,9 @@ class AppContainer(context: Context) {
         )
     }
 
+    /** Reads captures the moment they arrive; WorkManager is its safety net. */
+    val instantLane: com.taskmind.capture.InstantLane by lazy { com.taskmind.capture.InstantLane(this) }
+
     val selfUpdater: SelfUpdater by lazy { SelfUpdater(appContext, httpClient, logger) }
 
     val backupRepository: BackupRepository by lazy {
@@ -277,6 +284,9 @@ class AppContainer(context: Context) {
         applicationScope.launch {
             settingsRepository.settings.collectLatest { cachedSettings = it }
         }
+        // Watches the network from here on, and reads whatever is waiting as
+        // soon as one is up.
+        instantLane.start()
     }
 
     /** Human-readable app name for a package, for prompts and the log. */

@@ -14,6 +14,7 @@ import com.taskmind.core.Burst
 import com.taskmind.core.CaptureState
 import com.taskmind.core.ChatContext
 import com.taskmind.core.EvidenceMatcher
+import com.taskmind.core.FirstReadMatch
 import com.taskmind.core.DateResolver
 import com.taskmind.core.EmailApps
 import com.taskmind.core.EmailText
@@ -60,6 +61,8 @@ class ExtractionPipeline(
     private val rules: () -> String = { "" },
     /** The user's email addresses, so the model can see whether a mail was sent to them. */
     private val emailAddresses: suspend () -> Set<String> = { emptySet() },
+    /** The phone's first reads of messages, which the model's read confirms or withdraws. */
+    private val firstReads: FirstReads? = null,
 ) {
 
     sealed interface Outcome {
@@ -104,24 +107,11 @@ class ExtractionPipeline(
             )
         }
 
+        // No daily caps (v1.29). They used to park a capture until midnight
+        // once a busy day had spent them - the opposite of what the user
+        // wants from a second mind. Calls are still counted, for Health.
         val todayKey = DateResolver.dayKey(now)
         settingsRepository.rollBudgetIfNeeded(todayKey)
-        val usage = settingsRepository.currentUsage()
-
-        // Spec 9: on exhaustion, captures move to BUDGET_HELD and are retried
-        // after the next local midnight. Never discarded.
-        if (usage.llmCalls >= settings.maxLlmCallsPerDay) {
-            hold(capture, "daily LLM budget of ${settings.maxLlmCallsPerDay} calls reached", now)
-            return Outcome.BudgetHeld("daily LLM budget reached")
-        }
-        val pkg = capture.sourceApp
-        if (pkg != null) {
-            val used = usage.perPackage[pkg] ?: 0
-            if (used >= settings.maxLlmCallsPerPackagePerDay) {
-                hold(capture, "per-package cap reached for $pkg", now)
-                return Outcome.BudgetHeld("per-package cap reached for $pkg")
-            }
-        }
 
         // A chat that is still talking is read once it goes quiet, as one
         // burst (see Burst). Checked before the fingerprint, which is only
@@ -149,6 +139,7 @@ class ExtractionPipeline(
             if (fingerprintDao.seenSince(fingerprint, sevenDaysAgo) > 0) {
                 rawCaptureDao.setState(capture.id, CaptureState.REJECTED)
                 logger.write(Stage.PREFILTER, LogLevel.DEBUG, "fingerprint seen within 7 days", capture.sourceRef)
+                firstReads?.let { port -> port.pending(listOf(capture.id)).forEach { port.withdraw(it, "the message was already read") } }
                 return Outcome.Rejected("fingerprint seen within 7 days")
             }
             fingerprintDao.insert(FingerprintEntity(fingerprint, now))
@@ -160,6 +151,7 @@ class ExtractionPipeline(
             val fp = SourceRef.fingerprint(s.sourceApp.orEmpty(), s.contextLabel.orEmpty(), s.rawText.orEmpty())
             if (fingerprintDao.seenSince(fp, now - SEVEN_DAYS) > 0) {
                 rawCaptureDao.setState(s.id, CaptureState.REJECTED)
+                firstReads?.let { port -> port.pending(listOf(s.id)).forEach { port.withdraw(it, "the message was already read") } }
                 false
             } else {
                 fingerprintDao.insert(FingerprintEntity(fp, now))
@@ -171,10 +163,11 @@ class ExtractionPipeline(
             logger.write(Stage.EXTRACT, LogLevel.DEBUG, "reading ${joined.size + 1} messages as one burst", capture.sourceRef)
         }
 
-        val block = contextFor(capture)
+        val burstIds = joined.map { it.id } + capture.id
+        val block = contextFor(capture, burstIds)
         val outcome = when (capture.sourceType) {
             SourceType.NOTIFICATION ->
-                processMessage(capture, text, settings.verifyPass, settings.ownNames, now, todayKey, settings.aboutMe, block)
+                processMessage(capture, text, settings.verifyPass, settings.ownNames, now, todayKey, settings.aboutMe, block, burstIds)
             SourceType.CALL, SourceType.CLIPBOARD ->
                 processTranscript(capture, text, settings.verifyPass, now, todayKey, settings.aboutMe, block)
             SourceType.EMAIL ->
@@ -226,6 +219,8 @@ class ExtractionPipeline(
         todayKey: String,
         aboutMe: String,
         block: ChatContext.Block,
+        /** This capture and the rest of its burst: whose first reads this read settles. */
+        burstIds: List<String>,
     ): Outcome {
         val context = parseContext(capture.contextLabel)
         val input = MessageInput(
@@ -265,21 +260,90 @@ class ExtractionPipeline(
         )
 
         val marked = extraction.done?.let { markDone(capture, it, text, block, context.sender) } ?: 0
+        val reads = firstReads?.pending(burstIds).orEmpty()
 
         val task = extraction.task
         if (!extraction.isTask || task == null) {
+            withdrawAll(reads, "the AI found no task in the message")
             rawCaptureDao.setState(capture.id, if (marked > 0) CaptureState.DONE else CaptureState.REJECTED)
             return Outcome.Done(0, 0, if (marked > 0) 0 else 1, marked)
         }
 
         val (fresh, updated) = applyUpdates(capture, listOf(task), text, block, context.sender)
         if (fresh.isEmpty()) {
+            withdrawAll(reads, "the AI read it as news about a task you already have")
             rawCaptureDao.setState(capture.id, CaptureState.DONE)
             return Outcome.Done(0, 0, 0, updated + marked)
         }
         val candidates = verifyAndCorrect(fresh, text, verifyPass, now, todayKey, capture.sourceApp)
-        val outcome = submitAll(capture, candidates, text, context.label(capture.sourceLabel), block)
-        return outcome.withUpdated(updated + marked, capture)
+        val (remaining, confirmed) = reconcile(reads, candidates, text, capture, block)
+        val outcome = submitAll(capture, remaining, text, context.label(capture.sourceLabel), block)
+        return outcome.withUpdated(updated + marked + confirmed, capture)
+    }
+
+    // ---------------------------------------------------------- first reads
+
+    /**
+     * Pairs the phone's first reads of this burst with what the model found
+     * (see FirstReadMatch). A first read the model backs takes the model's
+     * words - the user keeps the notification they already have - and the
+     * rest are withdrawn. Only what no first read covered goes on to the
+     * funnel, so an ask is never made twice. Returns what is left, and how
+     * many first reads were confirmed.
+     */
+    private suspend fun reconcile(
+        reads: List<FirstRead>,
+        candidates: List<ExtractedTask>,
+        source: String,
+        capture: RawCaptureEntity,
+        block: ChatContext.Block,
+    ): Pair<List<ExtractedTask>, Int> {
+        val port = firstReads
+        if (port == null || reads.isEmpty()) return candidates to 0
+        val settings = settingsRepository.current()
+        val config = settings.funnelConfig()
+        val found = candidates.mapIndexed { index, t ->
+            FirstReadMatch.Found(
+                index = index,
+                evidence = t.evidence,
+                // Only what the funnel itself would create can stand in for a
+                // first read; a maybe goes to the review inbox as usual.
+                confident = (t.confidence ?: 0.0) >= config.autoCreateThreshold &&
+                    grounded(t.evidence, source, capture.sourceType),
+            )
+        }
+        val plan = FirstReadMatch.plan(reads.map { FirstReadMatch.Read(it.taskId, it.evidence) }, found)
+        for (read in reads) {
+            val index = plan.confirm[read.taskId]
+            if (index == null) {
+                port.withdraw(read, "the AI did not find this task")
+                continue
+            }
+            val t = candidates[index]
+            port.confirm(
+                read,
+                FirstReadUpdate(
+                    title = t.title,
+                    evidence = t.evidence,
+                    priority = t.priority,
+                    dueAtRaw = t.dueDateRaw,
+                    notes = t.notes,
+                    confidence = t.confidence,
+                    waitingOn = !t.assignedToMe,
+                    matter = ChatContext.resolveMatter(t.matterRef, block),
+                    area = Areas.normalize(t.areaRef, settings.areas),
+                    origin = extractor.originLabel,
+                    occurredAt = capture.occurredAt,
+                ),
+            )
+        }
+        val used = plan.confirm.values.toSet()
+        return candidates.filterIndexed { index, _ -> index !in used } to plan.confirm.size
+    }
+
+    private suspend fun withdrawAll(reads: List<FirstRead>, reason: String) {
+        val port = firstReads ?: return
+        reads.forEach { port.withdraw(it, reason) }
     }
 
     // ---------------------------------------------------------- transcripts
@@ -415,12 +479,6 @@ class ExtractionPipeline(
         if (!verifyPass || tasks.isEmpty()) return tasks
 
         val settings = settingsRepository.current()
-        val usage = settingsRepository.currentUsage()
-        if (usage.llmCalls >= settings.maxLlmCallsPerDay) {
-            logger.write(Stage.VERIFY, LogLevel.INFO, "verify pass skipped - daily budget short")
-            return tasks
-        }
-
         val result = extractor.verify(source, tasks, settings.ownNames)
         settingsRepository.recordLlmCall(todayKey, packageName)
 
@@ -516,10 +574,10 @@ class ExtractionPipeline(
 
     // ------------------------------------------------------------- context
 
-    private suspend fun contextFor(capture: RawCaptureEntity): ChatContext.Block {
+    private suspend fun contextFor(capture: RawCaptureEntity, readingNow: List<String>): ChatContext.Block {
         val memory = memory ?: return ChatContext.Block.EMPTY
         // Context makes the answer better; its absence must never stop one.
-        return runCatching { memory.contextFor(capture) }
+        return runCatching { memory.contextFor(capture, readingNow) }
             .onFailure { logger.write(Stage.EXTRACT, LogLevel.WARN, "chat context unavailable", it.toString()) }
             .getOrDefault(ChatContext.Block.EMPTY)
     }
@@ -761,17 +819,6 @@ class ExtractionPipeline(
             totalMinutes < 60 -> "${totalMinutes}m"
             else -> "${totalMinutes / 60}h ${totalMinutes % 60}m"
         }
-    }
-
-    private suspend fun hold(capture: RawCaptureEntity, reason: String, now: Long) {
-        rawCaptureDao.setRetry(
-            id = capture.id,
-            state = CaptureState.BUDGET_HELD,
-            attemptCount = capture.attemptCount,
-            error = reason,
-            nextAttemptAt = DateResolver.nextMidnight(now),
-        )
-        logger.write(Stage.BUDGET, LogLevel.INFO, "capture held for budget", reason)
     }
 
     private data class Context(val sender: String, val group: String?) {

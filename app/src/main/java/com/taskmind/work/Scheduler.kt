@@ -53,7 +53,14 @@ object Scheduler {
         .setRequiredNetworkType(NetworkType.UNMETERED)
         .build()
 
+    /**
+     * Reads the message queue now, in this process (see InstantLane), and
+     * queues the same with WorkManager as the safety net: it runs if this
+     * process dies first, and its network constraint waits for a phone that
+     * is offline. The two never read the same capture - they share one lock.
+     */
     fun enqueueExtraction(context: Context) {
+        runCatching { AppContainer.get(context).instantLane.kick("queued") }
         val request = OneTimeWorkRequestBuilder<ExtractionWorker>()
             .setConstraints(connected)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
@@ -75,19 +82,21 @@ object Scheduler {
     }
 
     /**
-     * Spec 9: the Wi-Fi-only ASR toggle. Call audio is the expensive upload, so
-     * the constraint is chosen from settings rather than hard-coded.
+     * Any network, mobile data included. The Wi-Fi-only option for call audio
+     * was removed in v1.29: a call agreed on the move should become a task on
+     * the move, not when the phone next sees Wi-Fi.
      */
-    fun enqueueTranscription(context: Context, wifiOnly: Boolean? = null) {
-        val useUnmetered = wifiOnly ?: AppContainer.get(context).cachedSettings.wifiOnlyAsr
+    fun enqueueTranscription(context: Context) {
+        runCatching { AppContainer.get(context).instantLane.kickAudio("queued") }
         val request = OneTimeWorkRequestBuilder<TranscriptionWorker>()
-            .setConstraints(if (useUnmetered) unmetered else connected)
+            .setConstraints(connected)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 60, TimeUnit.SECONDS)
             .build()
         wm(context).enqueueUniqueWork(WORK_TRANSCRIPTION, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
     }
 
     fun enqueueCallDiscovery(context: Context) {
+        runCatching { AppContainer.get(context).instantLane.kickDiscovery("call ended") }
         val request = OneTimeWorkRequestBuilder<CallDiscoveryWorker>()
             .setBackoffCriteria(BackoffPolicy.LINEAR, 30, TimeUnit.SECONDS)
             .build()

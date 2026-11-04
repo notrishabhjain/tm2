@@ -43,14 +43,10 @@ the `taskmind-apk-…` artifact at the bottom.
 
 ### After you install
 
-TaskMind can update itself, so you only have to do the above once. In
-**Settings → Updates**, set the manifest URL to:
-
-```
-https://github.com/<your-username>/<your-repo>/releases/latest/download/update.json
-```
-
-It then checks daily on Wi-Fi and offers the new version in the app.
+TaskMind can update itself, so you only have to do the above once. It checks
+this repository's GitHub releases daily on Wi-Fi; **Health → Check for updates**
+then **Download and install** fetches a new version, checked against the
+release's checksum before it installs.
 
 ---
 
@@ -101,8 +97,8 @@ thresholds sit, what the retry schedule is, what is stored and for how long —
 with the value each one is using right now, read from live settings rather than
 written into the text.
 
-**Prompts** shows the exact instructions sent to the model. All three are
-editable and take effect on the next capture, with a reset on each. Each one
+**Prompts** shows the exact instructions sent to the model. Every one is
+editable and takes effect on the next capture, with a reset on each. Each one
 says what it is for and what breaks if you change it carelessly.
 
 **Model calls** keeps the last hundred requests: the system prompt, your data as
@@ -119,8 +115,10 @@ fired, what score the quote check got, what the funnel decided.
 There is no `adb logcat` on a phone, so the app carries its own diagnostics.
 
 **Status** (task list menu → Status and diagnostics) shows every permission's
-real state, both providers, today's usage against your budgets, how many
-captures are waiting and in which state, and the last few things that happened.
+real state, both providers, today's usage, how many captures are waiting and
+in which state, and the last few things that happened. It also says when Data
+Saver stops TaskMind using mobile data in the background, which looks exactly
+like "tasks arrive late".
 
 **Self-test** on that screen pushes a synthetic Hinglish message through the
 *real* capture pipeline end to end, asserts a task came out, and deletes it. If
@@ -151,11 +149,31 @@ A wrong task costs more than a missed one, so:
 - **Uncertain items wait.** Anything the model isn't confident about goes to a
   **Review inbox** with the source text and a confidence figure, for one tap to
   accept or dismiss. It doesn't guess into your list.
-- **Nothing captured is lost.** No key, no network, spent budget, failed
+- **Nothing captured is lost.** No key, no network, a provider error, failed
   transcription — every failure parks the capture and retries it. Add a key a
   week later and the whole backlog drains.
 - **It stays quiet.** The only notifications are a task being captured and a
   reminder firing. No progress, no syncing, no retry chatter.
+
+## How fast it is
+
+A task is meant to arrive while the message is still on screen.
+
+- **Instant first read.** A plain ask or promise — "can you send the PO by 5",
+  "kal tak bhej dena", "I'll send it tomorrow" — is read by rules on the phone
+  and becomes an Inbox task with its notification the moment the message
+  arrives, with no model call. The model reads the same message a few seconds
+  later and has the last word: it rewrites the task in better words, or takes
+  it back. Switch it off in **Settings → You and your chats → How many tasks**.
+- **Read straight away.** Every capture is read inside the running app the
+  moment it is written, rather than when Android next runs background work.
+  WorkManager is only the safety net, for a closed app or a phone that is
+  offline; captures waiting for the network are read the moment it is back.
+- **A chat is read once it pauses for 8 seconds**, so lines sent in a row are
+  read together.
+- **Calls:** the recording is looked for over three and a half minutes after
+  the call ends, and its audio is transcribed four pieces at a time.
+- **No daily limits** and no Wi-Fi-only rule; mobile data works for everything.
 
 Every threshold here is tunable in **Settings → Accuracy**, with a reset button.
 
@@ -163,14 +181,15 @@ Every threshold here is tunable in **Settings → Accuracy**, with a reset butto
 
 ## Costs
 
-Cloud calls cost money, so there are ceilings, all in **Settings → Daily limits**:
-model calls per day (300), calls per app per day (60), transcription minutes per
-day (60), and Wi-Fi-only upload for call audio. Anything over a limit waits for
-tomorrow rather than being dropped.
+There are no daily caps: they held real captures back until midnight, which
+is the opposite of what a second mind is for. Health counts today's model calls
+and transcription minutes, and **Model calls** shows each request with its
+token count, so spending stays visible.
 
-Before any of that, a free deterministic filter rejects OTPs, bank and delivery
-alerts, promotional senders, group summaries, and anything from an app you
-haven't allowed — which is the large majority of notifications.
+What keeps the bill small is the free deterministic filter in front of
+everything: it rejects OTPs, bank and delivery alerts, promotional senders,
+group summaries, and anything from an app you haven't allowed — which is the
+large majority of notifications.
 
 ---
 

@@ -25,18 +25,18 @@ import java.util.concurrent.atomic.AtomicInteger
  * notification on every short-timer invocation, and the app buzzing all day
  * until it was uninstalled.
  *
- * The only notifications with sound are: a task was created (grouped, at most
- * one summary per 5 minutes) and a reminder fired. There is no notification for
- * "processing", "syncing", "checking", or any failure that will be retried -
- * those live in the activity log and on the status screen.
+ * The only notifications with sound are: a task was created (its own
+ * notification, the moment it is made; the sound at most once a minute) and a
+ * reminder fired. There is no notification for "processing", "syncing",
+ * "checking", or any failure that will be retried - those live in the
+ * activity log and on the status screen.
  */
 class Notifier(private val context: Context) : TaskCreatedNotifier {
 
     private val manager = NotificationManagerCompat.from(context)
     private val nextId = AtomicInteger(2000)
 
-    @Volatile private var lastTaskSummaryAt = 0L
-    @Volatile private var tasksSinceSummary = 0
+    @Volatile private var lastTaskAlertAt = 0L
 
     /**
      * Reset when the review screen is opened, so the count reflects what is
@@ -174,46 +174,62 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
     }
 
     /**
-     * Spec 7.7 / 17.3: notify if and only if a task was actually created, and
-     * collapse a burst into one summary per five minutes.
+     * Spec 7.7 / 17.3: notify if and only if a task was actually created.
+     *
+     * Every task gets its own notification the moment it is made, with its
+     * own Done and Not mine. Tasks used to be collapsed into one summary per
+     * five minutes, so the second task in that window arrived silently and
+     * without buttons - which reads as "the notification came late". Only the
+     * sound is rationed now: a busy minute buzzes once, and the rest arrive
+     * quietly beside it. Android bundles them once there are several.
      */
     override suspend fun onTaskCreated(taskId: String, title: String) {
         if (!canPost()) return
         val now = System.currentTimeMillis()
-        val withinWindow = now - lastTaskSummaryAt < SUMMARY_WINDOW_MILLIS
+        val quiet = now - lastTaskAlertAt < TASK_ALERT_GAP_MILLIS
+        if (!quiet) lastTaskAlertAt = now
+        postSafely(taskNotificationId(taskId), taskNotification(taskId, title, quiet))
+    }
 
-        if (withinWindow) {
-            tasksSinceSummary++
-            val summary = NotificationCompat.Builder(context, CHANNEL_TASKS)
-                .setSmallIcon(R.drawable.ic_stat_taskmind)
-                .setContentTitle("$tasksSinceSummary new tasks captured")
-                .setContentText(title)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(title))
-                .setContentIntent(contentIntent(ROUTE_TASKS))
-                .setAutoCancel(true)
-                .setOnlyAlertOnce(true)
-                .setSilent(true)
-                .build()
-            postSafely(ID_TASK_SUMMARY, summary)
-            return
-        }
+    /**
+     * The model reworded a task the phone read first. If its notification is
+     * still showing it says the better words now - silently, since it is not
+     * news.
+     */
+    fun refineTask(taskId: String, title: String) {
+        if (!canPost()) return
+        val id = taskNotificationId(taskId)
+        if (!isShowing(id)) return
+        postSafely(id, taskNotification(taskId, title, quiet = true))
+    }
 
-        lastTaskSummaryAt = now
-        tasksSinceSummary = 1
-        val notification = NotificationCompat.Builder(context, CHANNEL_TASKS)
+    /** The model found no task where the phone thought there was one: its notification goes too. */
+    fun withdrawTask(taskId: String) {
+        runCatching { manager.cancel(taskNotificationId(taskId)) }
+    }
+
+    private fun taskNotification(taskId: String, title: String, quiet: Boolean): Notification {
+        val id = taskNotificationId(taskId)
+        return NotificationCompat.Builder(context, CHANNEL_TASKS)
             .setSmallIcon(R.drawable.ic_stat_taskmind)
             .setContentTitle("Task captured")
             .setContentText(title)
             .setStyle(NotificationCompat.BigTextStyle().bigText(title))
             .setContentIntent(contentIntent("$ROUTE_TASK_DETAIL/$taskId"))
             .setAutoCancel(true)
-            // Only on a single capture: a burst summary names several tasks,
-            // and a button on it could not say which one it meant.
-            .addAction(taskAction(TaskActionReceiver.ACTION_DONE, taskId, ID_TASK_SUMMARY, "Done"))
-            .addAction(taskAction(TaskActionReceiver.ACTION_NOT_MINE, taskId, ID_TASK_SUMMARY, "Not mine"))
+            .setOnlyAlertOnce(true)
+            .setSilent(quiet)
+            .addAction(taskAction(TaskActionReceiver.ACTION_DONE, taskId, id, "Done"))
+            .addAction(taskAction(TaskActionReceiver.ACTION_NOT_MINE, taskId, id, "Not mine"))
             .build()
-        postSafely(ID_TASK_SUMMARY, notification)
     }
+
+    private fun isShowing(id: Int): Boolean = runCatching {
+        context.getSystemService(NotificationManager::class.java)?.activeNotifications?.any { it.id == id } ?: false
+    }.getOrDefault(false)
+
+    /** One notification per task, in a range no fixed id or reminder id reaches. */
+    private fun taskNotificationId(taskId: String): Int = TASK_ID_BASE + Math.floorMod(taskId.hashCode(), TASK_ID_RANGE)
 
     /**
      * Something was found but is not certain enough to assert.
@@ -493,7 +509,10 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         const val ROUTE_REVIEW = "review"
         const val ROUTE_TASK_DETAIL = "task"
 
-        private const val SUMMARY_WINDOW_MILLIS = 5 * 60 * 1000L
+        /** The task sound plays at most once in this long; the notifications themselves are never held back. */
+        private const val TASK_ALERT_GAP_MILLIS = 60 * 1000L
+        private const val TASK_ID_BASE = 100_000
+        private const val TASK_ID_RANGE = 900_000
         private const val MUTE_OFFER_TIMEOUT_MILLIS = 2 * 60 * 1000L
     }
 }
