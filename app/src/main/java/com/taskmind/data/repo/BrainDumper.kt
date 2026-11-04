@@ -30,9 +30,6 @@ class BrainDumper(private val container: AppContainer) {
         if (!settings.cloudConsent) return local("Cloud processing is off, so the list was split line by line.")
         val today = DateResolver.dayKey(now)
         container.settingsRepository.rollBudgetIfNeeded(today)
-        if (container.settingsRepository.currentUsage().llmCalls >= settings.maxLlmCallsPerDay) {
-            return local("Today's AI limit is used up, so the list was split line by line.")
-        }
 
         container.settingsRepository.recordLlmCall(today, null)
         val result = container.llmClient.complete(

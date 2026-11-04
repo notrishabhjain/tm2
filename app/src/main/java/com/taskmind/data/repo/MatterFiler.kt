@@ -36,10 +36,6 @@ class MatterFiler(private val container: AppContainer) {
             val now = System.currentTimeMillis()
             val today = DateResolver.dayKey(now)
             container.settingsRepository.rollBudgetIfNeeded(today)
-            if (container.settingsRepository.currentUsage().llmCalls >= settings.maxLlmCallsPerDay) {
-                if (out.isNotEmpty()) break
-                return Result.Failed("Today's limit of ${settings.maxLlmCallsPerDay} model calls is used up.")
-            }
             val tasks = batch.map { Cleanup.Task(it.id, it.title, from(it)) }
             container.settingsRepository.recordLlmCall(today, null)
             val result = container.llmClient.complete(

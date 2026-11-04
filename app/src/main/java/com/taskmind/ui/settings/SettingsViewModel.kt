@@ -362,14 +362,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsRepository.setGroupOverride(groupName, policy) }
     }
 
-    // -- budgets and retention ---------------------------------------------
+    // -- speed and retention -----------------------------------------------
 
-    fun setBudgets(llmCalls: Int, asrMinutes: Int, perPackage: Int) {
-        viewModelScope.launch { container.settingsRepository.setBudgets(llmCalls, asrMinutes, perPackage) }
-    }
-
-    fun setWifiOnlyAsr(value: Boolean) {
-        viewModelScope.launch { container.settingsRepository.setWifiOnlyAsr(value) }
+    fun setInstantCapture(value: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setInstantCapture(value) }
     }
 
     fun setReviewExpiryDays(days: Int) {

@@ -42,6 +42,14 @@ data class TaskCandidate(
     val inbox: Boolean = false,
     /** The day (IST day key) it is planned for, or null. */
     val plannedFor: String? = null,
+    /**
+     * A first read made on the phone (see QuickRead): the task is created,
+     * but its capture is NOT marked read - the model reads it seconds later,
+     * and its answer confirms this task or takes it back. Never sent to the
+     * review inbox: a first read that is not sure enough is simply left to
+     * the model.
+     */
+    val provisional: Boolean = false,
 )
 
 /** What the funnel decided to persist. Mapped to the Room entity by the sink. */

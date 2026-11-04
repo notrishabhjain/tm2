@@ -16,6 +16,9 @@ import com.taskmind.data.db.entity.RawCaptureEntity
 import com.taskmind.data.repo.ActivityLogger
 import com.taskmind.data.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -84,21 +87,10 @@ class TranscriptionPipeline(
 
         val settings = settingsRepository.current()
         val now = System.currentTimeMillis()
+        // No daily transcription cap (v1.29): a call is read as soon as its
+        // recording is found. Minutes are still counted, for Health.
         val todayKey = DateResolver.dayKey(now)
         settingsRepository.rollBudgetIfNeeded(todayKey)
-        val usage = settingsRepository.currentUsage()
-        val budgetSeconds = settings.maxAsrMinutesPerDay * 60
-        if (usage.asrSeconds >= budgetSeconds) {
-            rawCaptureDao.setRetry(
-                capture.id,
-                CaptureState.BUDGET_HELD,
-                capture.attemptCount,
-                "daily ASR budget of ${settings.maxAsrMinutesPerDay} minutes reached",
-                DateResolver.nextMidnight(now),
-            )
-            logger.write(Stage.BUDGET, LogLevel.INFO, "call held for ASR budget", capture.sourceRef)
-            return@withContext Outcome.BudgetHeld("daily ASR budget reached")
-        }
 
         val workDir = File(context.cacheDir, "asr/${capture.id}").apply { mkdirs() }
         val (transcriber, provider) = transcriberProvider()
@@ -137,22 +129,35 @@ class TranscriptionPipeline(
             val startIndex = if (capture.chunkTotal == chunks.size) capture.chunkIndex else 0
             val builder = StringBuilder(if (startIndex > 0) capture.partialText.orEmpty() else "")
 
-            for (index in startIndex until chunks.size) {
-                val chunk = chunks[index]
-                val result = transcriber.transcribe(chunk, settings.asrLanguage)
-                when (result) {
-                    is AiResult.Ok -> {
-                        if (result.value.isNotBlank()) {
-                            if (builder.isNotEmpty()) builder.append(' ')
-                            builder.append(result.value)
+            // Up to PARALLEL_CHUNKS at once. A ten-minute call is two dozen
+            // Sarvam requests, and one after another they took minutes before
+            // the call could be read. The text is still joined in order, and
+            // progress is checkpointed only up to the first chunk that did not
+            // come back, so a killed run resumes exactly where the transcript
+            // is complete - and never pays twice for a chunk it kept.
+            var index = startIndex
+            while (index < chunks.size) {
+                val window = (index until minOf(index + PARALLEL_CHUNKS, chunks.size)).toList()
+                val results = coroutineScope {
+                    window.map { i -> async { transcriber.transcribe(chunks[i], settings.asrLanguage) } }.awaitAll()
+                }
+                for ((offset, result) in results.withIndex()) {
+                    val chunkIndex = window[offset]
+                    when (result) {
+                        is AiResult.Ok -> {
+                            if (result.value.isNotBlank()) {
+                                if (builder.isNotEmpty()) builder.append(' ')
+                                builder.append(result.value)
+                            }
+                            rawCaptureDao.setChunkProgress(capture.id, builder.toString(), chunkIndex + 1, chunks.size)
                         }
-                        rawCaptureDao.setChunkProgress(capture.id, builder.toString(), index + 1, chunks.size)
-                    }
-                    else -> {
-                        rawCaptureDao.setChunkProgress(capture.id, builder.toString(), index, chunks.size)
-                        return@withContext fail(capture, result.errorText ?: "ASR failed", now, retryable = result.retryable)
+                        else -> {
+                            rawCaptureDao.setChunkProgress(capture.id, builder.toString(), chunkIndex, chunks.size)
+                            return@withContext fail(capture, result.errorText ?: "ASR failed", now, retryable = result.retryable)
+                        }
                     }
                 }
+                index += window.size
             }
 
             settingsRepository.recordAsrSeconds(todayKey, durationSeconds)
@@ -255,6 +260,8 @@ class TranscriptionPipeline(
     }
 
     private companion object {
+        /** Chunks sent at once; enough to cut the wait several-fold without tripping a rate limit. */
+        const val PARALLEL_CHUNKS = 4
         const val SARVAM_CHUNK_SECONDS = 25.0
         const val OPENAI_CHUNK_SECONDS = 25.0 * 24 // ~10 minutes, well inside the 25 MB limit
     }

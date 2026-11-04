@@ -52,6 +52,7 @@ object PermissionState {
             "Turns an SMS sender's number into their name, so a task says who asked.",
         ),
         batteryOptimisation(context),
+        backgroundData(context),
         exactAlarms(context),
         installPackages(context),
     )
@@ -112,6 +113,27 @@ object PermissionState {
             required = false,
             explanation = "With optimisation on, Android stops the background work that finds your calls.",
             fixIntent = intent,
+        )
+    }
+
+    /**
+     * Data Saver. With it on and TaskMind not exempt, Android lets the app use
+     * mobile data only while it is open - so messages and calls are read on
+     * Wi-Fi or when you happen to open the app, which looks exactly like
+     * "tasks arrive late". Nothing else on this screen would explain it.
+     */
+    fun backgroundData(context: Context): Item {
+        val restricted = NetworkState.backgroundDataRestricted(context)
+        return Item(
+            key = "background_data",
+            label = "Mobile data in the background",
+            granted = !restricted,
+            required = false,
+            explanation = "Data Saver stops TaskMind using mobile data when it is not open, so messages " +
+                "and calls are only read on Wi-Fi. Allow unrestricted data for TaskMind.",
+            fixIntent = Intent(Settings.ACTION_IGNORE_BACKGROUND_DATA_RESTRICTIONS_SETTINGS).apply {
+                data = Uri.parse("package:${context.packageName}")
+            },
         )
     }
 

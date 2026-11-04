@@ -3,9 +3,6 @@ package com.taskmind.work
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.taskmind.capture.ExtractionPipeline
-import com.taskmind.capture.TranscriptionPipeline
-import com.taskmind.core.CaptureState
 import com.taskmind.core.DateResolver
 import com.taskmind.core.LogLevel
 import com.taskmind.core.Stage
@@ -22,162 +19,42 @@ import java.io.File
  * unique index absorbs a repeat, and capture states are only advanced forward.
  */
 
-/** Drains PENDING_EXTRACTION oldest-first (spec 8.4). */
+/**
+ * Drains PENDING_EXTRACTION oldest-first (spec 8.4).
+ *
+ * The safety net behind the instant lane, which normally reads a capture the
+ * moment it arrives. Both go through InstantLane's lock, so they never read
+ * the same capture twice.
+ */
 class ExtractionWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
         val container = AppContainer.get(applicationContext)
         return try {
-            val now = System.currentTimeMillis()
-            val dao = container.database.rawCaptureDao()
-
-            // Spec 9: anything held for budget is released after local midnight.
-            container.settingsRepository.rollBudgetIfNeeded(DateResolver.dayKey(now))
-            releaseBudgetHoldsIfNewDay(container, now)
-
-            // Captures blocked by a bad model or key come back into the queue
-            // when - and only when - that configuration has actually changed.
-            container.extractionPipeline.releaseBlockedIfConfigChanged()
-
-            val batch = dao.dueForState(CaptureState.PENDING_EXTRACTION, now, BATCH_SIZE)
-            if (batch.isEmpty()) return Result.success()
-
-            var retryNeeded = false
-            var nextBurst: Long? = null
-            for (capture in batch) {
-                // A message read earlier in this batch as part of its chat's
-                // burst is already done; the batch was fetched before that.
-                val fresh = dao.byId(capture.id) ?: continue
-                if (fresh.state != CaptureState.PENDING_EXTRACTION) continue
-                when (val outcome = container.extractionPipeline.process(fresh)) {
-                    is ExtractionPipeline.Outcome.Retry -> retryNeeded = true
-                    is ExtractionPipeline.Outcome.Deferred -> nextBurst = minOf(nextBurst ?: outcome.at, outcome.at)
-                    is ExtractionPipeline.Outcome.Parked -> Unit
-                    else -> Unit
-                }
-            }
-            // A chat still talking: come back once it has gone quiet.
-            nextBurst?.let { Scheduler.enqueueExtractionAfter(applicationContext, (it - System.currentTimeMillis()).coerceAtLeast(5_000L)) }
-            if (retryNeeded) Result.retry() else Result.success()
+            val pass = container.instantLane.drainMessages()
+            if (pass.retry) Result.retry() else Result.success()
         } catch (t: Throwable) {
             container.logger.write(Stage.WORKER, LogLevel.ERROR, "extraction worker failed", t.toString())
             Result.retry()
         }
     }
-
-    private suspend fun releaseBudgetHoldsIfNewDay(container: AppContainer, now: Long) {
-        val dao = container.database.rawCaptureDao()
-        val held = dao.byState(CaptureState.BUDGET_HELD, 1)
-        if (held.isEmpty()) return
-        val releaseAt = held.first().nextAttemptAt ?: return
-        if (now >= releaseAt) {
-            dao.releaseState(CaptureState.BUDGET_HELD, CaptureState.PENDING_EXTRACTION)
-            container.logger.write(Stage.BUDGET, LogLevel.INFO, "released budget-held captures")
-        }
-    }
-
-    private companion object {
-        const val BATCH_SIZE = 20
-    }
 }
 
-/** Transcribes calls whose recording has been found (spec 12). */
+/**
+ * Transcribes calls whose recording has been found (spec 12): the safety net
+ * behind the instant lane, sharing its lock.
+ */
 class TranscriptionWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
         val container = AppContainer.get(applicationContext)
         return try {
-            val now = System.currentTimeMillis()
-            val dao = container.database.rawCaptureDao()
-
-            // Order matters. Retire the backlog first, then release what is
-            // left: doing it the other way round would queue thousands of old
-            // recordings for a moment, and a moment is enough for the batch
-            // below to start uploading them.
-            reconcileAgainstCutoff(container)
-
-            val batch = dao.dueForState(CaptureState.PENDING_TRANSCRIPTION, now, BATCH_SIZE)
-            if (batch.isEmpty()) return Result.success()
-
-            var retryNeeded = false
-            var progressed = 0
-            for (capture in batch) {
-                when (container.transcriptionPipeline.transcribe(capture)) {
-                    is TranscriptionPipeline.Outcome.Transcribed -> {
-                        progressed++
-                        Scheduler.enqueueExtraction(applicationContext)
-                    }
-                    is TranscriptionPipeline.Outcome.Retry -> {
-                        progressed++
-                        retryNeeded = true
-                    }
-                    // Waiting: discovery has not found the recording yet. Left
-                    // untouched on purpose, and deliberately NOT counted as
-                    // progress - a batch of nothing but waiting rows that
-                    // re-enqueued itself would spin the worker in a tight loop.
-                    TranscriptionPipeline.Outcome.Waiting -> Unit
-                    else -> progressed++
-                }
-            }
-
-            // A full batch of real work means there is more behind it. Without
-            // this the queue drained three recordings per maintenance tick,
-            // which on a busy day is slower than the calls arrive.
-            if (progressed > 0 && batch.size == BATCH_SIZE) {
-                Scheduler.enqueueTranscription(applicationContext)
-            }
-
-            if (retryNeeded) Result.retry() else Result.success()
+            val pass = container.instantLane.drainAudio()
+            if (pass.retry) Result.retry() else Result.success()
         } catch (t: Throwable) {
             container.logger.write(Stage.WORKER, LogLevel.ERROR, "transcription worker failed", t.toString())
             Result.retry()
         }
-    }
-
-    /**
-     * Brings the queue into line with the cutoff, in that order.
-     *
-     * Two separate corrections, and they pull in opposite directions:
-     *
-     * Old call captures are retired. An upgrade inherits everything the
-     * previous build had queued or parked, all of it pointing at recordings
-     * made before the app drew its line, and none of it wanted.
-     *
-     * What survives that, and is still waiting to be hand-picked, is released.
-     * Transcription is automatic now, so AWAITING_SELECTION has no way out -
-     * no screen asks for the tap any more - and a recording stuck there would
-     * be invisible forever.
-     */
-    private suspend fun reconcileAgainstCutoff(container: AppContainer) {
-        val dao = container.database.rawCaptureDao()
-        val cutoff = container.settingsRepository.current().recordingCutoffMillis
-
-        if (cutoff > 0) {
-            val retired = runCatching { dao.retireCallCapturesBefore(cutoff) }.getOrDefault(0)
-            if (retired > 0) {
-                container.logger.write(
-                    Stage.CALL,
-                    LogLevel.INFO,
-                    "retired $retired old recording(s) from the queue",
-                    "They were recorded before TaskMind started watching, so they are not " +
-                        "transcribed. New calls are handled automatically.",
-                )
-            }
-        }
-
-        if (dao.byState(CaptureState.AWAITING_SELECTION, 1).isNotEmpty()) {
-            dao.requeueRecordings(CaptureState.AWAITING_SELECTION, CaptureState.PENDING_TRANSCRIPTION)
-            container.logger.write(
-                Stage.CALL,
-                LogLevel.INFO,
-                "queued recordings that were waiting to be picked",
-                "Transcription is automatic now, so nothing waits for a tap.",
-            )
-        }
-    }
-
-    private companion object {
-        const val BATCH_SIZE = 3
     }
 }
 
@@ -192,13 +69,9 @@ class CallDiscoveryWorker(context: Context, params: WorkerParameters) : Coroutin
     override suspend fun doWork(): Result {
         val container = AppContainer.get(applicationContext)
         return try {
-            container.callPipeline.sweepCallLog("discovery worker")
-            val pending = container.callPipeline.pendingDiscovery()
-            var found = 0
-            for (record in pending) {
-                if (container.callPipeline.discoverRecording(record.id)) found++
-            }
-            if (found > 0) Scheduler.enqueueTranscription(applicationContext)
+            // Calls already being searched for by the instant lane are left to
+            // it; this waits for the searches it starts itself.
+            container.instantLane.passDiscovery("discovery worker", wait = true)
             Result.success()
         } catch (t: Throwable) {
             container.logger.write(Stage.WORKER, LogLevel.ERROR, "call discovery worker failed", t.toString())

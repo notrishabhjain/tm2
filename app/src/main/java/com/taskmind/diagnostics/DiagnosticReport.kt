@@ -131,13 +131,14 @@ class DiagnosticReport(private val context: Context, private val container: AppC
 
         out.section("Network")
         out.kv("Current network", NetworkState.describe(context))
-        out.kv("Call audio on Wi-Fi only", (settings?.wifiOnlyAsr ?: false).toString())
-        if (settings?.wifiOnlyAsr == true && !NetworkState.isUnmetered(context)) {
+        val restricted = NetworkState.backgroundDataRestricted(context)
+        out.kv("Data Saver restricts TaskMind", restricted.toString())
+        if (restricted) {
             out.kv(
                 "NOTE",
-                "Transcription work is scheduled with an unmetered-network constraint, so " +
-                    "anything awaiting transcription waits for Wi-Fi. This is why that queue " +
-                    "may not be draining.",
+                "With Data Saver on and TaskMind not exempt, Android blocks mobile data whenever " +
+                    "the app is in the background, so captures are read only on Wi-Fi or while " +
+                    "the app is open. This is why the queue may drain late.",
             )
         }
 
@@ -276,10 +277,7 @@ class DiagnosticReport(private val context: Context, private val container: AppC
         kv("Clipboard tolerance", s.clipboardTolerance.toString())
         kv("Call tolerance", s.callTolerance.toString())
         kv("Verify pass", s.verifyPass.toString())
-        kv("Max model calls/day", s.maxLlmCallsPerDay.toString())
-        kv("Max calls per app/day", s.maxLlmCallsPerPackagePerDay.toString())
-        kv("Max ASR minutes/day", s.maxAsrMinutesPerDay.toString())
-        kv("Wi-Fi only for audio", s.wifiOnlyAsr.toString())
+        kv("Instant first read on the phone", s.instantCapture.toString())
         kv(
             "Ignoring recordings before",
             if (s.recordingCutoffMillis > 0) {

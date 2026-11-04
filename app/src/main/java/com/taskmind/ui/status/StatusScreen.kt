@@ -232,21 +232,9 @@ fun StatusScreen(
                 Button(onClick = onOpenSettings) { Text("Open settings") }
             }
 
-            SectionCard(title = "Today's usage", subtitle = "Budgets reset at midnight IST.") {
-                KeyValueRow("LLM calls", "${state.llmCallsToday} of ${state.llmBudget}")
-                LinearProgressIndicator(
-                    progress = { if (state.llmBudget == 0) 0f else (state.llmCallsToday.toFloat() / state.llmBudget).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(12.dp))
-                KeyValueRow(
-                    "Transcription",
-                    "${state.asrSecondsToday / 60} min of ${state.asrBudgetSeconds / 60} min",
-                )
-                LinearProgressIndicator(
-                    progress = { if (state.asrBudgetSeconds == 0) 0f else (state.asrSecondsToday.toFloat() / state.asrBudgetSeconds).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            SectionCard(title = "Today's usage", subtitle = "Counted, not capped. Resets at midnight IST.") {
+                KeyValueRow("AI calls", "${state.llmCallsToday}")
+                KeyValueRow("Call audio transcribed", "${state.asrSecondsToday / 60} min")
             }
 
             SectionCard(

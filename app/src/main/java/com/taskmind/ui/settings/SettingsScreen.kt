@@ -44,7 +44,6 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Science
-import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.taskmind.ui.design.Grouped
@@ -194,8 +193,6 @@ fun SettingsScreen(
 
                 SettingsPage.ACCURACY -> QualitySection(settings, viewModel)
 
-                SettingsPage.BUDGET -> BudgetSection(settings, viewModel)
-
                 SettingsPage.ABOUT -> UpdateSection(settings, viewModel)
             }
         }
@@ -271,7 +268,7 @@ enum class SettingsPage(
     ),
     ADVANCED(
         "Advanced",
-        "AI providers, accuracy, limits, health checks and updates",
+        "AI providers, accuracy, health checks and updates",
         Icons.Outlined.Tune,
     ),
 
@@ -291,12 +288,6 @@ enum class SettingsPage(
         "Accuracy",
         "The thresholds behind Fewer / Balanced / More",
         Icons.Outlined.Tune,
-        advanced = true,
-    ),
-    BUDGET(
-        "Limits",
-        "Daily caps on model calls and audio, and the network rule",
-        Icons.Outlined.Speed,
         advanced = true,
     ),
     ABOUT(
@@ -366,6 +357,14 @@ private fun HowManySection(settings: Settings, viewModel: SettingsViewModel) {
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        LabeledSwitch(
+            label = "Instant first read on the phone",
+            description = "A clear ask or promise becomes an Inbox task the moment the message arrives. " +
+                "The AI reads it a few seconds later and rewrites it, or takes it back if it is not a task.",
+            checked = settings.instantCapture,
+            onCheckedChange = viewModel::setInstantCapture,
         )
     }
 }
@@ -778,46 +777,6 @@ private fun QualitySection(settings: Settings, viewModel: SettingsViewModel) {
         )
         Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = viewModel::resetQualityDefaults) { Text("Reset to defaults") }
-    }
-}
-
-@Composable
-private fun BudgetSection(settings: Settings, viewModel: SettingsViewModel) {
-    SectionCard(title = "Daily limits", subtitle = "Cloud calls cost money. Nothing over the limit is lost - it waits for tomorrow.") {
-        SliderRow(
-            label = "Model calls per day",
-            value = settings.maxLlmCallsPerDay.toFloat(),
-            onValueChange = {
-                viewModel.setBudgets(it.toInt(), settings.maxAsrMinutesPerDay, settings.maxLlmCallsPerPackagePerDay)
-            },
-            valueRange = 20f..2000f,
-            format = { it.toInt().toString() },
-        )
-        SliderRow(
-            label = "Per app, per day",
-            value = settings.maxLlmCallsPerPackagePerDay.toFloat(),
-            onValueChange = {
-                viewModel.setBudgets(settings.maxLlmCallsPerDay, settings.maxAsrMinutesPerDay, it.toInt())
-            },
-            valueRange = 10f..500f,
-            format = { it.toInt().toString() },
-            description = "Contains a single chatty group chat.",
-        )
-        SliderRow(
-            label = "Transcription minutes per day",
-            value = settings.maxAsrMinutesPerDay.toFloat(),
-            onValueChange = {
-                viewModel.setBudgets(settings.maxLlmCallsPerDay, it.toInt(), settings.maxLlmCallsPerPackagePerDay)
-            },
-            valueRange = 5f..300f,
-            format = { "${it.toInt()} min" },
-        )
-        LabeledSwitch(
-            label = "Upload call audio on Wi-Fi only",
-            description = "Call audio is the expensive upload.",
-            checked = settings.wifiOnlyAsr,
-            onCheckedChange = viewModel::setWifiOnlyAsr,
-        )
     }
 }
 

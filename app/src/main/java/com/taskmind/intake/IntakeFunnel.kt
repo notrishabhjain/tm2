@@ -169,13 +169,14 @@ class IntakeFunnel(
         if (!inserted) {
             // The database refused it, which is the dedup mechanism working.
             // Log it; never surface it to the user.
-            markCapture(candidate)
+            if (!candidate.provisional) markCapture(candidate)
             return IntakeResult.Duplicate(titleKey)
         }
 
         // Persist first, mark second (failure mode 5). A transient failure
-        // between the two costs a re-run, not a lost capture.
-        markCapture(candidate)
+        // between the two costs a re-run, not a lost capture. A first read
+        // made on the phone leaves the capture for the model to read.
+        if (!candidate.provisional) markCapture(candidate)
 
         // ---- 7. Notify ---------------------------------------------------
         notifier.onTaskCreated(task.id, task.title)
@@ -192,6 +193,9 @@ class IntakeFunnel(
         now: Long,
         unverified: Boolean = false,
     ): IntakeResult {
+        // A first read that is not sure enough is the model's to decide, not
+        // the user's: the model reads the same capture a few seconds later.
+        if (candidate.provisional) return IntakeResult.Discarded("first read not sure enough - left to the model")
         val proposal = ReviewProposal(
             id = ids.newId(),
             title = title,

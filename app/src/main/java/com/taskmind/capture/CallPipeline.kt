@@ -319,8 +319,14 @@ class CallPipeline(
         // Not found yet. Keep the marker alive so later sweeps retry within the
         // ~5 minute window (spec 11.3); the capture is untouched and the call
         // is not lost.
+        //
+        // The window runs from the END of the call. It used to run from the
+        // start, so any call longer than five minutes counted as expired the
+        // moment it ended: if the dialer had not finished writing the file in
+        // the first twenty seconds, a long call - the kind most likely to hold
+        // a commitment - was written off as "no recording".
         val attempts = record.discoveryAttempts + DISCOVERY_DELAYS.size
-        val expired = System.currentTimeMillis() - record.startTime > PENDING_MARKER_MILLIS
+        val expired = System.currentTimeMillis() - callEnd > PENDING_MARKER_MILLIS
         callRecordDao.upsert(
             record.copy(
                 discoveryAttempts = attempts,
@@ -377,8 +383,14 @@ class CallPipeline(
     }
 
     private companion object {
-        /** Spec 11.3: retry discovery at 3 s, 6 s, 10 s, 20 s. */
-        val DISCOVERY_DELAYS = listOf(3_000L, 3_000L, 4_000L, 10_000L)
+        /**
+         * Spec 11.3: look at 3 s, 6 s, 10 s and 20 s, then keep looking for
+         * most of the five-minute window - 35 s, 1 min, 1.5 min, 2.5 min,
+         * 3.5 min - instead of leaving a late file to the next periodic sweep,
+         * which could be half an hour away. A long call's recording takes the
+         * dialer longest to finish, and it is the call most worth reading.
+         */
+        val DISCOVERY_DELAYS = listOf(3_000L, 3_000L, 4_000L, 10_000L, 15_000L, 25_000L, 30_000L, 60_000L, 60_000L)
 
         const val PENDING_MARKER_MILLIS = 5 * 60 * 1000L
 

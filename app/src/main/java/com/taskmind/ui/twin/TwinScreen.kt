@@ -257,7 +257,7 @@ fun TwinScreen(
             Text(
                 "Questions and plans go to your AI provider with your tasks (title, date, who, the short quote), " +
                     "today's calendar and your matters. Nothing goes to the web page. One question is one model " +
-                    "call against your daily limit; Plan my day works without one when it has to.",
+                    "call; Plan my day works without one when it has to.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

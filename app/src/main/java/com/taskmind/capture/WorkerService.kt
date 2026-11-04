@@ -64,13 +64,9 @@ class WorkerService : Service() {
         job?.cancel()
         job = scope.launch {
             try {
-                container.transcriptionPipeline.let { pipeline ->
-                    val pending = container.database.rawCaptureDao()
-                        .dueForState(com.taskmind.core.CaptureState.PENDING_TRANSCRIPTION, System.currentTimeMillis(), 3)
-                    for (capture in pending) {
-                        pipeline.transcribe(capture)
-                    }
-                }
+                // Through the instant lane's lock, so this never transcribes a
+                // recording the lane or WorkManager is already working on.
+                container.instantLane.drainAudio()
             } catch (t: Throwable) {
                 container.logger.write(Stage.WORKER, LogLevel.ERROR, "worker service failed", t.toString())
             } finally {

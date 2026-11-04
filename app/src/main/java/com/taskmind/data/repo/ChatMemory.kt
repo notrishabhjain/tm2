@@ -4,6 +4,7 @@ import com.taskmind.core.ChatContext
 import com.taskmind.core.EmailText
 import com.taskmind.core.FollowUp
 import com.taskmind.core.Priority
+import com.taskmind.core.QuickRead
 import com.taskmind.core.SourceType
 import com.taskmind.core.TaskStatus
 import com.taskmind.data.db.dao.ProjectDao
@@ -33,7 +34,14 @@ class ChatMemory(
 ) {
 
     /** The context for one capture. Empty when nothing relevant is known. */
-    suspend fun contextFor(capture: RawCaptureEntity): ChatContext.Block {
+    /**
+     * [readingNow] are the captures being read in this call. Tasks the phone
+     * made from them on its first read are left out of the open tasks: the
+     * model is being asked about that very message, and seeing its own
+     * subject already on the list it would call the message a follow-up to
+     * it instead of reading it fresh.
+     */
+    suspend fun contextFor(capture: RawCaptureEntity, readingNow: Collection<String> = emptyList()): ChatContext.Block {
         val chat = when (capture.sourceType) {
             SourceType.NOTIFICATION, SourceType.EMAIL -> ChatContext.parseLabel(capture.contextLabel)
             else -> ChatContext.Chat(callee(capture), null)
@@ -61,6 +69,7 @@ class ChatMemory(
         val names = projects.associate { it.id to it.name }
         val tasks = taskDao.openCaptured(OPEN_SCAN)
             .filter { belongsTo(it, chat) }
+            .filter { !(it.inferenceOrigin == QuickRead.ORIGIN && it.rawCaptureId in readingNow) }
             .map { ChatContext.OpenTask(it.id, it.title, it.dueAt, it.projectId?.let(names::get)) }
 
         return ChatContext.block(recent, tasks, projects.map { ChatContext.Matter(it.id, it.name) })

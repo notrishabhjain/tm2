@@ -71,6 +71,19 @@ interface RawCaptureDao {
     @Query("SELECT * FROM raw_captures WHERE state = :state ORDER BY occurredAt ASC LIMIT :limit")
     suspend fun byState(state: CaptureState, limit: Int): List<RawCaptureEntity>
 
+    /**
+     * When the next capture in [state] falls due: a chat that has not gone
+     * quiet yet, a retry backing off, a provider cooldown. The instant lane
+     * sets its timer by this, so nothing waits for the next periodic sweep.
+     */
+    @Query(
+        """
+        SELECT MIN(nextAttemptAt) FROM raw_captures
+        WHERE state = :state AND nextAttemptAt IS NOT NULL AND nextAttemptAt > :now
+        """,
+    )
+    suspend fun nextDueAfter(state: CaptureState, now: Long): Long?
+
     @Query("SELECT state, COUNT(*) as count FROM raw_captures GROUP BY state")
     fun observeStateCounts(): Flow<List<CaptureStateCount>>
 
@@ -137,9 +150,31 @@ interface RawCaptureDao {
     @Query("UPDATE raw_captures SET partialText = :partial, chunkIndex = :chunkIndex, chunkTotal = :chunkTotal WHERE id = :id")
     suspend fun setChunkProgress(id: String, partial: String?, chunkIndex: Int, chunkTotal: Int)
 
-    /** Spec 9: everything held for budget is released after the next midnight. */
     @Query("UPDATE raw_captures SET state = :to, nextAttemptAt = NULL WHERE state = :from")
     suspend fun releaseState(from: CaptureState, to: CaptureState)
+
+    /**
+     * Lets go of everything the old daily caps held back - v1.29 removed them -
+     * each to the queue it belongs in: a call whose audio was never
+     * transcribed goes back to transcription, everything else to extraction.
+     *
+     * It also rescues calls an older build stranded. Releasing a hold used to
+     * put every held capture in the extraction queue, an untranscribed call
+     * included, where it could only wait for text nothing would produce.
+     */
+    @Query(
+        """
+        UPDATE raw_captures
+        SET state = CASE
+                WHEN audioPath IS NOT NULL AND (rawText IS NULL OR rawText = '') THEN 'PENDING_TRANSCRIPTION'
+                ELSE 'PENDING_EXTRACTION'
+            END,
+            nextAttemptAt = NULL
+        WHERE state = 'BUDGET_HELD'
+           OR (state = 'PENDING_EXTRACTION' AND audioPath IS NOT NULL AND (rawText IS NULL OR rawText = ''))
+        """,
+    )
+    suspend fun releaseHeld(): Int
 
     /**
      * Puts failed recordings back in the queue with a clean slate.

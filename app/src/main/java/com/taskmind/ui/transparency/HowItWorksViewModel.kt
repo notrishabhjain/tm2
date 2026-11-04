@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskmind.BuildConfig
 import com.taskmind.core.Backoff
+import com.taskmind.core.Burst
 import com.taskmind.core.EvidenceMatcher
 import com.taskmind.core.PreFilter
 import com.taskmind.data.settings.Settings
@@ -95,6 +96,25 @@ class HowItWorksViewModel(private val container: AppContainer) : ViewModel() {
                         "the row is not already there, the message is gone.",
                 ),
                 Rule(
+                    "Instant first read on the phone",
+                    "A plain ask or promise (\"can you send the PO by 5\", \"kal tak bhej dena\", \"I'll " +
+                        "send it tomorrow\") becomes an Inbox task and a notification the moment it arrives, " +
+                        "read by rules on the phone with no model call. The model reads the same message a few " +
+                        "seconds later and either rewrites the task or takes it back.",
+                    if (s.instantCapture) "on" else "off",
+                ),
+                Rule(
+                    "Read straight away",
+                    "Each capture is read the moment it is written, inside the running app, not when " +
+                        "Android next runs background work. WorkManager is only the safety net.",
+                ),
+                Rule(
+                    "A chat is read once it pauses",
+                    "Lines sent in a row are read together, as one message, once the chat has been quiet " +
+                        "this long.",
+                    "${Burst.QUIET_MILLIS / 1000} seconds",
+                ),
+                Rule(
                     "Calls are not recorded by this app",
                     "Android does not permit third-party call recording. TaskMind reads the files your " +
                         "own dialer writes. Three independent triggers notice a call ended, because on " +
@@ -104,7 +124,7 @@ class HowItWorksViewModel(private val container: AppContainer) : ViewModel() {
                     "Recordings must settle first",
                     "A recording is only uploaded once its size is unchanged across two reads a second " +
                         "apart, otherwise half a file gets transcribed.",
-                    "retried at 3s, 6s, 10s, 20s",
+                    "looked for at 3s, 6s, 10s, 20s, then up to 3.5 min",
                 ),
             ),
         ),
@@ -214,10 +234,16 @@ class HowItWorksViewModel(private val container: AppContainer) : ViewModel() {
                         "instead of retried. It also does not consume the retry budget, so the capture is " +
                         "still fresh once you fix it.",
                 ),
-                Rule("Daily model calls", "Reached, and everything waits for tomorrow rather than being dropped.", "${s.maxLlmCallsPerDay}"),
-                Rule("Per app, per day", "Stops one chatty group chat spending the whole budget.", "${s.maxLlmCallsPerPackagePerDay}"),
-                Rule("Daily transcription", "Call audio is the expensive upload.", "${s.maxAsrMinutesPerDay} minutes"),
-                Rule("Call audio on Wi-Fi only", "", if (s.wifiOnlyAsr) "on" else "off"),
+                Rule(
+                    "No daily limits",
+                    "Nothing waits for tomorrow. Every capture is read as soon as it arrives, on Wi-Fi or " +
+                        "mobile data; model calls and transcription minutes are counted on Health, not capped.",
+                    "none",
+                ),
+                Rule(
+                    "Offline",
+                    "Captures wait on the phone and are read the moment the network is back.",
+                ),
             ),
         ),
         Stage(

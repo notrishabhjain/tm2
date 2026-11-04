@@ -43,9 +43,7 @@ data class StatusUiState(
      */
     val ownNamesSet: Boolean = true,
     val llmCallsToday: Int = 0,
-    val llmBudget: Int = 0,
     val asrSecondsToday: Int = 0,
-    val asrBudgetSeconds: Int = 0,
     val captureCounts: Map<CaptureState, Int> = emptyMap(),
     val recentLog: List<ActivityLogEntity> = emptyList(),
     val running: Boolean = false,
@@ -99,9 +97,7 @@ class StatusViewModel(private val container: AppContainer) : ViewModel() {
                 cloudConsent = settings.cloudConsent,
                 ownNamesSet = settings.ownNames.any { it.isNotBlank() },
                 llmCallsToday = if (usage.dayKey == today) usage.llmCalls else 0,
-                llmBudget = settings.maxLlmCallsPerDay,
                 asrSecondsToday = if (usage.dayKey == today) usage.asrSeconds else 0,
-                asrBudgetSeconds = settings.maxAsrMinutesPerDay * 60,
                 captureCounts = counts,
                 installedVersion = "${container.selfUpdater.installedVersionName} (${container.selfUpdater.installedVersionCode})",
                 captureNow = runCatching { CaptureHealth.compute(container).describe() }.getOrNull(),
@@ -132,15 +128,16 @@ class StatusViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Drains everything parked, now, rather than waiting for the next cycle. */
+    /** Drains everything waiting, now, rather than waiting for the next cycle. */
     fun drainNow() {
-        Scheduler.enqueueExtraction(container.context)
-        Scheduler.enqueueTranscription(container.context)
-        Scheduler.enqueueCallDiscovery(container.context)
-        _state.value = _state.value.copy(message = "Processing queued captures in the background.")
+        _state.value = _state.value.copy(message = "Processing queued captures now.")
         viewModelScope.launch {
-            container.database.rawCaptureDao()
-                .releaseState(CaptureState.BUDGET_HELD, CaptureState.PENDING_EXTRACTION)
+            container.database.rawCaptureDao().releaseHeld()
+            // Each of these reads its queue now, in the app, and queues the
+            // same with WorkManager in case the app is closed first.
+            Scheduler.enqueueExtraction(container.context)
+            Scheduler.enqueueTranscription(container.context)
+            Scheduler.enqueueCallDiscovery(container.context)
             refresh()
         }
     }

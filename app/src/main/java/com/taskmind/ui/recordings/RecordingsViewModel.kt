@@ -204,10 +204,7 @@ class RecordingsViewModel(private val container: AppContainer) : ViewModel() {
                 LogLevel.INFO,
                 "queued $queued recording(s) for transcription at your request",
             )
-            // Ignore the Wi-Fi-only rule here: the user picked these files by
-            // hand just now, which is a clearer signal than a blanket setting
-            // meant to stop unattended background uploads.
-            Scheduler.enqueueTranscription(container.context, wifiOnly = false)
+            Scheduler.enqueueTranscription(container.context)
             clearSelection()
             _ui.value = _ui.value.copy(
                 queueing = false,
@@ -243,7 +240,7 @@ class RecordingsViewModel(private val container: AppContainer) : ViewModel() {
                 LogLevel.INFO,
                 "retrying $count failed transcription(s) at your request",
             )
-            Scheduler.enqueueTranscription(container.context, wifiOnly = false)
+            Scheduler.enqueueTranscription(container.context)
             _ui.value = _ui.value.copy(message = "Retrying $count recording(s).")
             refreshStates()
         }
