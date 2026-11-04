@@ -25,12 +25,14 @@ import com.taskmind.profiles.Profile
 import com.taskmind.profiles.ProfileRules
 import com.taskmind.profiles.ProfileStore
 import com.taskmind.intake.IntakeResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -391,7 +393,13 @@ class TaskListViewModel(private val container: AppContainer) : ViewModel() {
                 null
             },
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TaskListUiState())
+    }
+        // Off the main thread. Ranking, the filter row, the clean-up check and
+        // (with grouping on) relating tasks to each other all run here, on
+        // every change to any task and every time the list comes back into
+        // view; on the main thread, on a long list, that held up going back.
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TaskListUiState())
 
     fun setView(view: TaskView) = filters.update { it.copy(view = view, selection = emptySet()) }
     fun setSort(sort: SortMode) = filters.update { it.copy(sort = sort) }

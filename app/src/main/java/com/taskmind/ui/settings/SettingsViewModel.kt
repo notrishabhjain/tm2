@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -420,15 +421,38 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Spec 16: clears captured content but KEEPS tasks. */
+    /**
+     * Spec 16: clears captured content but KEEPS tasks.
+     *
+     * Both erases run in the app's scope rather than this screen's: leaving
+     * Settings half-way must not stop one with half the tables emptied.
+     */
     fun eraseCapturedContent() {
-        viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true)
-            val count = container.backupRepository.eraseCapturedContent()
-            _ui.value = _ui.value.copy(
-                busy = false,
-                message = "Erased $count captures, transcripts, recordings and logs. Your tasks are untouched.",
+        _ui.update { it.copy(busy = true) }
+        container.applicationScope.launch {
+            val message = runCatching {
+                val settings = container.settingsRepository.current()
+                container.backupRepository.eraseCapturedContent(deleteRecordings = settings.deleteRecordingsAfterTranscription)
+            }.fold(
+                onSuccess = { count -> "Erased $count captures, transcripts and logs. Your tasks are untouched." },
+                onFailure = { "Could not erase: ${it.message ?: it.javaClass.simpleName}" },
             )
+            _ui.update { it.copy(busy = false, message = message) }
+        }
+    }
+
+    /** One tap, a fresh start - see FreshStart for what goes and what stays. */
+    fun eraseEverything() {
+        _ui.update { it.copy(busy = true) }
+        container.applicationScope.launch {
+            val message = runCatching { container.freshStart.eraseEverything() }.fold(
+                onSuccess = { r ->
+                    "Erased everything: ${r.tasks} task(s) and ${r.captures} capture(s)." +
+                        if (r.web) " The web page empties at the next sync." else ""
+                },
+                onFailure = { "Could not erase everything: ${it.message ?: it.javaClass.simpleName}" },
+            )
+            _ui.update { it.copy(busy = false, message = message) }
         }
     }
 

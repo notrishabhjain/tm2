@@ -77,6 +77,9 @@ class SyncStore(private val context: Context) {
         val lastSuccessAt = longPreferencesKey("last_success_at")
         val lastResult = stringPreferencesKey("last_result")
         val lastPushedCount = longPreferencesKey("last_pushed_count")
+
+        /** Set by "Erase everything": the next run empties the web copy before anything else. */
+        val wipePending = booleanPreferencesKey("wipe_pending")
     }
 
     data class State(
@@ -222,6 +225,24 @@ class SyncStore(private val context: Context) {
 
     suspend fun clear() {
         context.syncDataStore.edit { it.clear() }
+    }
+
+    /**
+     * Asks the next run to empty the web copy first. Kept until a run has
+     * done it, so a phone that is offline when everything is erased still
+     * clears the web page once it is back.
+     */
+    suspend fun requestWipe() {
+        context.syncDataStore.edit {
+            it[K.wipePending] = true
+            it[K.pushedThrough] = 0L
+        }
+    }
+
+    suspend fun wipePending(): Boolean = context.syncDataStore.data.first()[K.wipePending] ?: false
+
+    suspend fun wipeDone() {
+        context.syncDataStore.edit { it.remove(K.wipePending) }
     }
 
     companion object {

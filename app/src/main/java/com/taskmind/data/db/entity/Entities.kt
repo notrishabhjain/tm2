@@ -256,7 +256,7 @@ data class SeenPackageEntity(
  * Settings -> Model calls shows this table, and each row expands to the full
  * system prompt, the user message, and the unedited response.
  *
- * It is capped and is cleared by "Erase all captured content", because these
+ * It is capped and is cleared by both erase buttons, because these
  * rows contain the message text and transcripts themselves.
  */
 @Entity(tableName = "inference_calls", indices = [Index(value = ["startedAt"])])

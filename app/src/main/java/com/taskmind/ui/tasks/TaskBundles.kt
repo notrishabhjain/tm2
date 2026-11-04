@@ -77,8 +77,7 @@ object TaskBundles {
      */
     fun duplicatesOf(taskId: String, pool: List<TaskEntity>): List<TaskEntity> {
         val byId = pool.associateBy { it.id }
-        return TaskRelations.duplicates(pool.map { relatable(it) })
-            .filter { it.keepId == taskId || it.otherId == taskId }
+        return TaskRelations.duplicatesOf(taskId, pool.map { relatable(it) })
             .mapNotNull { byId[if (it.keepId == taskId) it.otherId else it.keepId] }
             .distinctBy { it.id }
     }

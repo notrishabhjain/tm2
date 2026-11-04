@@ -101,6 +101,24 @@ class SyncEngine(
         val token = accessToken(state.projectUrl)
             ?: return@withContext fail(store.current().lastResult.ifBlank { "Could not sign in." }, retryable = true)
 
+        // ---- erase everything ---------------------------------------------
+        //
+        // Before the pull: pulling first would bring back what the browser
+        // still held - tasks queued there, edits to tasks the phone no longer
+        // has. Tasks go before matters, the order a task refers to them in.
+        // The policies let only this account's rows go. A table an older
+        // schema never made (a 404) has nothing in it to erase.
+        if (store.wipePending()) {
+            for (table in listOf("web_new_tasks", "review_items", "tasks", "matters")) {
+                val out = api.deleteNotIn(state.projectUrl, secrets.anonKey, token, table, emptyList())
+                if (out is SupabaseApi.Outcome.Failed && !out.message.startsWith("HTTP 404")) {
+                    return@withContext fail("Could not erase the web copy: ${out.message}", out.retryable)
+                }
+            }
+            store.wipeDone()
+            container.logger.write(Stage.SYSTEM, LogLevel.INFO, "Web sync: erased the web copy")
+        }
+
         // ---- pull, THEN push ----------------------------------------------
         //
         // The order is the whole trick, and getting it backwards silently

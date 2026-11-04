@@ -198,6 +198,8 @@ jobs:
           }
           EOF
           cp dist/update.json update.json
+          # The user manual travels with every build, as a file of its own.
+          if [ -f docs/USER_MANUAL.md ]; then cp docs/USER_MANUAL.md dist/TaskMind-User-Manual.md; fi
           echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
           ls -la dist
           cat dist/update.json
@@ -216,6 +218,8 @@ jobs:
           path: |
             dist/taskmind.apk
             dist/update.json
+            dist/TaskMind-User-Manual.md
+          if-no-files-found: warn
           retention-days: 90
 
       # Publishing a Release on every main build is what makes the APK
@@ -228,13 +232,16 @@ jobs:
         run: |
           set -euo pipefail
           TAG="v${{ steps.version.outputs.version_name }}"
+          FILES=(dist/taskmind.apk dist/update.json)
+          if [ -f dist/TaskMind-User-Manual.md ]; then FILES+=(dist/TaskMind-User-Manual.md); fi
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/taskmind.apk dist/update.json --clobber
+            gh release upload "$TAG" "${FILES[@]}" --clobber
           else
-            gh release create "$TAG" dist/taskmind.apk dist/update.json \
+            gh release create "$TAG" "${FILES[@]}" \
               --title "TaskMind $TAG" \
               --notes "Automated build of \`${{ github.sha }}\`.
 
           Install \`taskmind.apk\` on the device (allow installs from unknown sources).
+          The user manual is attached as \`TaskMind-User-Manual.md\`.
           SHA-256: \`${{ steps.stage.outputs.sha256 }}\`"
           fi

@@ -95,7 +95,10 @@ object TaskRelations {
      * chosen precisely because it should just clear 0.45 - would have missed
      * the bar by a rounding error and quietly stopped bundling anything.
      */
-    private fun points(a: Relatable, b: Relatable): Int {
+    private fun points(a: Relatable, b: Relatable): Int = points(a, b, words(a.title), words(b.title))
+
+    /** [points] with each title's words worked out once by the caller, not once per pair. */
+    private fun points(a: Relatable, b: Relatable, aWords: Set<String>, bWords: Set<String>): Int {
         if (a.id == b.id) return 0
         var points = 0
 
@@ -103,7 +106,7 @@ object TaskRelations {
         if (!a.group.isNullOrBlank() && a.group.equals(b.group, ignoreCase = true)) points += 30
         if (!a.projectId.isNullOrBlank() && a.projectId == b.projectId) points += 20
 
-        points += Math.round(35 * overlap(a.title, b.title)).toInt()
+        points += Math.round(35 * jaccard(aWords, bWords)).toInt()
 
         if (a.topics.any { t -> b.topics.any { it.equals(t, ignoreCase = true) } }) points += 15
         if (sameDay(a.dueAt, b.dueAt)) points += 10
@@ -122,12 +125,12 @@ object TaskRelations {
      * Two titles with nothing left after filtering score 0 rather than 1 -
      * "ok" and "haan ji" are not the same task, they are both nearly empty.
      */
-    fun overlap(a: String, b: String): Double {
-        val left = words(a)
-        val right = words(b)
+    fun overlap(a: String, b: String): Double = jaccard(words(a), words(b))
+
+    private fun jaccard(left: Set<String>, right: Set<String>): Double {
         if (left.isEmpty() || right.isEmpty()) return 0.0
         val shared = left.count { it in right }
-        val total = (left + right).size
+        val total = left.size + right.size - shared
         return if (total == 0) 0.0 else shared.toDouble() / total
     }
 
@@ -157,9 +160,10 @@ object TaskRelations {
             return root
         }
 
+        val titles = tasks.map { words(it.title) }
         for (i in tasks.indices) {
             for (j in i + 1 until tasks.size) {
-                if (points(tasks[i], tasks[j]) >= RELATED_POINTS) {
+                if (points(tasks[i], tasks[j], titles[i], titles[j]) >= RELATED_POINTS) {
                     val ri = find(i)
                     val rj = find(j)
                     if (ri != rj) parent[ri] = rj
@@ -178,9 +182,36 @@ object TaskRelations {
             .sortedWith(compareByDescending<Bundle> { it.size }.thenBy { it.label })
     }
 
-    /** The bundle one task sits in, if any. */
-    fun bundleFor(taskId: String, tasks: List<Relatable>): Bundle? =
-        bundles(tasks).firstOrNull { taskId in it.ids }
+    /**
+     * The bundle one task sits in, if any - the same group [bundles] would
+     * put it in, members in the same order.
+     *
+     * Walks outwards from the one task instead of grouping the whole list:
+     * the task screen asks this every time any task changes, and comparing
+     * every task with every other one there, on a long list, is what made
+     * opening a task hang.
+     */
+    fun bundleFor(taskId: String, tasks: List<Relatable>): Bundle? {
+        val start = tasks.indexOfFirst { it.id == taskId }
+        if (start < 0 || tasks.size < 2) return null
+        val titles = tasks.map { words(it.title) }
+        val seen = BooleanArray(tasks.size)
+        seen[start] = true
+        val queue = ArrayDeque<Int>()
+        queue.addLast(start)
+        while (queue.isNotEmpty()) {
+            val i = queue.removeFirst()
+            for (j in tasks.indices) {
+                if (seen[j]) continue
+                if (points(tasks[i], tasks[j], titles[i], titles[j]) >= RELATED_POINTS) {
+                    seen[j] = true
+                    queue.addLast(j)
+                }
+            }
+        }
+        val members = tasks.indices.filter { seen[it] }.map { tasks[it] }
+        return if (members.size < 2) null else describe(members)
+    }
 
     /**
      * Names a group after whatever all of its members actually share.
@@ -231,20 +262,47 @@ object TaskRelations {
      * any edits, reminders or sub-tasks.
      */
     fun duplicates(tasks: List<Relatable>): List<Duplicate> {
+        val titles = tasks.map { words(it.title) }
         val out = mutableListOf<Duplicate>()
         for (i in tasks.indices) {
             for (j in i + 1 until tasks.size) {
-                val a = tasks[i]
-                val b = tasks[j]
-                val shared = overlap(a.title, b.title)
-                if (shared < DUPLICATE) continue
-                // A date that disagrees means two deadlines, which means two
-                // tasks however similar the wording.
-                if (a.dueAt != null && b.dueAt != null && !sameDay(a.dueAt, b.dueAt)) continue
-                out += Duplicate(keepId = a.id, otherId = b.id, overlap = shared)
+                duplicate(tasks[i], tasks[j], titles[i], titles[j])?.let { out += it }
             }
         }
         return out.sortedByDescending { it.overlap }
+    }
+
+    /**
+     * The pairs [duplicates] would return that include [taskId], in the same
+     * order - one task against the rest, rather than every pair in the list.
+     */
+    fun duplicatesOf(taskId: String, tasks: List<Relatable>): List<Duplicate> {
+        val t = tasks.indexOfFirst { it.id == taskId }
+        if (t < 0) return emptyList()
+        val target = tasks[t]
+        val targetWords = words(target.title)
+        if (targetWords.isEmpty()) return emptyList()
+        val out = mutableListOf<Duplicate>()
+        for (i in tasks.indices) {
+            if (i == t) continue
+            // The earlier task in the list is the one kept, as in [duplicates].
+            val pair = if (i < t) {
+                duplicate(tasks[i], target, words(tasks[i].title), targetWords)
+            } else {
+                duplicate(target, tasks[i], targetWords, words(tasks[i].title))
+            }
+            pair?.let { out += it }
+        }
+        return out.sortedByDescending { it.overlap }
+    }
+
+    private fun duplicate(a: Relatable, b: Relatable, aWords: Set<String>, bWords: Set<String>): Duplicate? {
+        val shared = jaccard(aWords, bWords)
+        if (shared < DUPLICATE) return null
+        // A date that disagrees means two deadlines, which means two tasks
+        // however similar the wording.
+        if (a.dueAt != null && b.dueAt != null && !sameDay(a.dueAt, b.dueAt)) return null
+        return Duplicate(keepId = a.id, otherId = b.id, overlap = shared)
     }
 
     // -- words ---------------------------------------------------------------

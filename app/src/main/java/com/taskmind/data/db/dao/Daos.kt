@@ -243,6 +243,10 @@ interface RawCaptureDao {
 
     @Query("DELETE FROM raw_captures")
     suspend fun deleteAll()
+
+    /** Every recording a capture points at: the dialer's own files, not copies. */
+    @Query("SELECT audioPath FROM raw_captures WHERE audioPath IS NOT NULL")
+    suspend fun audioPaths(): List<String>
 }
 
 data class CaptureStateCount(val state: CaptureState, val count: Int)

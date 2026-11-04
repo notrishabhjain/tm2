@@ -72,7 +72,7 @@ class AppContainer(context: Context) {
     /**
      * A snapshot of settings readable without suspending.
      *
-     * `onNotificationPosted` must decide and write synchronously - the listener
+     * The listener decides and writes each capture straight away - the
      * process can die at any moment (spec 10.4) - and DataStore reads suspend.
      */
     @Volatile
@@ -271,8 +271,11 @@ class AppContainer(context: Context) {
     val selfUpdater: SelfUpdater by lazy { SelfUpdater(appContext, httpClient, logger) }
 
     val backupRepository: BackupRepository by lazy {
-        BackupRepository(appContext, database, intakeFunnel, logger)
+        BackupRepository(appContext, database, intakeFunnel, logger, settingsRepository)
     }
+
+    /** "Erase everything", in one tap. */
+    val freshStart: com.taskmind.data.repo.FreshStart by lazy { com.taskmind.data.repo.FreshStart(this) }
 
     /** Spec 15: exercises the production path, never a parallel one. */
     val selfTest: SelfTest by lazy { SelfTest(appContext, this) }

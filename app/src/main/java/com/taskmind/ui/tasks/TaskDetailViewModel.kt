@@ -21,6 +21,8 @@ import com.taskmind.work.Scheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** Who a task came from, and how to get back to them. */
@@ -59,6 +61,8 @@ data class TaskDetailUiState(
 }
 
 class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
+
+    private data class Relations(val related: List<TaskEntity>, val reason: String?, val duplicates: List<TaskEntity>)
 
     private val _state = MutableStateFlow(TaskDetailUiState())
     val state: StateFlow<TaskDetailUiState> = _state.asStateFlow()
@@ -100,24 +104,30 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
             }
         }
         viewModelScope.launch {
-            container.taskRepository.observeTasks().collect { all ->
-                // Only active, top-level tasks. Offering to complete something
-                // already completed is not an offer, and a sub-task is already
-                // shown under its parent.
-                val pool = all.filter { it.status == TaskStatus.ACTIVE && it.parentTaskId == null }
-                val dupes = TaskBundles.duplicatesOf(taskId, pool)
-                val dupeIds = dupes.map { it.id }.toSet()
-                val group = TaskBundles.relatedTo(taskId, pool)
-                _state.value = _state.value.copy(
-                    // A suspected duplicate is shown on its own, as a
-                    // question, so it is kept out of the list you are being
-                    // invited to tick off in one go.
-                    related = group?.tasks.orEmpty()
-                        .filter { it.id != taskId && it.id !in dupeIds },
-                    relatedReason = group?.bundle?.reason,
-                    duplicates = dupes,
-                )
-            }
+            container.taskRepository.observeTasks()
+                .map { all ->
+                    // Only active, top-level tasks. Offering to complete
+                    // something already completed is not an offer, and a
+                    // sub-task is already shown under its parent.
+                    val pool = all.filter { it.status == TaskStatus.ACTIVE && it.parentTaskId == null }
+                    val dupes = TaskBundles.duplicatesOf(taskId, pool)
+                    val dupeIds = dupes.map { it.id }.toSet()
+                    val group = TaskBundles.relatedTo(taskId, pool)
+                    Relations(
+                        // A suspected duplicate is shown on its own, as a
+                        // question, so it is kept out of the list you are
+                        // being invited to tick off in one go.
+                        related = group?.tasks.orEmpty().filter { it.id != taskId && it.id !in dupeIds },
+                        reason = group?.bundle?.reason,
+                        duplicates = dupes,
+                    )
+                }
+                // Off the main thread: this runs on every change to any task,
+                // and on the main thread it held up the screen being opened.
+                .flowOn(Dispatchers.Default)
+                .collect { r ->
+                    _state.value = _state.value.copy(related = r.related, relatedReason = r.reason, duplicates = r.duplicates)
+                }
         }
     }
 
@@ -140,7 +150,8 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
     fun completeBundle() {
         val task = _state.value.task ?: return
         val ids = listOf(task.id) + _state.value.related.map { it.id }
-        viewModelScope.launch {
+        // The screen closes straight after; see [delete].
+        container.applicationScope.launch {
             container.taskRepository.bulkSetStatus(ids, TaskStatus.COMPLETED)
         }
     }
@@ -259,15 +270,22 @@ class TaskDetailViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun muteGroup(group: String) {
-        viewModelScope.launch {
+        // The screen closes straight after; see [delete].
+        container.applicationScope.launch {
             container.settingsRepository.setGroupOverride(group, PreFilter.GroupPolicy.NEVER)
             container.logger.write(Stage.PREFILTER, LogLevel.INFO, "stopped watching group", group)
         }
     }
 
+    /**
+     * Outside this screen's own scope, on purpose: the screen closes the
+     * moment the button is pressed, closing it clears this view model, and a
+     * write still waiting for a busy database would be cancelled with it -
+     * the task would come back.
+     */
     fun delete() {
         val task = _state.value.task ?: return
-        viewModelScope.launch { container.taskRepository.delete(task.id) }
+        container.applicationScope.launch { container.taskRepository.delete(task.id) }
     }
 
     fun addSubTask(title: String) {
