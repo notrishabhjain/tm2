@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -90,7 +91,7 @@ fun SettingsScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    var confirmErase by remember { mutableStateOf(false) }
+    var confirmErase by remember { mutableStateOf<EraseKind?>(null) }
 
     LaunchedEffect(ui.message) {
         val message = ui.message ?: return@LaunchedEffect
@@ -165,7 +166,7 @@ fun SettingsScreen(
                 SettingsPage.PRIVACY -> {
                     SecuritySection()
                     PrivacySection(settings, viewModel)
-                    RetentionSection(settings, viewModel) { confirmErase = true }
+                    RetentionSection(settings, viewModel, busy = ui.busy) { confirmErase = it }
                     WebSyncSection()
                     DataSection(viewModel, onShareText) {
                         importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
@@ -198,28 +199,43 @@ fun SettingsScreen(
         }
     }
 
-    if (confirmErase) {
+    confirmErase?.let { kind ->
+        val recordings = if (settings.deleteRecordingsAfterTranscription) {
+            "The call recordings TaskMind still holds are deleted too, as your recording setting says."
+        } else {
+            "Call recordings stay in your phone's recorder folder; TaskMind will not read them again."
+        }
         AlertDialog(
-            onDismissRequest = { confirmErase = false },
-            title = { Text("Erase captured content?") },
+            onDismissRequest = { confirmErase = null },
+            title = { Text(if (kind == EraseKind.EVERYTHING) "Erase everything?" else "Erase captured content?") },
             text = {
                 Text(
-                    "This removes every stored message, transcript, recording and log line. " +
-                        "Your tasks are kept, along with the quote and the source shown on each one.",
+                    if (kind == EraseKind.EVERYTHING) {
+                        "A fresh start. Every task, inbox item and matter goes, with every stored message, " +
+                            "transcript and log line, what TaskMind learned from, the twin's journal, and the " +
+                            "copy on the web page. Your settings, keys and choices about apps and chats stay. " +
+                            "$recordings This cannot be undone."
+                    } else {
+                        "This removes every stored message, transcript and log line. Your tasks are kept, " +
+                            "along with the quote and the source shown on each one. $recordings"
+                    },
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.eraseCapturedContent()
-                    confirmErase = false
+                    if (kind == EraseKind.EVERYTHING) viewModel.eraseEverything() else viewModel.eraseCapturedContent()
+                    confirmErase = null
                 }) {
-                    Text("Erase")
+                    Text(if (kind == EraseKind.EVERYTHING) "Erase everything" else "Erase")
                 }
             },
-            dismissButton = { TextButton(onClick = { confirmErase = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { confirmErase = null }) { Text("Cancel") } },
         )
     }
 }
+
+/** The two erase buttons under "Keeping and deleting". */
+private enum class EraseKind { EVERYTHING, CAPTURED }
 
 /**
  * Where settings can take you: five pages, and the machinery behind one door.
@@ -782,7 +798,12 @@ private fun QualitySection(settings: Settings, viewModel: SettingsViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RetentionSection(settings: Settings, viewModel: SettingsViewModel, onErase: () -> Unit) {
+private fun RetentionSection(
+    settings: Settings,
+    viewModel: SettingsViewModel,
+    busy: Boolean,
+    onErase: (EraseKind) -> Unit,
+) {
     SectionCard(
         title = "Keeping and deleting",
         subtitle = "Deleting captured content never deletes the tasks that came from it.",
@@ -823,7 +844,24 @@ private fun RetentionSection(settings: Settings, viewModel: SettingsViewModel, o
         )
 
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = onErase) { Text("Erase all captured content") }
+        Button(
+            onClick = { onErase(EraseKind.EVERYTHING) },
+            enabled = !busy,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+            ),
+        ) { Text("Erase everything") }
+        Text(
+            "A fresh start: tasks, messages, transcripts, logs and the web copy, in one go. " +
+                "Settings and keys stay.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = { onErase(EraseKind.CAPTURED) }, enabled = !busy) {
+            Text("Erase messages and transcripts, keep tasks")
+        }
     }
 }
 

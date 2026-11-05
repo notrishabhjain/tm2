@@ -22,7 +22,8 @@ import java.util.Locale
 
 /**
  * Spec 16 - export and import as JSON and CSV, local backup and restore, and
- * "erase all captured content" which keeps the tasks.
+ * "erase captured content" which keeps the tasks. (Erasing everything,
+ * tasks included, is [FreshStart].)
  *
  * Spec 17.4 / failure mode 6 also leans on this: the corruption-recovery path
  * salvages tasks to a timestamped JSON file before anything destructive is even
@@ -33,6 +34,8 @@ class BackupRepository(
     private val database: TaskMindDatabase,
     private val funnel: IntakeFunnel,
     private val logger: ActivityLogger,
+    /** For drawing the fresh-start line when captured content is erased. */
+    private val settings: com.taskmind.data.settings.SettingsRepository? = null,
 ) {
 
     @Serializable
@@ -192,16 +195,26 @@ class BackupRepository(
     }
 
     /**
-     * Spec 16: clears raw captures, transcripts, audio and logs BUT KEEPS
-     * TASKS. The evidence quote and source label already live on the task, so
-     * the user keeps the words that created each one.
+     * Spec 16: clears raw captures, transcripts and logs BUT KEEPS TASKS. The
+     * evidence quote and source label already live on the task, so the user
+     * keeps the words that created each one.
+     *
+     * A capture's recording is the dialer's own file, not a copy, so it is
+     * deleted only when [deleteRecordings] says the user lets TaskMind delete
+     * recordings. Erasing used to delete every one, and with "All files
+     * access" granted that removes the user's own call recordings from the
+     * phone.
      */
-    suspend fun eraseCapturedContent(): Int = withContext(Dispatchers.IO) {
+    suspend fun eraseCapturedContent(deleteRecordings: Boolean): Int = withContext(Dispatchers.IO) {
         val rawDao = database.rawCaptureDao()
-        val captures = rawDao.recent(Int.MAX_VALUE)
-        for (capture in captures) {
-            capture.audioPath?.let { path -> runCatching { File(path).delete() } }
+        val count = rawDao.total()
+        if (deleteRecordings) {
+            rawDao.audioPaths().forEach { path -> runCatching { com.taskmind.capture.AudioSource.delete(context, path) } }
         }
+        // Nothing from before is read again: not the notifications still in
+        // the shade, not the calls already in the call log - their captures
+        // are about to go, and with them what said "already read".
+        settings?.markFreshStart(System.currentTimeMillis())
         database.taskDao().detachAllRawCaptures()
         rawDao.deleteAll()
         database.callRecordDao().deleteAll()
@@ -210,8 +223,8 @@ class BackupRepository(
         database.activityLogDao().deleteAll()
         database.inferenceCallDao().deleteAll()
         database.seenPackageDao().deleteAll()
-        logger.write(Stage.SYSTEM, LogLevel.INFO, "erased captured content", "${captures.size} captures, plus the model-call trace; tasks kept")
-        captures.size
+        logger.write(Stage.SYSTEM, LogLevel.INFO, "erased captured content", "$count captures, plus the model-call trace; tasks kept")
+        count
     }
 
     private fun com.taskmind.data.db.entity.TaskEntity.toExported() = ExportedTask(

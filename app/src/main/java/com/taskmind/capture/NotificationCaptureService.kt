@@ -16,12 +16,15 @@ import com.taskmind.core.NotificationResolver
 import com.taskmind.core.Stage
 import com.taskmind.di.AppContainer
 import com.taskmind.work.Scheduler
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -41,12 +44,44 @@ class NotificationCaptureService : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var container: AppContainer
 
+    /**
+     * Notifications waiting to be written, in the order they were posted.
+     *
+     * Android calls the listener on the main thread - the thread that also
+     * draws the app. The write used to happen right there (spec 10.4 wanted
+     * the row to exist before the callback returned), which held the screen
+     * still for as long as the database took, up to two seconds a message;
+     * a busy group chat posts several at once, so the app froze whenever
+     * messages arrived while it was open. Now the callback only reads the
+     * notification and queues it, and one writer stores them in order. A
+     * process that dies with something still queued loses nothing for good:
+     * the notification is still in the shade, and the replay on reconnect
+     * reads it again.
+     */
+    private val queue = Channel<Posted>(Channel.UNLIMITED)
+
+    /** One writer at a time, so the replay and the queue never interleave half-way. */
+    private val writeLock = Mutex()
+
+    private class Posted(val fields: NotificationResolver.Fields, val packageName: String)
+
     private var callLogObserver: ContentObserver? = null
     private var lastSweepAt = 0L
 
     override fun onCreate() {
         super.onCreate()
         container = AppContainer.get(this)
+        scope.launch {
+            for (posted in queue) {
+                try {
+                    writeLock.withLock { capture(posted) }
+                } catch (c: CancellationException) {
+                    throw c
+                } catch (t: Throwable) {
+                    container.logger.write(Stage.CAPTURE, LogLevel.ERROR, "capture failed", t.toString())
+                }
+            }
+        }
     }
 
     override fun onListenerConnected() {
@@ -98,23 +133,26 @@ class NotificationCaptureService : NotificationListenerService() {
 
     // ------------------------------------------------------------- capture
 
+    /** On the main thread: reads the notification and queues it, nothing more (see [queue]). */
     private fun handle(sbn: StatusBarNotification) {
         val fields = readFields(sbn) ?: return
-        val settings = container.cachedSettings
-        val appLabel = container.appLabel(sbn.packageName)
+        queue.trySend(Posted(fields, sbn.packageName.orEmpty()))
+    }
 
-        // Spec 10.4: the row must exist before this process can die, so the
-        // write is synchronous. It is a single indexed insert; the cost is
-        // measured in milliseconds and the alternative is a lost commitment.
-        val outcome = runBlocking {
-            withTimeoutOrNull(SYNC_WRITE_TIMEOUT_MILLIS) {
-                container.captureCoordinator.handleNotification(
-                    fields = fields,
-                    appLabel = appLabel,
-                    settings = settings,
-                    ownPackageName = packageName,
-                )
-            }
+    private suspend fun capture(posted: Posted) {
+        val outcome = withTimeoutOrNull(WRITE_TIMEOUT_MILLIS) {
+            container.captureCoordinator.handleNotification(
+                fields = posted.fields,
+                appLabel = container.appLabel(posted.packageName),
+                settings = container.cachedSettings,
+                ownPackageName = packageName,
+            )
+        }
+        if (outcome == null) {
+            // The database is stuck behind something. The notification is
+            // still in the shade; the replay on the next reconnect reads it.
+            container.logger.write(Stage.CAPTURE, LogLevel.WARN, "capture timed out", posted.packageName)
+            return
         }
 
         if (outcome is CaptureCoordinator.Outcome.Captured) {
@@ -189,12 +227,14 @@ class NotificationCaptureService : NotificationListenerService() {
             for (sbn in active) {
                 runCatching {
                     val fields = readFields(sbn) ?: return@runCatching
-                    val outcome = container.captureCoordinator.handleNotification(
-                        fields = fields,
-                        appLabel = container.appLabel(sbn.packageName),
-                        settings = container.cachedSettings,
-                        ownPackageName = packageName,
-                    )
+                    val outcome = writeLock.withLock {
+                        container.captureCoordinator.handleNotification(
+                            fields = fields,
+                            appLabel = container.appLabel(sbn.packageName),
+                            settings = container.cachedSettings,
+                            ownPackageName = packageName,
+                        )
+                    }
                     if (outcome is CaptureCoordinator.Outcome.Captured) {
                         replayed++
                         runCatching { container.instantCapture.onCaptured(outcome.rawCaptureId) }
@@ -255,7 +295,8 @@ class NotificationCaptureService : NotificationListenerService() {
     }
 
     companion object {
-        private const val SYNC_WRITE_TIMEOUT_MILLIS = 2_000L
+        /** Generous: off the main thread nothing waits on it, and a capture given up on is a lost message. */
+        private const val WRITE_TIMEOUT_MILLIS = 20_000L
         private const val SWEEP_THROTTLE_MILLIS = 60_000L
 
         /** Used by the status screen to report the listener's real state. */

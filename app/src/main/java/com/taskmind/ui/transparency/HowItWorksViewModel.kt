@@ -91,9 +91,11 @@ class HowItWorksViewModel(private val container: AppContainer) : ViewModel() {
                 ),
                 Rule(
                     "Written before anything else",
-                    "The record is saved synchronously, inside the notification callback, before any " +
-                        "filtering that needs disk. The listener process can be killed at any moment; if " +
-                        "the row is not already there, the message is gone.",
+                    "Each notification is saved the moment it arrives, before any filtering that needs " +
+                        "disk, one at a time and in the order they came in. The saving happens off the " +
+                        "screen's thread, so a busy chat never freezes the app. If the phone kills " +
+                        "TaskMind in between, nothing is lost: the notification is still in the shade, " +
+                        "and TaskMind reads it again when it reconnects.",
                 ),
                 Rule(
                     "Instant first read on the phone",
@@ -289,7 +291,7 @@ class HowItWorksViewModel(private val container: AppContainer) : ViewModel() {
                 Rule(
                     "Model calls",
                     "The last hundred requests and replies are kept so you can audit them. They contain " +
-                        "your message text, and \"Erase all captured content\" clears them.",
+                        "your message text; both erase buttons under Keeping and deleting clear them.",
                 ),
             ),
         ),

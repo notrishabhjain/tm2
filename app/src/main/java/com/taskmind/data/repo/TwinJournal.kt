@@ -53,6 +53,14 @@ class TwinJournal(context: Context) {
         }
     }
 
+    /** "Erase everything": the record of what the twin changed goes with the tasks it changed. */
+    suspend fun clear() = withContext(Dispatchers.IO) {
+        lock.withLock {
+            runCatching { file.delete() }
+            _entries.value = emptyList()
+        }
+    }
+
     private fun rewrite(entries: List<Journal.Entry>) {
         file.writeText(entries.joinToString("\n", postfix = "\n", transform = Journal::encode))
     }

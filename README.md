@@ -208,6 +208,18 @@ transcripts and recordings are deleted on a schedule you set (7, 30 or 90 days) 
 and deleting them never deletes the tasks that came from them, because the quote
 and the source are kept on each task.
 
+**Starting over.** Settings → Privacy and security → Keeping and deleting →
+**Erase everything** removes every task, inbox item, matter, message, transcript,
+log line and the web copy in one go, and keeps your settings and keys. Nothing
+from before comes back: notifications still in the shade and calls already in the
+call log are not read again. Your phone's own call recordings stay in its
+recorder folder unless "Delete a recording once it is transcribed" is on. The
+gentler button next to it, **Erase messages and transcripts, keep tasks**, does
+what it says.
+
+**The user manual** lives in [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md) and is
+attached to every release as `TaskMind-User-Manual.md`.
+
 ---
 
 ## For developers

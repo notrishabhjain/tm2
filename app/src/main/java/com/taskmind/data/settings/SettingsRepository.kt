@@ -55,6 +55,7 @@ class SettingsRepository(private val context: Context) {
         val minCallDuration = longPreferencesKey("min_call_duration")
         val callRecordingDirUri = stringPreferencesKey("call_recording_dir_uri")
         val recordingCutoff = longPreferencesKey("recording_cutoff_millis")
+        val freshStartAt = longPreferencesKey("fresh_start_at")
 
         val autoCreateThreshold = doublePreferencesKey("auto_create_threshold")
         val reviewThreshold = doublePreferencesKey("review_threshold")
@@ -127,6 +128,7 @@ class SettingsRepository(private val context: Context) {
             minCallDurationSeconds = this[K.minCallDuration] ?: d.minCallDurationSeconds,
             callRecordingDirUri = this[K.callRecordingDirUri] ?: d.callRecordingDirUri,
             recordingCutoffMillis = this[K.recordingCutoff] ?: d.recordingCutoffMillis,
+            freshStartAt = this[K.freshStartAt] ?: d.freshStartAt,
             autoCreateThreshold = upgradeThreshold(this[K.autoCreateThreshold], d.autoCreateThreshold, AUTO_UPGRADES),
             reviewThreshold = upgradeThreshold(this[K.reviewThreshold], d.reviewThreshold, REVIEW_UPGRADES),
             notificationTolerance = this[K.notificationTolerance] ?: d.notificationTolerance,
@@ -220,6 +222,17 @@ class SettingsRepository(private val context: Context) {
 
     /** Lets the user re-draw the line - "start fresh from now". */
     suspend fun setRecordingCutoff(millis: Long) = edit { it[K.recordingCutoff] = millis }
+
+    /**
+     * After "Erase everything": nothing from before [now] is read again - not
+     * the notifications still in the shade, not the calls already in the call
+     * log, not the recordings they left. One edit, so the two lines move
+     * together.
+     */
+    suspend fun markFreshStart(now: Long) = edit {
+        it[K.freshStartAt] = now
+        it[K.recordingCutoff] = now
+    }
 
     suspend fun setThresholds(autoCreate: Double, review: Double) = edit {
         it[K.autoCreateThreshold] = autoCreate

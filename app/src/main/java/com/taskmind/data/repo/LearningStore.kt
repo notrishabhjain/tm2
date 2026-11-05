@@ -58,6 +58,16 @@ class LearningStore(context: Context) {
 
     suspend fun remove(id: String) = write(Rules.remove(_rules.value, id))
 
+    /**
+     * Forgets what was learned from, keeping what was decided: the feedback
+     * log names senders, groups and tasks, so "Erase everything" removes it;
+     * the rules the user approved are choices, like settings, and stay.
+     */
+    suspend fun clearFeedback() = withContext(Dispatchers.IO) {
+        lock.withLock { runCatching { feedbackFile.delete() } }
+        Unit
+    }
+
     private suspend fun write(rules: List<Rules.Rule>) = withContext(Dispatchers.IO) {
         lock.withLock {
             runCatching { rulesFile.writeText(rules.joinToString("\n", transform = Rules::encode)) }

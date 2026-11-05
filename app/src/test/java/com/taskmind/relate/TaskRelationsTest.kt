@@ -273,4 +273,67 @@ class TaskRelationsTest {
         val b = task("b", "Beta", person = "")
         assertFalse(TaskRelations.score(a, b) >= TaskRelations.RELATED)
     }
+
+    // -- one task at a time ---------------------------------------------------
+
+    /**
+     * A chain (a-b by person, b-c by wording and day, c-d by group and topic),
+     * a pair, two loners and some near-duplicates, in a fixed order.
+     */
+    private val mixed = listOf(
+        task("a", "Send the invoice to Sharma", person = "Sharma Ji"),
+        task("b", "Book the hall", due = monday, person = "Sharma Ji"),
+        task("c", "Book the hall", due = monday, group = "Family", topics = listOf("home")),
+        task("d", "Call the plumber", group = "Family", topics = listOf("home")),
+        task("e", "Send invoice to Sharma", due = monday),
+        task("f", "Renew the car insurance", group = "Office", topics = listOf("payment")),
+        task("g", "Pay the insurance premium", group = "Office", topics = listOf("payment")),
+        task("h", "Water the plants"),
+        task("i", "Send the invoice to Sharma", due = monday + 2 * day),
+    )
+
+    @Test
+    fun `bundleFor finds the same group as bundling the whole list`() {
+        val all = TaskRelations.bundles(mixed)
+        for (t in mixed) {
+            assertEquals("bundle for ${t.id}", all.firstOrNull { t.id in it.ids }, TaskRelations.bundleFor(t.id, mixed))
+        }
+    }
+
+    @Test
+    fun `bundleFor follows a chain to its far end`() {
+        assertEquals(listOf("a", "b", "c", "d"), TaskRelations.bundleFor("a", mixed)?.ids)
+        assertEquals(listOf("a", "b", "c", "d"), TaskRelations.bundleFor("d", mixed)?.ids)
+        assertEquals(listOf("f", "g"), TaskRelations.bundleFor("g", mixed)?.ids)
+    }
+
+    @Test
+    fun `bundleFor of a loner or a missing task is null`() {
+        assertNull(TaskRelations.bundleFor("h", mixed))
+        assertNull(TaskRelations.bundleFor("i", mixed))
+        assertNull(TaskRelations.bundleFor("nope", mixed))
+        assertNull(TaskRelations.bundleFor("a", listOf(mixed[0])))
+    }
+
+    @Test
+    fun `duplicatesOf gives the pairs duplicates would, in the same order`() {
+        val all = TaskRelations.duplicates(mixed)
+        for (t in mixed) {
+            assertEquals(
+                "duplicates of ${t.id}",
+                all.filter { it.keepId == t.id || it.otherId == t.id },
+                TaskRelations.duplicatesOf(t.id, mixed),
+            )
+        }
+    }
+
+    @Test
+    fun `duplicatesOf keeps the earlier task and respects a disagreeing date`() {
+        val dupes = TaskRelations.duplicatesOf("e", mixed)
+        // "a" has no date so it pairs with "e"; "i" is due two days later, so it does not.
+        assertEquals(listOf("a" to "e"), dupes.map { it.keepId to it.otherId })
+        assertEquals(listOf("a" to "e", "a" to "i"), TaskRelations.duplicatesOf("a", mixed).map { it.keepId to it.otherId })
+        assertEquals(listOf("b" to "c"), TaskRelations.duplicatesOf("c", mixed).map { it.keepId to it.otherId })
+        assertTrue(TaskRelations.duplicatesOf("nope", mixed).isEmpty())
+    }
 }

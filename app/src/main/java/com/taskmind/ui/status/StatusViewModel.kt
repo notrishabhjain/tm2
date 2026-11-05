@@ -12,10 +12,12 @@ import com.taskmind.diagnostics.PermissionState
 import com.taskmind.diagnostics.SelfTest
 import com.taskmind.update.SelfUpdater
 import com.taskmind.work.Scheduler
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Spec 18.8 - the status screen. Permanently reachable from the task list and
@@ -78,43 +80,65 @@ class StatusViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Spec 17.4: re-check every permission on start and on every refresh. */
+    /**
+     * Spec 17.4: re-check every permission on start and on every refresh.
+     *
+     * Off the main thread: the duplicate check compares every open task with
+     * every other, and the rest reads the database and the system's
+     * permission state - all of it held the Health screen still as it opened.
+     */
     fun refresh() {
         viewModelScope.launch {
-            val settings = container.settingsRepository.current()
-            val usage = container.settingsRepository.currentUsage()
-            val today = DateResolver.dayKey(System.currentTimeMillis())
-            val dao = container.database.rawCaptureDao()
+            // Worked out off the main thread, applied on it - to the state as
+            // it is by then, so the log line or message that arrived in the
+            // meantime is kept.
+            val apply = withContext(Dispatchers.Default) {
+                val settings = container.settingsRepository.current()
+                val usage = container.settingsRepository.currentUsage()
+                val today = DateResolver.dayKey(System.currentTimeMillis())
+                val dao = container.database.rawCaptureDao()
 
-            val counts = CaptureState.entries.associateWith { dao.countByState(it) }
-
-            _state.value = _state.value.copy(
-                permissions = PermissionState.all(container.context),
-                llmConfigured = container.secretStore.hasLlmKey(),
-                asrConfigured = container.secretStore.hasAsrKey(),
-                llmSummary = "${settings.llmModel} at ${settings.llmBaseUrl}",
-                asrSummary = "${settings.asrProvider.name.lowercase()} - ${settings.asrModel}",
-                cloudConsent = settings.cloudConsent,
-                ownNamesSet = settings.ownNames.any { it.isNotBlank() },
-                llmCallsToday = if (usage.dayKey == today) usage.llmCalls else 0,
-                asrSecondsToday = if (usage.dayKey == today) usage.asrSeconds else 0,
-                captureCounts = counts,
-                installedVersion = "${container.selfUpdater.installedVersionName} (${container.selfUpdater.installedVersionCode})",
-                captureNow = runCatching { CaptureHealth.compute(container).describe() }.getOrNull(),
-                captureBefore = CaptureHealth.baseline(container.context)?.let { (text, at) ->
+                val counts = CaptureState.entries.associateWith { dao.countByState(it) }
+                val permissions = PermissionState.all(container.context)
+                val llmConfigured = container.secretStore.hasLlmKey()
+                val asrConfigured = container.secretStore.hasAsrKey()
+                val captureNow = runCatching { CaptureHealth.compute(container).describe() }.getOrNull()
+                val captureBefore = CaptureHealth.baseline(container.context)?.let { (text, at) ->
                     "$text (as of ${DateFormats.full(at)})"
-                },
-                focusDone = runCatching { CaptureHealth.focusCompletion(container) }.getOrNull(),
-                duplicates = runCatching { CaptureHealth.duplicates(container) }.getOrNull(),
-                email = runCatching {
-                    val mail = container.emailStore.current()
-                    if (!mail.connected) null else buildString {
-                        append(mail.address).append(" - checked ").append(com.taskmind.email.EmailSync.formatWhen(mail.lastCheckAt))
-                        append(". ").append(mail.lastError.ifBlank { mail.lastResult })
+                }
+                val focusDone = runCatching { CaptureHealth.focusCompletion(container) }.getOrNull()
+                val duplicates = runCatching { CaptureHealth.duplicates(container) }.getOrNull()
+                val mail = runCatching { container.emailStore.current() }.getOrNull()
+                val email = mail?.takeIf { it.connected }?.let {
+                    buildString {
+                        append(it.address).append(" - checked ").append(com.taskmind.email.EmailSync.formatWhen(it.lastCheckAt))
+                        append(". ").append(it.lastError.ifBlank { it.lastResult })
                     }
-                }.getOrNull(),
-                emailFailing = runCatching { container.emailStore.current().lastError.isNotBlank() }.getOrDefault(false),
-            )
+                }
+                val result: (StatusUiState) -> StatusUiState = { current ->
+                    current.copy(
+                        permissions = permissions,
+                        llmConfigured = llmConfigured,
+                        asrConfigured = asrConfigured,
+                        llmSummary = "${settings.llmModel} at ${settings.llmBaseUrl}",
+                        asrSummary = "${settings.asrProvider.name.lowercase()} - ${settings.asrModel}",
+                        cloudConsent = settings.cloudConsent,
+                        ownNamesSet = settings.ownNames.any { it.isNotBlank() },
+                        llmCallsToday = if (usage.dayKey == today) usage.llmCalls else 0,
+                        asrSecondsToday = if (usage.dayKey == today) usage.asrSeconds else 0,
+                        captureCounts = counts,
+                        installedVersion = "${container.selfUpdater.installedVersionName} (${container.selfUpdater.installedVersionCode})",
+                        captureNow = captureNow,
+                        captureBefore = captureBefore,
+                        focusDone = focusDone,
+                        duplicates = duplicates,
+                        email = email,
+                        emailFailing = mail?.lastError?.isNotBlank() ?: false,
+                    )
+                }
+                result
+            }
+            _state.value = apply(_state.value)
         }
     }
 

@@ -118,6 +118,13 @@ class InstantLane(private val container: AppContainer) {
     suspend fun drainMessages(): Pass = messageLock.withLock { passMessages() }
 
     /**
+     * Runs [block] with no message pass in flight - "Erase everything" uses it,
+     * so a pass that read a capture just before the erase cannot write its
+     * task just after it. Any pass already running finishes first.
+     */
+    suspend fun <T> withMessagesPaused(block: suspend () -> T): T = messageLock.withLock { block() }
+
+    /**
      * Reads what is due, batch by batch, then sets the timer for whatever is
      * waiting (a chat still talking, a retry backing off). Callers hold
      * [messageLock].

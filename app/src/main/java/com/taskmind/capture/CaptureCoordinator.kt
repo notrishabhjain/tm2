@@ -22,10 +22,11 @@ import java.util.UUID
  * Spec 5: every capture path writes a RawCapture row and NOTHING else. Capture
  * never writes to the task table.
  *
- * Spec 10.4: the row is written synchronously, before any filtering that needs
- * I/O, because the listener process can die at any moment and the row must
- * already exist. Only the checks that are pure in-memory decisions run first;
- * the fingerprint lookup happens later, in the worker.
+ * Spec 10.4: the row is written first, before any filtering that needs I/O,
+ * because the listener process can die at any moment. Only the checks that
+ * are pure in-memory decisions run first; the fingerprint lookup happens
+ * later, in the worker. The listener calls this from its own writer, in
+ * posting order, not on the main thread (see NotificationCaptureService).
  */
 class CaptureCoordinator(
     private val rawCaptureDao: RawCaptureDao,
@@ -69,6 +70,11 @@ class CaptureCoordinator(
             // consent box. Nothing leaves the device before then, and nothing
             // accumulates that they did not agree to.
             return Outcome.Rejected("cloud consent not given")
+        }
+        if (fields.postTime in 1L until settings.freshStartAt) {
+            // Erased: what was already in the shade then stays forgotten,
+            // even when the listener reconnects and replays it.
+            return Outcome.Rejected("posted before the fresh start")
         }
 
         // The package decision comes first, and silently.

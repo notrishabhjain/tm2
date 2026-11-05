@@ -1089,9 +1089,16 @@ private fun SelectionBar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SearchField(query: String, onQuery: (String) -> Unit, onClose: () -> Unit) {
+    // The field keeps its own text. The list is worked out off the main
+    // thread, and a field fed back from that would lose letters typed faster
+    // than the list can catch up.
+    var text by rememberSaveable { mutableStateOf(query) }
     TextField(
-        value = query,
-        onValueChange = onQuery,
+        value = text,
+        onValueChange = {
+            text = it
+            onQuery(it)
+        },
         placeholder = { Text("Search, or ask a question") },
         singleLine = true,
         leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },

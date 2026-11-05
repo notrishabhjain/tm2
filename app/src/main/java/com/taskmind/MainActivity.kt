@@ -14,11 +14,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.NavType
@@ -335,17 +337,18 @@ fun TaskMindNavHost(
     onShareFile: (File) -> Unit,
     navController: NavHostController = rememberNavController(),
 ) {
+    // The task list is the bottom of every stack. A screen a notification or
+    // the widget asks for opens on top of it (below), never in its place: as
+    // the first screen it had nothing behind it, and back left an empty
+    // window that looked exactly like the app had frozen.
     val start = when {
         startOnboarding -> Routes.ONBOARDING
         sharedText != null || sharedImages.isNotEmpty() -> Routes.IMPORT
-        startRoute == "status" -> Routes.STATUS
-        startRoute == "review" -> Routes.REVIEW
-        startRoute != null && startRoute.startsWith(MainActivity.ROUTE_TWIN) -> Routes.TWIN
-        // The widget opens a specific task. Matched by prefix rather than
-        // listed, because the id is part of the route.
-        startRoute != null && startRoute.startsWith("task/") -> startRoute
         else -> Routes.TASKS
     }
+    // Once per launch. After a rotation the navigation restores its own
+    // place, and opening the screen again would stack a second copy.
+    var startOpened by rememberSaveable { mutableStateOf(false) }
 
     // What the Import screen shows: the text shared at start-up, or later.
     var shared by remember { mutableStateOf(sharedText) }
@@ -389,10 +392,13 @@ fun TaskMindNavHost(
                 twinStart = route.substringAfter('|', "").ifBlank { null }
                 navController.navigate(Routes.twin()) { launchSingleTop = true }
             }
-            route == "status" -> navController.navigate(Routes.STATUS)
+            route == "status" -> navController.navigate(Routes.STATUS) { launchSingleTop = true }
             route == "review" -> navController.navigate(Routes.REVIEW) { launchSingleTop = true }
             route == "tasks" -> navController.navigate(Routes.TASKS) { launchSingleTop = true }
-            route != null && route.startsWith("task/") -> navController.navigate(route)
+            // Not a second copy of the task already open: tapping its
+            // notification again used to stack one, and back then showed the
+            // same task - the back arrow looked like it did nothing.
+            route != null && route.startsWith("task/") -> if (!showingTask(navController, route)) navController.navigate(route)
         }
         onIncomingHandled()
     }
@@ -443,7 +449,7 @@ fun TaskMindNavHost(
             TaskDetailScreen(
                 taskId = taskId,
                 viewModel = vm,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.goBack(backStackEntry) },
                 onOpenTask = { id -> navController.navigate(Routes.taskDetail(id)) },
                 onNudge = { id ->
                     twinStart = "nudge:$id"
@@ -452,22 +458,22 @@ fun TaskMindNavHost(
             )
         }
 
-        composable(Routes.REVIEW) {
+        composable(Routes.REVIEW) { entry ->
             val vm: ReviewViewModel = viewModel(factory = AppViewModels.factory)
             TopLevel(MainTab.REVIEW, navController) {
                 ReviewScreen(
                     viewModel = vm,
-                    onBack = { navController.popBackStack() },
+                    onBack = { navController.goBack(entry) },
                     onOpenTask = { id -> navController.navigate(Routes.taskDetail(id)) },
                 )
             }
         }
 
-        composable(Routes.STATUS) {
+        composable(Routes.STATUS) { entry ->
             val vm: StatusViewModel = viewModel(factory = AppViewModels.factory)
             StatusScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.goBack(entry) },
                 onOpenLog = { navController.navigate(Routes.LOG) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenModelCalls = { navController.navigate(Routes.MODEL_CALLS) },
@@ -493,7 +499,7 @@ fun TaskMindNavHost(
             TopLevel(MainTab.SETTINGS, navController) {
             SettingsScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.goBack(backStackEntry) },
                 onShareText = onShareText,
                 onOpenPrompts = { navController.navigate(Routes.PROMPTS) },
                 onOpenModelCalls = { navController.navigate(Routes.MODEL_CALLS) },
@@ -508,63 +514,63 @@ fun TaskMindNavHost(
             }
         }
 
-        composable(Routes.RECORDINGS) {
+        composable(Routes.RECORDINGS) { entry ->
             val vm: RecordingsViewModel = viewModel(factory = AppViewModels.factory)
-            RecordingsScreen(viewModel = vm, onBack = { navController.popBackStack() })
+            RecordingsScreen(viewModel = vm, onBack = { navController.goBack(entry) })
         }
 
-        composable(Routes.DIAGNOSTICS) {
+        composable(Routes.DIAGNOSTICS) { entry ->
             val vm: DiagnosticsViewModel = viewModel(factory = AppViewModels.factory)
             DiagnosticsScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.goBack(entry) },
                 onShareFile = onShareFile,
             )
         }
 
-        composable(Routes.PROMPTS) {
+        composable(Routes.PROMPTS) { entry ->
             val vm: PromptViewModel = viewModel(factory = AppViewModels.factory)
             PromptScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.goBack(entry) },
                 onShareText = onShareText,
             )
         }
 
-        composable(Routes.MODEL_CALLS) {
+        composable(Routes.MODEL_CALLS) { entry ->
             val vm: ModelCallsViewModel = viewModel(factory = AppViewModels.factory)
             ModelCallsScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.goBack(entry) },
                 onShareText = onShareText,
             )
         }
 
-        composable(Routes.HOW_IT_WORKS) {
+        composable(Routes.HOW_IT_WORKS) { entry ->
             val vm: HowItWorksViewModel = viewModel(factory = AppViewModels.factory)
             HowItWorksScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.goBack(entry) },
                 onOpenPrompts = { navController.navigate(Routes.PROMPTS) },
                 onOpenModelCalls = { navController.navigate(Routes.MODEL_CALLS) },
                 onOpenLog = { navController.navigate(Routes.LOG) },
             )
         }
 
-        composable(Routes.LOG) {
+        composable(Routes.LOG) { entry ->
             val vm: ActivityLogViewModel = viewModel(factory = AppViewModels.factory)
             ActivityLogScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.goBack(entry) },
                 onShareText = onShareText,
             )
         }
 
-        composable(Routes.CALLS) {
+        composable(Routes.CALLS) { entry ->
             val vm: CallsViewModel = viewModel(factory = AppViewModels.factory)
             CallsScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.goBack(entry) },
                 onOpenImport = { navController.navigate(Routes.IMPORT) },
                 onOpenRecordings = { navController.navigate(Routes.RECORDINGS) },
             )
@@ -600,23 +606,59 @@ fun TaskMindNavHost(
             }
         }
 
-        composable(Routes.IMPORT) {
+        composable(Routes.IMPORT) { entry ->
             val vm: ImportViewModel = viewModel(factory = AppViewModels.factory)
             ImportTranscriptScreen(
                 viewModel = vm,
-                onBack = {
-                    // Arriving from a share there is nothing behind this
-                    // screen, so back lands on the task list instead of a
-                    // blank one.
-                    if (navController.previousBackStackEntry != null) {
-                        navController.popBackStack()
-                    } else {
-                        navController.navigate(Routes.TASKS) { popUpTo(Routes.IMPORT) { inclusive = true } }
-                    }
-                },
+                // Arriving from a share there is nothing behind this screen;
+                // goBack lands on the task list instead of a blank one.
+                onBack = { navController.goBack(entry) },
                 initialText = shared,
                 initialImages = images,
             )
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (startOpened) return@LaunchedEffect
+        startOpened = true
+        if (start != Routes.TASKS) return@LaunchedEffect
+        when {
+            startRoute == "status" -> navController.navigate(Routes.STATUS)
+            startRoute == "review" -> navController.navigate(Routes.REVIEW) { launchSingleTop = true }
+            startRoute != null && startRoute.startsWith(MainActivity.ROUTE_TWIN) ->
+                navController.navigate(Routes.twin()) { launchSingleTop = true }
+            // A task notification or the widget opens one task. Matched by
+            // prefix rather than listed, because the id is part of the route.
+            startRoute != null && startRoute.startsWith("task/") -> navController.navigate(startRoute)
+        }
+    }
+}
+
+/** Whether the screen on top is already the task [route] ("task/<id>") opens. */
+private fun showingTask(navController: NavHostController, route: String): Boolean {
+    val top = navController.currentBackStackEntry ?: return false
+    return top.destination.route == Routes.TASK_DETAIL &&
+        top.arguments?.getString("taskId") == route.removePrefix("task/")
+}
+
+/**
+ * Back from a screen, with two guards.
+ *
+ * Only while [entry] is the screen on top: a second tap on the arrow, while
+ * the first is still sliding the screen away, used to pop the list beneath it
+ * as well. And with nothing behind it - a screen opened straight from a share
+ * - it lands on the task list. Popping the only screen there was left an
+ * empty window, which looked exactly like a freeze.
+ */
+private fun NavHostController.goBack(entry: NavBackStackEntry) {
+    if (currentBackStackEntry?.id != entry.id) return
+    if (previousBackStackEntry != null) {
+        popBackStack()
+    } else {
+        navigate(Routes.TASKS) {
+            popUpTo(graph.id) { inclusive = true }
+            launchSingleTop = true
         }
     }
 }

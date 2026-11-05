@@ -97,6 +97,14 @@ data class Settings(
      */
     val recordingCutoffMillis: Long = 0L,
 
+    /**
+     * When the user last erased everything (Settings -> Keeping and deleting).
+     * A notification posted before this is not read, so the ones still in the
+     * shade are not turned back into tasks when the listener reconnects and
+     * replays them. Zero: never.
+     */
+    val freshStartAt: Long = 0L,
+
     // -- extraction quality (spec 13, 14.2) --------------------------------
     /**
      * Raised from 0.75 in v1.21, together with the prompt: the model now

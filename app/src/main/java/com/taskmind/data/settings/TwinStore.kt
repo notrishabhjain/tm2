@@ -59,6 +59,11 @@ class TwinStore(private val context: Context) {
         }
     }
 
+    /** "Erase everything": the tasks these were about are gone. The twin's switches stay. */
+    suspend fun clearNudged() {
+        context.twinDataStore.edit { it.remove(K.nudged) }
+    }
+
     suspend fun setRecall(on: Boolean) = context.twinDataStore.edit { it[K.recall] = on }
     suspend fun setChaseNotifications(on: Boolean) = context.twinDataStore.edit { it[K.chase] = on }
 
