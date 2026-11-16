@@ -3,7 +3,7 @@
 > This file is an export of the living manual, refreshed with each release and attached to every
 > GitHub release as `TaskMind-User-Manual.md`.
 
-Nov 4, 2026 · @RJ · For TaskMind 1.30.0
+Nov 4, 2026 · @RJ · For TaskMind 1.31.0
 
 ## Welcome
 
@@ -396,6 +396,16 @@ TaskMind can read every WhatsApp chat at once, both sides, from WhatsApp's own b
 A large backup takes a few minutes. When it finishes the card shows how many messages and chats were read. **Read again** after a later WhatsApp backup adds only what is new; the key is remembered. If the backup is not found, allow **All files access** on Health or use **Choose the file**.
 
 The memory is kept until you erase it: both erase buttons under Keeping and deleting empty it. Messages captured live also move into it when their keeping period ends, so the Twin no longer forgets after 30 days.
+
+### Search by meaning
+
+With search by meaning on, the Twin finds a conversation by what it was about, not only by its words: "is the payment stuck" finds "invoice abhi tak clear nahi hua", and "electricity bill" finds "बिजली का बिल". A model runs on the phone for this; no message is sent anywhere to search it.
+
+1. Open **Settings, You and your chats, Search by meaning**.
+2. Tap **Download the model**. It is a one-time download of about 135 MB from Hugging Face; Wi-Fi is best.
+3. TaskMind then prepares your history: it cuts each chat into short stretches of conversation and gives each one a vector. The card shows how far it has got.
+
+A large history takes a while on a phone. With TaskMind open it goes fastest; otherwise it carries on in the background a few minutes at a time while the battery is not low. Anything not prepared yet is still found by its words. New messages are added as they arrive, and **Read again** after a new WhatsApp backup adds the new ones.
 
 ### Cost and privacy
 

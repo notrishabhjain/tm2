@@ -224,3 +224,25 @@ class UpdateCheckWorker(context: Context, params: WorkerParameters) : CoroutineW
         }
     }
 }
+
+/**
+ * Gives the long-term memory its vectors a slice at a time (see SemanticIndex):
+ * a few minutes per run, so a large history finishes over a few runs without
+ * holding the phone awake. Does nothing until the model has been downloaded.
+ */
+class SemanticIndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val container = AppContainer.get(applicationContext)
+        return try {
+            container.semanticIndex.run(untilMillis = System.currentTimeMillis() + SLICE_MILLIS)
+            Result.success()
+        } catch (t: Throwable) {
+            container.logger.write(Stage.SYSTEM, LogLevel.WARN, "search indexing worker failed", t.toString())
+            Result.success()
+        }
+    }
+
+    private companion object {
+        const val SLICE_MILLIS = 8 * 60 * 1000L
+    }
+}

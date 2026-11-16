@@ -74,6 +74,7 @@ class FreshStart(private val container: AppContainer) {
         }
 
         runCatching { container.memoryStore.clear() }
+        container.semanticIndex.forget()
         container.learningStore.clearFeedback()
         container.twinJournal.clear()
         container.twinStore.clearNudged()

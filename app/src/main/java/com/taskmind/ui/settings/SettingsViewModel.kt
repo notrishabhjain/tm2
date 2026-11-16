@@ -433,6 +433,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             val message = runCatching {
                 val settings = container.settingsRepository.current()
                 container.backupRepository.eraseCapturedContent(deleteRecordings = settings.deleteRecordingsAfterTranscription)
+                    .also { container.semanticIndex.forget() }
             }.fold(
                 onSuccess = { count -> "Erased $count captures, transcripts and logs. Your tasks are untouched." },
                 onFailure = { "Could not erase: ${it.message ?: it.javaClass.simpleName}" },

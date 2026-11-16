@@ -216,6 +216,13 @@ searches; nothing is uploaded and no tasks are created. The backup format is not
 published by WhatsApp, so this follows what open-source tools have established
 and reports plainly when a file does not match.
 
+**Search by meaning.** Settings → You and your chats → **Search by meaning**
+downloads multilingual-e5-small (int8, about 135 MB with its tokenizer, from
+Hugging Face, checked against pinned SHA-256s) and gives the long-term memory
+vectors on the phone, so the Twin finds a conversation by what it was about in
+Hindi, English or both. The tokenizer is a Kotlin port checked token for token
+against Hugging Face's own; nothing is sent anywhere to search.
+
 **Starting over.** Settings → Privacy and security → Keeping and deleting →
 **Erase everything** removes every task, inbox item, matter, message, transcript,
 log line and the web copy in one go, and keeps your settings and keys. Nothing
