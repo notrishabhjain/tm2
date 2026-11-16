@@ -77,6 +77,7 @@ fun TwinScreen(
     startWith: String?,
     onStartHandled: () -> Unit,
     onOpenTask: (String) -> Unit,
+    onSearchChats: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
@@ -121,7 +122,14 @@ fun TwinScreen(
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Twin") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Twin") },
+                actions = {
+                    androidx.compose.material3.TextButton(onClick = onSearchChats) { Text("Search my chats") }
+                },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(

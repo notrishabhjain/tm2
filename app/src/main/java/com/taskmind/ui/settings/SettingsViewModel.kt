@@ -32,6 +32,7 @@ data class SettingsUiState(
     val testingAsr: Boolean = false,
     val llmTestResult: ConnectionTester.TestResult? = null,
     val backupKeyMasked: String = "not set",
+    val profileDraft: ProfileDraftState = ProfileDraftState.Idle,
     val testingBackup: Boolean = false,
     val backupTestResult: ConnectionTester.TestResult? = null,
     val asrTestResult: ConnectionTester.TestResult? = null,
@@ -44,6 +45,17 @@ data class SettingsUiState(
     val loadingModels: Boolean = false,
     val modelListError: String? = null,
 )
+
+/** Drafting About you from the user's chats: prepare, show, send, review. */
+sealed interface ProfileDraftState {
+    object Idle : ProfileDraftState
+    object Preparing : ProfileDraftState
+    object NothingToSend : ProfileDraftState
+    data class Preview(val prepared: com.taskmind.data.repo.ProfileDrafter.Prepared) : ProfileDraftState
+    object Sending : ProfileDraftState
+    data class Ready(val text: String) : ProfileDraftState
+    data class Failed(val message: String) : ProfileDraftState
+}
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -370,6 +382,34 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     // -- who you are, and group chats --------------------------------------
+
+    /** Builds the sample on the phone. Nothing is sent. */
+    fun prepareProfileDraft() {
+        _ui.value = _ui.value.copy(profileDraft = ProfileDraftState.Preparing)
+        viewModelScope.launch {
+            val prepared = runCatching { container.profileDrafter.prepare() }.getOrNull()
+            _ui.value = _ui.value.copy(
+                profileDraft = if (prepared == null) ProfileDraftState.NothingToSend else ProfileDraftState.Preview(prepared),
+            )
+        }
+    }
+
+    /** The one AI call, after the user has read what goes. */
+    fun sendProfileDraft() {
+        val preview = _ui.value.profileDraft as? ProfileDraftState.Preview ?: return
+        _ui.value = _ui.value.copy(profileDraft = ProfileDraftState.Sending)
+        viewModelScope.launch {
+            val next = when (val r = container.profileDrafter.send(preview.prepared)) {
+                is com.taskmind.data.repo.ProfileDrafter.Result.Draft -> ProfileDraftState.Ready(r.text)
+                is com.taskmind.data.repo.ProfileDrafter.Result.Failed -> ProfileDraftState.Failed(r.message)
+            }
+            _ui.value = _ui.value.copy(profileDraft = next)
+        }
+    }
+
+    fun closeProfileDraft() {
+        _ui.value = _ui.value.copy(profileDraft = ProfileDraftState.Idle)
+    }
 
     fun setAboutMe(text: String) {
         viewModelScope.launch {

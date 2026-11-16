@@ -3,7 +3,7 @@
 > This file is an export of the living manual, refreshed with each release and attached to every
 > GitHub release as `TaskMind-User-Manual.md`.
 
-Nov 16, 2026 · @RJ · For TaskMind 1.31.1
+Nov 16, 2026 · @RJ · For TaskMind 1.32.0
 
 ## Welcome
 
@@ -407,6 +407,15 @@ With search by meaning on, the Twin finds a conversation by what it was about, n
 
 A large history takes a while on a phone. With TaskMind open it goes fastest; otherwise it carries on in the background a few minutes at a time while the battery is not low. Anything not prepared yet is still found by its words. New messages are added as they arrive, and **Read again** after a new WhatsApp backup adds the new ones.
 
+### Search my chats
+
+Tap **Search my chats** at the top of the Twin tab to look through your imported WhatsApp history and kept messages yourself.
+
+- Type a word, a name or a short question. Messages holding most of your words come first, newest first among equals. Hindi in Devanagari works like English.
+- With search by meaning on, a question of two or more words also shows chats **close in meaning**, at the top, even when they share no words with it.
+- Tap any result to see the conversation around it, with the matching message highlighted. Back returns to the results.
+- It all runs on the phone. Nothing is sent anywhere.
+
 ### Cost and privacy
 
 Each question, plan or nudge draft is one AI call. A question goes to your AI provider with your tasks (title, date, who, the short quote), today's calendar and your matters, plus any message snippets. Nothing from the Twin goes to the web page.
@@ -660,7 +669,8 @@ A matter is a project, a deal, a hire or a case: anything that will produce more
 
 The **People** view in the Tasks tab lists everyone you have something open with, busiest first. Each row reads like *You owe 2, they owe you 1 - Send the revised deck*, where the last part is the soonest item between you.
 
-- Tap a person to see all of their tasks. Clear the filter with the x on its chip.
+- Tap a person to open their page. It shows what you owe them and what they owe you (tap one to open it), then your chat with them from your WhatsApp history: how many messages, since when, the newest ones, and **Search this chat**. **Ask the Twin** asks what is going on with them.
+- The chat is found by the person's name. If they are saved under a different name in your phone, the page says it found no chat; the tasks still show.
 - Open it before a call or a meeting: it is the whole relationship on one line.
 - **Waiting on** shows only what people owe you. The Twin's **Who owes me what?** answers the same question and offers a nudge for each.
 
@@ -687,6 +697,7 @@ Write a few lines, in your own words, about your work and your life. TaskMind re
 
 - Up to 1,500 characters. Tap **Save** when done.
 - It goes to your AI provider with each message it reads, and never to the web page.
+- **Draft this from my chats** writes a first version for you from your imported WhatsApp history. TaskMind first picks a sample on the phone: only messages you wrote, from your busiest chats over the last six months, about 9,000 characters, with phone numbers, emails and links masked. It then shows how many messages would go and to which provider, and **Show exactly what is sent** lets you read every line. Nothing leaves the phone until you tap **Send and draft**. The draft fills the box only when you tap **Use this**; edit it and tap **Save**.
 - A good shape to copy:
 
 > Role: infra lead at Acme, Bengaluru. Key people: Sharma ji (finance), Priya (client PM), my manager Anil. Current work: data-centre migration, vendor PO for racks, hiring two SREs. Personal: rent, kids' school, parents' medical. Ignore: stock and ops alerts groups, society group, birthday wishes, FYIs.
@@ -824,6 +835,7 @@ TaskMind keeps your data on the phone and sends only what a job needs, only to s
 | Goes to | What | When |
 | --- | --- | --- |
 | Your AI provider (OpenAI's gpt-4o-mini unless you changed it) | The text of messages that pass the free filter, email text (cleaned, at most 3,000 characters), brain dumps, shared text, the words read from screenshots, plus About you, your names, rules, areas and the titles of related open tasks | Each time something is read |
+| Your AI provider, only when you tap **Send and draft** in About you | A sample of messages you wrote (about 9,000 characters, numbers, emails and links masked), shown to you first | Once per draft |
 | Your backup AI provider, if you set one (OpenRouter by default) | The same text, but only for a call the main provider could not answer | When the main provider fails |
 | The same provider | Your question with your tasks, today's meetings and, if Search my messages is on, a few short snippets of your own messages | Each Twin question, plan or nudge draft |
 | Your transcription provider (Sarvam unless you changed it) | Call recordings | After each call worth reading |

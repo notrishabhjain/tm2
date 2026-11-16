@@ -143,7 +143,7 @@ fun SettingsScreen(
                 null -> SettingsHub(SettingsPage.entries.filter { !it.advanced }, onOpen = { page = it })
 
                 SettingsPage.YOU -> {
-                    AboutMeSection(settings, viewModel)
+                    AboutMeSection(settings, ui, viewModel)
                     WhatsAppHistorySection()
                     SearchByMeaningSection()
                     RulesSection(viewModel)

@@ -38,7 +38,7 @@ class ConnectionTester(
             config = config,
             systemPrompt = "You extract structured data. Reply with a single JSON object and nothing else.",
             userPrompt = "Return this exact JSON object: {\"ok\": true, \"echo\": \"taskmind\"}",
-            maxTokens = 64,
+            maxTokens = 300,
             trace = TraceContext(kind = RecordedCall.KIND_TEST),
             allowBackup = false,
         )
