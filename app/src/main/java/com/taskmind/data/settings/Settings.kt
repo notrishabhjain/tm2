@@ -16,6 +16,12 @@ data class Settings(
     // -- LLM provider (spec 8.1) -------------------------------------------
     val llmBaseUrl: String = "https://api.openai.com/v1",
     val llmModel: String = "gpt-4o-mini",
+    /**
+     * The backup provider (v1.31.1), used when the main one fails. Off until
+     * a backup key is saved.
+     */
+    val backupLlmBaseUrl: String = "https://openrouter.ai/api/v1",
+    val backupLlmModel: String = "openai/gpt-oss-120b:free",
 
     // -- ASR provider (spec 8.2) -------------------------------------------
     val asrProvider: AsrProvider = AsrProvider.SARVAM,

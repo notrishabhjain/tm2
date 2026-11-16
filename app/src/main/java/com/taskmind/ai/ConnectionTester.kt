@@ -21,6 +21,7 @@ class ConnectionTester(
     data class TestResult(val ok: Boolean, val message: String, val millis: Long)
 
     /** Sends a two-token prompt and asserts a JSON reply. */
+    /** Tests [config] alone: a working backup must not hide a broken main provider. */
     suspend fun testLlm(config: LlmClient.Config): TestResult {
         if (config.apiKey.isBlank()) {
             return fail("No API key set for the LLM provider.", 0)
@@ -39,6 +40,7 @@ class ConnectionTester(
             userPrompt = "Return this exact JSON object: {\"ok\": true, \"echo\": \"taskmind\"}",
             maxTokens = 64,
             trace = TraceContext(kind = RecordedCall.KIND_TEST),
+            allowBackup = false,
         )
         val elapsed = System.currentTimeMillis() - started
         return when (result) {

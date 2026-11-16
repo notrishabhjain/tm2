@@ -35,6 +35,8 @@ class SettingsRepository(private val context: Context) {
 
         val llmBaseUrl = stringPreferencesKey("llm_base_url")
         val llmModel = stringPreferencesKey("llm_model")
+        val backupLlmBaseUrl = stringPreferencesKey("backup_llm_base_url")
+        val backupLlmModel = stringPreferencesKey("backup_llm_model")
 
         val asrProvider = stringPreferencesKey("asr_provider")
         val asrBaseUrl = stringPreferencesKey("asr_base_url")
@@ -106,6 +108,8 @@ class SettingsRepository(private val context: Context) {
             onboardingComplete = this[K.onboardingComplete] ?: d.onboardingComplete,
             llmBaseUrl = this[K.llmBaseUrl] ?: d.llmBaseUrl,
             llmModel = this[K.llmModel] ?: d.llmModel,
+            backupLlmBaseUrl = this[K.backupLlmBaseUrl] ?: d.backupLlmBaseUrl,
+            backupLlmModel = this[K.backupLlmModel] ?: d.backupLlmModel,
             asrProvider = this[K.asrProvider]?.let { name ->
                 runCatching { AsrProvider.valueOf(name) }.getOrDefault(d.asrProvider)
             } ?: d.asrProvider,
@@ -155,6 +159,11 @@ class SettingsRepository(private val context: Context) {
     suspend fun setLlm(baseUrl: String, model: String) = edit {
         it[K.llmBaseUrl] = baseUrl.trim().trimEnd('/')
         it[K.llmModel] = model.trim()
+    }
+
+    suspend fun setBackupLlm(baseUrl: String, model: String) = edit {
+        it[K.backupLlmBaseUrl] = baseUrl.trim().trimEnd('/')
+        it[K.backupLlmModel] = model.trim()
     }
 
     suspend fun setAsr(provider: AsrProvider, baseUrl: String, model: String, language: String) = edit {

@@ -64,6 +64,13 @@ class SecretStore(context: Context) {
             prefs.edit().putString(KEY_LLM, value.trim()).apply()
         }
 
+    /** The backup provider's key (OpenRouter by default). Blank means no backup. */
+    var backupLlmApiKey: String
+        get() = prefs.getString(KEY_BACKUP_LLM, "").orEmpty()
+        set(value) {
+            prefs.edit().putString(KEY_BACKUP_LLM, value.trim()).apply()
+        }
+
     var asrApiKey: String
         get() = prefs.getString(KEY_ASR, "").orEmpty()
         set(value) {
@@ -87,7 +94,8 @@ class SecretStore(context: Context) {
             prefs.edit().putString(KEY_WA_BACKUP, value.trim()).apply()
         }
 
-    fun hasLlmKey(): Boolean = llmApiKey.isNotBlank()
+    /** Either provider can do the work, so either key counts. */
+    fun hasLlmKey(): Boolean = llmApiKey.isNotBlank() || backupLlmApiKey.isNotBlank()
     fun hasAsrKey(): Boolean = asrApiKey.isNotBlank()
 
     fun clear() {
@@ -106,6 +114,7 @@ class SecretStore(context: Context) {
         const val FALLBACK_FILE = "taskmind_secrets_plain"
         const val KEY_LLM = "llm_api_key"
         const val KEY_ASR = "asr_api_key"
+        const val KEY_BACKUP_LLM = "backup_llm_api_key"
         const val KEY_EMAIL = "email_app_password"
         const val KEY_WA_BACKUP = "wa_backup_key"
     }

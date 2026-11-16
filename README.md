@@ -61,6 +61,10 @@ nothing is lost — but no tasks are created until you add one.
 
 - **Extraction (reading messages):** any OpenAI-compatible endpoint. Groq has a
   generous free tier and is fast. OpenAI and OpenRouter are preset too.
+- **Backup provider (optional):** a second key, OpenRouter by default. When a
+  call to the main provider fails (rate limit, bad key, server error, no
+  network) the same request goes to the backup at once, and the main provider
+  rests until its rate limit resets.
 - **Transcription (calls):** **Sarvam AI** is purpose-built for Indian languages
   and is materially better than Whisper on Hindi phone audio. Groq's
   `whisper-large-v3` is the free alternative.

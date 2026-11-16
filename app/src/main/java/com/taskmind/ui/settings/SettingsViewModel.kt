@@ -31,6 +31,9 @@ data class SettingsUiState(
     val testingLlm: Boolean = false,
     val testingAsr: Boolean = false,
     val llmTestResult: ConnectionTester.TestResult? = null,
+    val backupKeyMasked: String = "not set",
+    val testingBackup: Boolean = false,
+    val backupTestResult: ConnectionTester.TestResult? = null,
     val asrTestResult: ConnectionTester.TestResult? = null,
     val seenPackages: List<SeenPackageEntity> = emptyList(),
     val message: String? = null,
@@ -143,6 +146,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         _ui.value = _ui.value.copy(
             llmKeyMasked = container.secretStore.mask(container.secretStore.llmApiKey),
             asrKeyMasked = container.secretStore.mask(container.secretStore.asrApiKey),
+            backupKeyMasked = container.secretStore.mask(container.secretStore.backupLlmApiKey),
         )
     }
 
@@ -193,6 +197,30 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.secretStore.clear()
         refreshKeys()
         _ui.value = _ui.value.copy(message = "API keys cleared.")
+    }
+
+    fun setBackupLlm(baseUrl: String, model: String, apiKey: String?) {
+        viewModelScope.launch {
+            container.settingsRepository.setBackupLlm(baseUrl, model)
+            if (!apiKey.isNullOrBlank()) container.secretStore.backupLlmApiKey = apiKey
+            refreshKeys()
+            com.taskmind.work.Scheduler.enqueueExtraction(container.context)
+        }
+    }
+
+    fun removeBackupKey() {
+        container.secretStore.backupLlmApiKey = ""
+        refreshKeys()
+        _ui.value = _ui.value.copy(backupTestResult = null)
+    }
+
+    fun testBackupLlm() {
+        if (_ui.value.testingBackup) return
+        _ui.value = _ui.value.copy(testingBackup = true, backupTestResult = null)
+        viewModelScope.launch {
+            val result = container.connectionTester.testLlm(container.backupLlmConfig())
+            _ui.value = _ui.value.copy(testingBackup = false, backupTestResult = result)
+        }
     }
 
     /** Spec 8.3 - Test connection, per provider. */

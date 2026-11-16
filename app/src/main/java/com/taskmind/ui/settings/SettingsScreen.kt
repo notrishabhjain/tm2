@@ -191,6 +191,7 @@ fun SettingsScreen(
 
                 SettingsPage.PROVIDERS -> {
                     LlmSection(settings, ui, viewModel)
+                    BackupLlmSection(settings, ui, viewModel)
                     AsrSection(settings, ui, viewModel)
                 }
 
@@ -544,6 +545,68 @@ private fun LlmSection(settings: Settings, ui: SettingsUiState, viewModel: Setti
             }
         }
         ui.llmTestResult?.let { result ->
+            Spacer(Modifier.height(8.dp))
+            StatusPill(if (result.ok) "OK" else "Failed", result.ok)
+            Text(result.message, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun BackupLlmSection(settings: Settings, ui: SettingsUiState, viewModel: SettingsViewModel) {
+    var baseUrl by remember(settings.backupLlmBaseUrl) { mutableStateOf(settings.backupLlmBaseUrl) }
+    var model by remember(settings.backupLlmModel) { mutableStateOf(settings.backupLlmModel) }
+    var apiKey by remember { mutableStateOf("") }
+    val on = ui.backupKeyMasked != "not set"
+
+    SectionCard(
+        title = "Backup provider",
+        subtitle = "Used only when the main provider fails: a rate limit, a bad key, a server error or no answer. " +
+            "The same request goes here at once, so nothing waits. OpenRouter by default.",
+    ) {
+        StatusPill(if (on) "Backup on" else "Backup off - no key saved", on)
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = baseUrl,
+            onValueChange = { baseUrl = it },
+            label = { Text("Base URL") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = model,
+            onValueChange = { model = it },
+            label = { Text("Model") },
+            supportingText = { Text("On OpenRouter, a name ending in :free costs nothing but has a small daily allowance.") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = apiKey,
+            onValueChange = { apiKey = it },
+            label = { Text("Backup API key (stored encrypted; currently ${ui.backupKeyMasked})") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = {
+                viewModel.setBackupLlm(baseUrl, model, apiKey.ifBlank { null })
+                apiKey = ""
+            }) {
+                Text("Save")
+            }
+            OutlinedButton(onClick = viewModel::testBackupLlm, enabled = !ui.testingBackup) {
+                Text(if (ui.testingBackup) "Testing..." else "Test backup")
+            }
+        }
+        if (on) {
+            TextButton(onClick = viewModel::removeBackupKey) { Text("Turn the backup off (remove its key)") }
+        }
+        ui.backupTestResult?.let { result ->
             Spacer(Modifier.height(8.dp))
             StatusPill(if (result.ok) "OK" else "Failed", result.ok)
             Text(result.message, style = MaterialTheme.typography.bodySmall)

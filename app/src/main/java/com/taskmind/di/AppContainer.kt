@@ -152,6 +152,17 @@ class AppContainer(context: Context) {
             baseUrl = s.llmBaseUrl,
             apiKey = secretStore.llmApiKey,
             model = s.llmModel,
+            backup = backupLlmConfig(s),
+        )
+    }
+
+    /** The backup provider alone; its key is blank when none is set. */
+    suspend fun backupLlmConfig(s: Settings? = null): LlmClient.Config {
+        val settings = s ?: settingsRepository.current()
+        return LlmClient.Config(
+            baseUrl = settings.backupLlmBaseUrl,
+            apiKey = secretStore.backupLlmApiKey,
+            model = settings.backupLlmModel,
         )
     }
 
