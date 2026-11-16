@@ -77,6 +77,16 @@ class SecretStore(context: Context) {
             prefs.edit().putString(KEY_EMAIL, value.trim()).apply()
         }
 
+    /**
+     * The 64-digit key of the user's WhatsApp backup, kept once it has opened
+     * one, so a later refresh does not ask for it again. Never logged.
+     */
+    var waBackupKey: String
+        get() = prefs.getString(KEY_WA_BACKUP, "").orEmpty()
+        set(value) {
+            prefs.edit().putString(KEY_WA_BACKUP, value.trim()).apply()
+        }
+
     fun hasLlmKey(): Boolean = llmApiKey.isNotBlank()
     fun hasAsrKey(): Boolean = asrApiKey.isNotBlank()
 
@@ -97,5 +107,6 @@ class SecretStore(context: Context) {
         const val KEY_LLM = "llm_api_key"
         const val KEY_ASR = "asr_api_key"
         const val KEY_EMAIL = "email_app_password"
+        const val KEY_WA_BACKUP = "wa_backup_key"
     }
 }

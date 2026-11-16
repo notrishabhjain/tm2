@@ -18,7 +18,7 @@ import java.io.File
  * WHAT GOES
  *
  * Every task, inbox item and matter; every captured message, mail and call
- * transcript; the activity log and the record of model calls; the feedback
+ * transcript, the long-term memory (imported WhatsApp history included); the activity log and the record of model calls; the feedback
  * the app learned from and the twin's journal; salvage files and scratch
  * audio. And the copy on the web page, which the next sync empties before it
  * does anything else (see [SyncStore.requestWipe]) - so a phone that is
@@ -73,6 +73,7 @@ class FreshStart(private val container: AppContainer) {
             taskCount to captureCount
         }
 
+        runCatching { container.memoryStore.clear() }
         container.learningStore.clearFeedback()
         container.twinJournal.clear()
         container.twinStore.clearNudged()

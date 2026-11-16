@@ -144,6 +144,7 @@ fun SettingsScreen(
 
                 SettingsPage.YOU -> {
                     AboutMeSection(settings, viewModel)
+                    WhatsAppHistorySection()
                     RulesSection(viewModel)
                     GroupSection(settings, viewModel)
                     HowManySection(settings, viewModel)

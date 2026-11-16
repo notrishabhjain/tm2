@@ -189,7 +189,26 @@ class TwinBrain(private val container: AppContainer) {
                 else -> null
             }
         }
-        return Recall.search(question, items, now).map { Twin.Memory(it.at, it.from, it.text) }
+        // The long-term memory: imported WhatsApp history (both sides of each
+        // chat) and captures older than the window above. Narrowed there by
+        // the question's words, ranked here with the rest.
+        val range = Recall.monthRange(question, now)
+        val remembered = runCatching {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                container.memoryStore.search(Recall.terms(question), MEMORY_SCAN, range?.first, range?.second)
+            }
+        }.getOrDefault(emptyList()).map { m ->
+            val who = when {
+                m.fromMe && m.isGroup -> "You in ${m.chat}"
+                m.fromMe -> "You to ${m.chat}"
+                m.isGroup -> "${m.sender} in ${m.chat}"
+                else -> m.sender
+            }
+            Recall.Item(m.at, "$who (WhatsApp)".takeIf { m.source == com.taskmind.data.memory.MemoryStore.SOURCE_WHATSAPP } ?: who, m.body)
+        }
+        // A message both captured live and imported is one message.
+        val all = (items + remembered).distinctBy { it.text.trim().take(120).lowercase() to it.at / MINUTE }
+        return Recall.search(question, all, now).map { Twin.Memory(it.at, it.from, it.text) }
     }
 
     // ---------------------------------------------------------------- asking
@@ -358,6 +377,8 @@ class TwinBrain(private val container: AppContainer) {
         private const val DAY = 24L * 60 * 60 * 1000
         private const val RECALL_DAYS = 60L
         private const val RECALL_SCAN = 1500
+        private const val MEMORY_SCAN = 800
+        private const val MINUTE = 60_000L
         private val HM = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
         private val DAY_NAME = DateTimeFormatter.ofPattern("EEE d MMM", Locale.ENGLISH)
     }
