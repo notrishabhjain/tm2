@@ -271,8 +271,14 @@ class AppContainer(context: Context) {
     val selfUpdater: SelfUpdater by lazy { SelfUpdater(appContext, httpClient, logger) }
 
     val backupRepository: BackupRepository by lazy {
-        BackupRepository(appContext, database, intakeFunnel, logger, settingsRepository)
+        BackupRepository(appContext, database, intakeFunnel, logger, settingsRepository, memoryStore)
     }
+
+    /** Every message kept for good: imported chats, and captures past their retention. */
+    val memoryStore: com.taskmind.data.memory.MemoryStore by lazy { com.taskmind.data.memory.MemoryStore(appContext) }
+
+    /** Reads WhatsApp's own backup into [memoryStore]. */
+    val whatsAppBackupImport: com.taskmind.capture.WhatsAppBackupImport by lazy { com.taskmind.capture.WhatsAppBackupImport(this) }
 
     /** "Erase everything", in one tap. */
     val freshStart: com.taskmind.data.repo.FreshStart by lazy { com.taskmind.data.repo.FreshStart(this) }

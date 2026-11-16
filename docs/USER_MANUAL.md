@@ -3,7 +3,7 @@
 > This file is an export of the living manual, refreshed with each release and attached to every
 > GitHub release as `TaskMind-User-Manual.md`.
 
-Nov 4, 2026 · @RJ · For TaskMind 1.29.1
+Nov 4, 2026 · @RJ · For TaskMind 1.30.0
 
 ## Welcome
 
@@ -381,6 +381,21 @@ You press send, never TaskMind. A note (*Nudged Rahul 3 Nov, WhatsApp*) is added
 ### Search my messages
 
 At the bottom of the Twin tab, **Search my messages when I ask** decides whether a question may include a few short snippets (about 280 characters each) of your own messages and email found on the phone. It is on by default; turn it off and the Twin answers from your tasks alone.
+
+
+### Your WhatsApp history
+
+TaskMind can read every WhatsApp chat at once, both sides, from WhatsApp's own backup. The messages go into a long-term memory on the phone that the Twin searches when you ask a question. Nothing is sent anywhere by the import, and it creates no tasks.
+
+1. In WhatsApp, open **Settings, Chats, Chat backup**.
+2. Tap **End-to-end encrypted backup**, then **Turn on**. If it is already on with a password, turn it off and on again.
+3. Choose **Use 64-digit encryption key instead** and generate the key. Write it down or screenshot it; WhatsApp cannot show it again, and you need it to restore your own chats.
+4. Finish, tap **Back up**, and wait for it to complete.
+5. In TaskMind, open **Settings, You and your chats, Your WhatsApp history**, type the key and tap **Read my chats**.
+
+A large backup takes a few minutes. When it finishes the card shows how many messages and chats were read. **Read again** after a later WhatsApp backup adds only what is new; the key is remembered. If the backup is not found, allow **All files access** on Health or use **Choose the file**.
+
+The memory is kept until you erase it: both erase buttons under Keeping and deleting empty it. Messages captured live also move into it when their keeping period ends, so the Twin no longer forgets after 30 days.
 
 ### Cost and privacy
 

@@ -102,6 +102,21 @@ object Recall {
             .toList()
     }
 
+    /**
+     * The month a question names, as a span of time: the same month [search]
+     * keeps - this year's, or last year's when that month is still ahead.
+     * Null when the question names none. For narrowing a large store before
+     * it is searched.
+     */
+    fun monthRange(question: String, now: Long): Pair<Long, Long>? {
+        val month = monthIn(question) ?: return null
+        val zone = DateResolver.IST
+        val today = Instant.ofEpochMilli(now).atZone(zone)
+        val year = if (month > today.month) today.year - 1 else today.year
+        val start = java.time.LocalDate.of(year, month, 1).atStartOfDay(zone)
+        return start.toInstant().toEpochMilli() to start.plusMonths(1).toInstant().toEpochMilli()
+    }
+
     /** A window of the text around [term], at most [MAX_SNIPPET] characters. */
     fun snippet(text: String, term: String?): String {
         val flat = text.replace(Regex("\\s+"), " ").trim()

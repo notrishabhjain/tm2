@@ -36,6 +36,8 @@ class BackupRepository(
     private val logger: ActivityLogger,
     /** For drawing the fresh-start line when captured content is erased. */
     private val settings: com.taskmind.data.settings.SettingsRepository? = null,
+    /** The long-term memory holds messages too, so erasing them empties it. */
+    private val memory: com.taskmind.data.memory.MemoryStore? = null,
 ) {
 
     @Serializable
@@ -215,6 +217,7 @@ class BackupRepository(
         // the shade, not the calls already in the call log - their captures
         // are about to go, and with them what said "already read".
         settings?.markFreshStart(System.currentTimeMillis())
+        runCatching { memory?.clear() }
         database.taskDao().detachAllRawCaptures()
         rawDao.deleteAll()
         database.callRecordDao().deleteAll()

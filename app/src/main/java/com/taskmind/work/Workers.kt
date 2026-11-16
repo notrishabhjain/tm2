@@ -111,6 +111,27 @@ class MaintenanceWorker(context: Context, params: WorkerParameters) : CoroutineW
  */
 class RetentionWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
+    /** A capture as the long-term memory keeps it, or null when it has no words. */
+    private fun remembered(capture: com.taskmind.data.db.entity.RawCaptureEntity): com.taskmind.data.memory.MemoryStore.Message? {
+        val text = capture.rawText?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val chat = if (capture.sourceType == com.taskmind.core.SourceType.NOTIFICATION) {
+            com.taskmind.core.ChatContext.parseLabel(capture.contextLabel)
+        } else {
+            null
+        }
+        val sender = chat?.sender?.takeIf { it.isNotBlank() } ?: capture.sourceLabel ?: "Unknown"
+        return com.taskmind.data.memory.MemoryStore.Message(
+            source = com.taskmind.data.memory.MemoryStore.SOURCE_CAPTURE,
+            ext = capture.id,
+            chat = chat?.group ?: sender,
+            isGroup = chat?.group != null,
+            sender = sender,
+            fromMe = false,
+            at = capture.occurredAt,
+            body = text.take(8000),
+        )
+    }
+
     override suspend fun doWork(): Result {
         val container = AppContainer.get(applicationContext)
         return try {
@@ -123,6 +144,10 @@ class RetentionWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 // Detach first so the tasks survive with their evidence intact,
                 // then delete the raw rows. Never the other way round.
                 container.database.taskDao().detachRawCaptures(purgeable.map { it.id })
+                // The words move to the long-term memory before the row goes:
+                // the queue is cleared on schedule, what was said is kept.
+                runCatching { container.memoryStore.insertAll(purgeable.mapNotNull(::remembered)) }
+                    .onFailure { container.logger.write(Stage.SYSTEM, LogLevel.WARN, "could not move captures to memory", it.toString()) }
                 for (capture in purgeable) {
                     capture.audioPath?.let { path -> runCatching { File(path).delete() } }
                 }

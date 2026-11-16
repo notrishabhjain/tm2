@@ -208,6 +208,14 @@ transcripts and recordings are deleted on a schedule you set (7, 30 or 90 days) 
 and deleting them never deletes the tasks that came from them, because the quote
 and the source are kept on each task.
 
+**Your WhatsApp history.** Settings → You and your chats → **Your WhatsApp history**
+reads every chat at once, both sides, from WhatsApp's own end-to-end encrypted
+backup, using the 64-digit key you generate in WhatsApp (the card lists the
+steps). The messages go into a long-term memory on the phone that the Twin
+searches; nothing is uploaded and no tasks are created. The backup format is not
+published by WhatsApp, so this follows what open-source tools have established
+and reports plainly when a file does not match.
+
 **Starting over.** Settings → Privacy and security → Keeping and deleting →
 **Erase everything** removes every task, inbox item, matter, message, transcript,
 log line and the web copy in one go, and keeps your settings and keys. Nothing
