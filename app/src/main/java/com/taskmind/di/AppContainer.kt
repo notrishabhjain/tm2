@@ -291,6 +291,9 @@ class AppContainer(context: Context) {
     /** Search by meaning over [memoryStore], with a model that runs on the phone. */
     val semanticIndex: com.taskmind.data.memory.SemanticIndex by lazy { com.taskmind.data.memory.SemanticIndex(this) }
 
+    /** Drafts About you from the user's own chats, after they see what is sent (v1.32). */
+    val profileDrafter: com.taskmind.data.repo.ProfileDrafter by lazy { com.taskmind.data.repo.ProfileDrafter(this) }
+
     /** Reads WhatsApp's own backup into [memoryStore]. */
     val whatsAppBackupImport: com.taskmind.capture.WhatsAppBackupImport by lazy { com.taskmind.capture.WhatsAppBackupImport(this) }
 

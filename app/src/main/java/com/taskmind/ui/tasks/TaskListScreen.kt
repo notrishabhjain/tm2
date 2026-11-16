@@ -130,6 +130,8 @@ fun TaskListScreen(
     onDumpRequestHandled: () -> Unit = {},
     /** Hand today to the twin: it picks, times and proposes, the user applies. */
     onPlanDay: () -> Unit = {},
+    /** A person's page: tasks between you and your chat with them. */
+    onOpenPerson: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val undo by viewModel.undo.collectAsStateWithLifecycle()
@@ -434,10 +436,7 @@ fun TaskListScreen(
                             items(state.people, key = { "person-${it.name.lowercase()}" }) { person ->
                                 PersonRow(
                                     person = person,
-                                    onClick = {
-                                        viewModel.setTag(person.name)
-                                        viewModel.setView(TaskView.ALL)
-                                    },
+                                    onClick = { onOpenPerson(person.name) },
                                 )
                             }
                         }

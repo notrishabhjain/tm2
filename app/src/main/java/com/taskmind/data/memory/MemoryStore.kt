@@ -134,7 +134,7 @@ class MemoryStore(context: Context) {
      * caller ranks them; this only narrows hundreds of thousands to a few
      * hundred.
      */
-    fun search(terms: List<String>, limit: Int, from: Long? = null, until: Long? = null): List<Message> {
+    fun search(terms: List<String>, limit: Int, from: Long? = null, until: Long? = null, chat: String? = null): List<Message> {
         val words = terms.map { t -> t.filter { it.isLetterOrDigit() } }.filter { it.length >= 2 }.distinct().take(MAX_TERMS)
         if (words.isEmpty()) return emptyList()
         val match = words.joinToString(" OR ") { "$it*" }
@@ -151,8 +151,16 @@ class MemoryStore(context: Context) {
             sql.append(" AND m.at < ?")
             args += until.toString()
         }
+        if (chat != null) {
+            sql.append(" AND m.chat = ?")
+            args += chat
+        }
         sql.append(" ORDER BY m.at DESC LIMIT ").append(limit.coerceIn(1, 5000))
-        return helper.readableDatabase.rawQuery(sql.toString(), args.toTypedArray()).use { c ->
+        return messages(sql.toString(), args.toTypedArray())
+    }
+
+    private fun messages(sql: String, args: Array<String>): List<Message> =
+        helper.readableDatabase.rawQuery(sql, args).use { c ->
             val out = ArrayList<Message>(c.count)
             while (c.moveToNext()) {
                 out += Message(
@@ -168,6 +176,66 @@ class MemoryStore(context: Context) {
             }
             out
         }
+
+    // ------------------------------------------------------------- chats
+
+    /** One chat in the memory, for a person's page and the chat filter. */
+    data class ChatInfo(
+        val chat: String,
+        val isGroup: Boolean,
+        val messages: Int,
+        val mine: Int,
+        val first: Long,
+        val last: Long,
+    )
+
+    /**
+     * Chats whose name matches [name]: an exact match (any case) first, then
+     * chats whose name contains it, most messages first. Groups are included
+     * only when [groups] is true.
+     */
+    fun chatsNamed(name: String, groups: Boolean = false, limit: Int = 6): List<ChatInfo> {
+        val n = name.trim()
+        if (n.length < 2) return emptyList()
+        val like = "%" + n.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        val sql = "SELECT chat, MAX(is_group), COUNT(*), SUM(from_me), MIN(at), MAX(at) FROM messages " +
+            "WHERE chat LIKE ? ESCAPE '\\'" + (if (groups) "" else " AND is_group = 0") +
+            " GROUP BY chat ORDER BY (LOWER(chat) = LOWER(?)) DESC, COUNT(*) DESC LIMIT " + limit.coerceIn(1, 50)
+        return helper.readableDatabase.rawQuery(sql, arrayOf(like, n)).use { c ->
+            val out = ArrayList<ChatInfo>(c.count)
+            while (c.moveToNext()) {
+                out += ChatInfo(c.getString(0), c.getInt(1) != 0, c.getInt(2), c.getInt(3), c.getLong(4), c.getLong(5))
+            }
+            out
+        }
+    }
+
+    /** The chats with the most messages, for the profile sample. */
+    fun busiestChats(since: Long, limit: Int): List<String> = helper.readableDatabase.rawQuery(
+        "SELECT chat FROM messages WHERE at >= ? AND from_me = 1 GROUP BY chat ORDER BY COUNT(*) DESC LIMIT " + limit.coerceIn(1, 200),
+        arrayOf(since.toString()),
+    ).use { c ->
+        val out = ArrayList<String>(c.count)
+        while (c.moveToNext()) out += c.getString(0)
+        out
+    }
+
+    /** The newest [limit] messages of one chat, newest first. */
+    fun recent(chat: String, limit: Int, fromMeOnly: Boolean = false, since: Long = 0): List<Message> = messages(
+        "SELECT source, ext, chat, is_group, sender, from_me, at, body FROM messages WHERE chat = ? AND at >= ?" +
+            (if (fromMeOnly) " AND from_me = 1" else "") + " ORDER BY at DESC LIMIT " + limit.coerceIn(1, 2000),
+        arrayOf(chat, since.toString()),
+    )
+
+    /**
+     * The conversation around one moment of [chat]: up to [before] messages
+     * before [at], the moment itself, and up to [after] after it, oldest first.
+     */
+    fun around(chat: String, at: Long, before: Int = 8, after: Int = 8): List<Message> {
+        val cols = "SELECT source, ext, chat, is_group, sender, from_me, at, body FROM messages WHERE chat = ? AND "
+        val earlier = messages(cols + "at < ? ORDER BY at DESC LIMIT " + before.coerceIn(0, 200), arrayOf(chat, at.toString()))
+        val later = messages(cols + "at >= ? ORDER BY at ASC LIMIT " + (after + 1).coerceIn(1, 201), arrayOf(chat, at.toString()))
+        return earlier.reversed() + later
     }
 
     // ------------------------------------------------------------ chunks

@@ -50,5 +50,6 @@ object AppViewModels {
         initializer { RecordingsViewModel(container()) }
         initializer { com.taskmind.ui.twin.TwinViewModel(container()) }
         initializer { BrainDumpViewModel(container()) }
+        initializer { com.taskmind.ui.chats.ChatsViewModel(container()) }
     }
 }

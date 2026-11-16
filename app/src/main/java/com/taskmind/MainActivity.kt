@@ -274,6 +274,18 @@ object Routes {
     const val DIAGNOSTICS = "diagnostics"
     const val RECORDINGS = "recordings"
     const val TWIN = "twin?q={q}&start={start}"
+    const val PERSON = "person/{name}"
+    const val CHATS = "chats?chat={chat}&q={q}"
+
+    fun person(name: String) = "person/" + android.net.Uri.encode(name)
+    fun chats(chat: String? = null, query: String? = null): String = buildString {
+        append("chats")
+        val params = listOfNotNull(
+            chat?.let { "chat=" + android.net.Uri.encode(it) },
+            query?.let { "q=" + android.net.Uri.encode(it) },
+        )
+        if (params.isNotEmpty()) append('?').append(params.joinToString("&"))
+    }
 
     fun taskDetail(id: String) = "task/$id"
     fun settingsPage(page: String) = "settings?page=$page"
@@ -430,6 +442,7 @@ fun TaskMindNavHost(
                     onOpenImport = { navController.navigate(Routes.IMPORT) },
                     onOpenNameSettings = { navController.navigate(Routes.settingsPage("YOU")) },
                     onAsk = { question -> navController.navigate(Routes.twin(question)) { launchSingleTop = true } },
+                    onOpenPerson = { name -> navController.navigate(Routes.person(name)) },
                     startWithEditor = wantNewTask,
                     onEditorRequestHandled = { wantNewTask = false },
                     startWithDump = wantDump,
@@ -602,8 +615,48 @@ fun TaskMindNavHost(
                         backStackEntry.arguments?.remove("start")
                     },
                     onOpenTask = { id -> navController.navigate(Routes.taskDetail(id)) },
+                    onSearchChats = { navController.navigate(Routes.chats()) },
                 )
             }
+        }
+
+        composable(
+            Routes.PERSON,
+            arguments = listOf(navArgument("name") { type = NavType.StringType }),
+        ) { entry ->
+            val vm: com.taskmind.ui.chats.ChatsViewModel = viewModel(factory = AppViewModels.factory)
+            com.taskmind.ui.chats.PersonScreen(
+                viewModel = vm,
+                name = entry.arguments?.getString("name").orEmpty(),
+                onBack = { navController.goBack(entry) },
+                onOpenTask = { id -> navController.navigate(Routes.taskDetail(id)) },
+                onSearchChat = { chat -> navController.navigate(Routes.chats(chat = chat)) },
+                onAskTwin = { q -> navController.navigate(Routes.twin(q)) { launchSingleTop = true } },
+            )
+        }
+
+        composable(
+            Routes.CHATS,
+            arguments = listOf(
+                navArgument("chat") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("q") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) { entry ->
+            val vm: com.taskmind.ui.chats.ChatsViewModel = viewModel(factory = AppViewModels.factory)
+            com.taskmind.ui.chats.ChatSearchScreen(
+                viewModel = vm,
+                chat = entry.arguments?.getString("chat"),
+                initialQuery = entry.arguments?.getString("q"),
+                onBack = { navController.goBack(entry) },
+            )
         }
 
         composable(Routes.IMPORT) { entry ->
