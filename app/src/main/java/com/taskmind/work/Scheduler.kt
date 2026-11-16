@@ -38,6 +38,7 @@ object Scheduler {
     private const val WORK_CALL_SWEEP_DELAYED = "taskmind.call_sweep_delayed"
     private const val WORK_MAINTENANCE = "taskmind.maintenance"
     private const val WORK_RETENTION = "taskmind.retention"
+    private const val WORK_SEMANTIC = "taskmind.semantic_index"
     private const val WORK_UPDATE = "taskmind.update_check"
     private const val WORK_SYNC = "taskmind.web_sync"
     private const val WORK_ONGOING = "taskmind.ongoing_reminder"
@@ -119,6 +120,15 @@ object Scheduler {
             WORK_MAINTENANCE,
             ExistingPeriodicWorkPolicy.KEEP,
             PeriodicWorkRequestBuilder<MaintenanceWorker>(30, TimeUnit.MINUTES).build(),
+        )
+        // Vectors for the long-term memory, a slice at a time, when the
+        // battery can spare it. A no-op until the model is downloaded.
+        wm(context).enqueueUniquePeriodicWork(
+            WORK_SEMANTIC,
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<com.taskmind.work.SemanticIndexWorker>(30, TimeUnit.MINUTES)
+                .setConstraints(androidx.work.Constraints.Builder().setRequiresBatteryNotLow(true).build())
+                .build(),
         )
         wm(context).enqueueUniquePeriodicWork(
             WORK_RETENTION,

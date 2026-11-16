@@ -121,6 +121,52 @@ jobs:
         working-directory: web
         run: npm run build
 
+  # The app downloads its search-by-meaning model from Hugging Face and refuses
+  # a file whose SHA-256 differs from the pin in SemanticIndex.kt. This checks
+  # the pins against the real files, so a change upstream turns CI red here
+  # instead of failing on a phone. Cached by pin: Hugging Face is hit once.
+  model:
+    name: Search model pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the pins
+        id: pins
+        run: |
+          set -euo pipefail
+          F=app/src/main/java/com/taskmind/data/memory/SemanticIndex.kt
+          SHAS=$(grep -oE '"[0-9a-f]{64}"' "$F" | tr -d '"' | tr '\n' '-')
+          echo "key=e5-small-$SHAS" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: model-check
+          key: ${{ steps.pins.outputs.key }}
+      - name: Download and verify
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p model-check && cd model-check
+          BASE=https://huggingface.co/Xenova/multilingual-e5-small/resolve/main
+          curl -fsSL --retry 3 -o model_quantized.onnx "$BASE/onnx/model_quantized.onnx"
+          curl -fsSL --retry 3 -o tokenizer.json "$BASE/tokenizer.json"
+          cat > pins.txt <<'PINS'
+          f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193  model_quantized.onnx
+          0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39  tokenizer.json
+          PINS
+          sed -i 's/^ *//' pins.txt
+          sha256sum -c pins.txt
+          # Keep the cache small: only the proof that the pins matched.
+          rm -f model_quantized.onnx tokenizer.json
+          date -u > verified.txt
+      - name: Pins match the code
+        run: |
+          set -euo pipefail
+          F=app/src/main/java/com/taskmind/data/memory/SemanticIndex.kt
+          grep -q f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193 "$F"
+          grep -q 0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39 "$F"
+
   build:
     name: Assemble signed release APK
     needs: test

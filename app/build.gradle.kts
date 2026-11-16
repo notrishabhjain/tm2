@@ -11,8 +11,8 @@ plugins {
 
 // versionCode / versionName are the contract the self-updater (spec S19) checks
 // against update.json. Bump both together.
-val appVersionCode = 33
-val appVersionName = "1.30.0"
+val appVersionCode = 34
+val appVersionName = "1.31.0"
 
 /**
  * Release signing.
@@ -143,6 +143,8 @@ ksp {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    // Search by meaning: runs the multilingual-e5-small model on the phone.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)

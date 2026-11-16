@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -124,6 +125,9 @@ class WhatsAppBackupImport(private val container: AppContainer) {
 
             val result = readInto(scratch)
             _state.value = result
+            // New history to search by meaning, if the model is there.
+            container.semanticIndex.forget()
+            container.applicationScope.launch { container.semanticIndex.run() }
             container.logger.write(
                 Stage.CAPTURE,
                 LogLevel.INFO,

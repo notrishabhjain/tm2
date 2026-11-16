@@ -277,6 +277,9 @@ class AppContainer(context: Context) {
     /** Every message kept for good: imported chats, and captures past their retention. */
     val memoryStore: com.taskmind.data.memory.MemoryStore by lazy { com.taskmind.data.memory.MemoryStore(appContext) }
 
+    /** Search by meaning over [memoryStore], with a model that runs on the phone. */
+    val semanticIndex: com.taskmind.data.memory.SemanticIndex by lazy { com.taskmind.data.memory.SemanticIndex(this) }
+
     /** Reads WhatsApp's own backup into [memoryStore]. */
     val whatsAppBackupImport: com.taskmind.capture.WhatsAppBackupImport by lazy { com.taskmind.capture.WhatsAppBackupImport(this) }
 

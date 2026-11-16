@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskmind.capture.WhatsAppBackupImport
 import com.taskmind.core.WaBackup
 import com.taskmind.data.memory.MemoryStore
+import com.taskmind.data.memory.SemanticIndex.Download as SemanticIndexDownload
 import com.taskmind.di.AppContainer
 import com.taskmind.ui.components.SectionCard
 import com.taskmind.ui.components.DateFormats
@@ -178,3 +179,79 @@ fun WhatsAppHistorySection() {
         }
     }
 }
+
+/**
+ * "Search by meaning": the model download, and how far the long-term memory
+ * has been given vectors. The Twin uses it on its own once it is ready.
+ */
+@Composable
+fun SearchByMeaningSection() {
+    val context = LocalContext.current
+    val container = remember { AppContainer.get(context) }
+    val index = container.semanticIndex
+    val download by index.download.collectAsStateWithLifecycle()
+    val progress by index.progress.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) { index.refresh() }
+
+    SectionCard(
+        title = "Search by meaning",
+        subtitle = "Lets the Twin find a conversation by what it was about, not only by its words, in Hindi, " +
+            "English or both. A model runs on this phone; your messages are not sent anywhere for this.",
+    ) {
+        when (val d = download) {
+            SemanticIndexDownload.Missing, is SemanticIndexDownload.Failed -> {
+                Text(
+                    "The model is a one-time download of about 135 MB from Hugging Face. Wi-Fi is best.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (d is SemanticIndexDownload.Failed) {
+                    Text(d.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = {
+                    container.applicationScope.launch {
+                        index.downloadModel()
+                        if (index.modelReady()) index.run()
+                    }
+                }) { Text("Download the model") }
+            }
+            is SemanticIndexDownload.Running -> {
+                Text("Downloading the model", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                LinearProgressIndicator(progress = { d.fraction }, modifier = Modifier.fillMaxWidth())
+            }
+            SemanticIndexDownload.Ready -> {
+                val p = progress
+                val total = p.total
+                Text(
+                    when {
+                        total == 0 && p.messagesLeft == 0 -> "Ready. Nothing to prepare yet: read your WhatsApp history above first."
+                        p.done >= total && p.messagesLeft == 0 -> "Ready: $total stretches of conversation can be searched by meaning."
+                        else -> "Prepared ${p.done} of $total stretches of conversation" +
+                            (if (p.messagesLeft > 0) ", ${p.messagesLeft} messages still to sort" else "") + "."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (p.running) {
+                    Spacer(Modifier.height(4.dp))
+                    if (total > 0) {
+                        LinearProgressIndicator(progress = { (p.done.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    Text(
+                        "Keep TaskMind open to finish sooner. Otherwise it carries on in the background a few minutes at a time.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (p.done < total || p.messagesLeft > 0) {
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = { container.applicationScope.launch { index.run() } }) { Text("Prepare now") }
+                }
+            }
+        }
+    }
+}
+

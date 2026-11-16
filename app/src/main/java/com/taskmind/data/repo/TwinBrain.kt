@@ -208,7 +208,20 @@ class TwinBrain(private val container: AppContainer) {
         }
         // A message both captured live and imported is one message.
         val all = (items + remembered).distinctBy { it.text.trim().take(120).lowercase() to it.at / MINUTE }
-        return Recall.search(question, all, now).map { Twin.Memory(it.at, it.from, it.text) }
+        val byWords = Recall.search(question, all, now).map { Twin.Memory(it.at, it.from, it.text) }
+
+        // Stretches of chat close in meaning, when the model is on the phone:
+        // "is the payment stuck" finds "invoice abhi tak clear nahi hua". The
+        // two lists are interleaved, word matches first, as many as before.
+        val byMeaning = runCatching { container.semanticIndex.search(question) }.getOrDefault(emptyList()).map { c ->
+            Twin.Memory(c.endAt, (if (c.isGroup) "In ${c.chat}" else "Chat with ${c.chat}") + " (WhatsApp)", Recall.snippet(c.text, null))
+        }
+        val merged = ArrayList<Twin.Memory>()
+        for (i in 0 until maxOf(byWords.size, byMeaning.size)) {
+            byWords.getOrNull(i)?.let { merged += it }
+            byMeaning.getOrNull(i)?.let { m -> if (merged.none { it.text.take(60) == m.text.take(60) }) merged += m }
+        }
+        return merged.take(Recall.MAX_ITEMS)
     }
 
     // ---------------------------------------------------------------- asking
