@@ -3,7 +3,7 @@
 > This file is an export of the living manual, refreshed with each release and attached to every
 > GitHub release as `TaskMind-User-Manual.md`.
 
-Nov 4, 2026 · @RJ · For TaskMind 1.31.0
+Nov 16, 2026 · @RJ · For TaskMind 1.31.1
 
 ## Welcome
 
@@ -824,6 +824,7 @@ TaskMind keeps your data on the phone and sends only what a job needs, only to s
 | Goes to | What | When |
 | --- | --- | --- |
 | Your AI provider (OpenAI's gpt-4o-mini unless you changed it) | The text of messages that pass the free filter, email text (cleaned, at most 3,000 characters), brain dumps, shared text, the words read from screenshots, plus About you, your names, rules, areas and the titles of related open tasks | Each time something is read |
+| Your backup AI provider, if you set one (OpenRouter by default) | The same text, but only for a call the main provider could not answer | When the main provider fails |
 | The same provider | Your question with your tasks, today's meetings and, if Search my messages is on, a few short snippets of your own messages | Each Twin question, plan or nudge draft |
 | Your transcription provider (Sarvam unless you changed it) | Call recordings | After each call worth reading |
 | Your mail server | Your sign-in only. TaskMind reads mail and never sends, moves or marks it. | On each mailbox check |
@@ -880,6 +881,27 @@ The backup holds tasks only, not settings, keys or captured messages. On a new p
 There are no daily caps. They used to hold captures back until midnight once a busy day had used them up, which is the opposite of what a second mind is for. Everything is read as soon as it arrives, on Wi-Fi or mobile data, and **Health** shows today's model calls and minutes of call audio so the spending stays visible.
 
 What a day costs depends on your provider and how busy your chats are. Most notifications are dropped by the free filter on the phone, and only the rest cost a call. With the default model, one message costs one call of roughly 5,000 to 7,000 tokens (pieces of words). At gpt-4o-mini's published price when this was written, even a busy 300-call day stays well under half a US dollar. **Model calls** in Health lists every call with its token count, and your provider's dashboard shows the bill. Twin questions, plans and nudge drafts are one call each. When the AI cannot be reached, Plan my day and Plan my week fall back to a simple plan made on the phone.
+
+### A backup AI provider
+
+Free tiers run out. Groq's free tier, for example, allows a fixed number of tokens a day, and a busy day of chats can spend it. When that happens nothing is lost, but new tasks wait until the quota resets. A backup provider keeps them coming.
+
+**To set it up:**
+
+1. Make a free account at openrouter.ai and create an API key under **Keys**.
+2. In **Settings, Advanced, AI providers**, find the **Backup provider** card (below the main one).
+3. Paste the key and tap **Save**. The base URL and model are filled in for you (`openai/gpt-oss-120b:free`, the same model Groq runs, free on OpenRouter).
+4. Tap **Test backup**. You want a green **OK**.
+
+**How it works:**
+
+- Every call goes to your main provider first. The backup is used only when that call fails: a rate limit, a bad or expired key, a server error, or no answer. The same request is sent to the backup at once, so the task is not delayed.
+- After a rate limit, the main provider is left to rest until its reset time. Calls go straight to the backup until then, so you do not spend requests hearing "limit reached" again.
+- If both fail, the capture waits and is retried, exactly as before. Nothing is dropped.
+- **Test connection** on the main card tests only the main provider, so a working backup cannot hide a broken main key.
+- **Model calls** in Health shows each call with the address it went to, so you can see which provider answered.
+
+**Good to know:** OpenRouter's free models have their own daily allowance (small without credit on the account, larger once you have bought any). Models without `:free` in the name cost money from your OpenRouter credit. What the backup receives is exactly what the main provider would have received. To turn the backup off, tap **Turn the backup off (remove its key)**.
 
 ## Health and troubleshooting
 
