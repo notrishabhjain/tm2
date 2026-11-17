@@ -112,6 +112,21 @@ wrote English. No placeholders, no signature, no subject line.
 Return ONLY this JSON, no markdown: {"text":"<the message>"}
 """.trim()
 
+    /**
+     * For a task the USER owes someone (v1.33): a short reply saying where it
+     * stands. It never promises a date the task does not already carry.
+     */
+    val REPLY_SYSTEM: String = """
+You write ONE short reply that the user will send, themselves, to someone who asked them for
+something. It acknowledges the ask and says where it stands, in one to three short lines.
+If the task has a due date, it may say the user will have it done by then; never invent a date,
+a price or a fact that is not in the task. Write it AS the user, matching how they write to
+this person in the examples when given - same language (Hinglish, Hindi or English), same
+warmth and length. No placeholders, no signature, no subject line.
+
+Return ONLY this JSON, no markdown: {"text":"<the message>"}
+""".trim()
+
     fun userPrompt(c: Candidate, now: Long, aboutMe: String = ""): String = buildString {
         append(Prompts.aboutBlock(aboutMe))
         append("Now: ").append(DateResolver.formatForPrompt(now)).append(" IST\n")

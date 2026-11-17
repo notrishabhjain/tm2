@@ -3,7 +3,7 @@
 > This file is an export of the living manual, refreshed with each release and attached to every
 > GitHub release as `TaskMind-User-Manual.md`.
 
-Nov 16, 2026 · @RJ · For TaskMind 1.32.0
+Nov 16, 2026 · @RJ · For TaskMind 1.33.0
 
 ## Welcome
 
@@ -376,6 +376,10 @@ Tap **Undo** on any of them. Undo puts back exactly what that change changed. If
 - **Reply by email** opens your mail app for tasks that came from an email.
 - **Share…** sends it with any other app, and **Copy** copies it.
 
+**Draft a reply** on the task screen does the same for something you owe someone: a short message saying where it stands, which you send yourself. It never invents a date or a price that is not in the task.
+
+**In your style.** When your WhatsApp history is imported, a nudge or reply is written the way you write to that person: TaskMind adds up to ten of your own recent messages to them (yours only, with numbers, emails and links masked) as examples of tone and language, so Hinglish stays Hinglish and short stays short. The sheet says how many it used.
+
 You press send, never TaskMind. A note (*Nudged Rahul 3 Nov, WhatsApp*) is added to the task, and that person is not suggested again for three days. You can also start a nudge from **Draft a nudge** on the task screen, and at 11:30 a notification lists who to chase. That notification shares Android's notification category with the daily brief, so there is no separate switch for it yet.
 
 ### Search my messages
@@ -504,6 +508,7 @@ Recordings made before you set TaskMind up are ignored, so an old backlog is nev
 | Setting | What it does |
 | --- | --- |
 | Capture from calls | On or off for all call capture |
+| Brief me when someone calls | When a saved contact rings, a notification shows what you owe them, what they owe you and the last thing said in your chat (*Priya is calling - You owe 2: Send the signed PO (due today)*). Tap it for their page. Made on the phone; on by default |
 | Ignore calls shorter than | Skips quick calls (the default is 15 seconds) |
 | Choose the call recordings folder | Points TaskMind at your dialer's folder, if it does not find recordings on its own |
 | Ignore everything recorded so far | Moves the start line to now |
@@ -579,7 +584,7 @@ With calendar access on, TaskMind brings each meeting's open items to you 30 min
 | When | What | What to do |
 | --- | --- | --- |
 | 9:00 | Today's meetings at the top of the morning brief, with their times | Plan the day around them |
-| 30 minutes before | *Before "Vendor sync"*: your open tasks and promises with the people invited, or about the meeting's matter. Sent only when there is something to show. | Glance before you walk in |
+| 30 minutes before | *Before "Vendor sync"*: your open tasks and promises with the people invited, or about the meeting's matter, and the last thing said in your chat with up to three of them (*With Priya: 3 Nov - Priya: can you send it by 5?*). Sent only when there is something to show. | Glance before you walk in |
 | 5 minutes after | *Anything you agreed in "Vendor sync"?* | Tap **Note it** and say it; the brain dump opens already labelled with the meeting |
 | Any time | The Twin's **Plan my day** fits tasks into the free time between meetings; **Plan my week** goes lighter on busy days | Apply the plan |
 
@@ -836,6 +841,7 @@ TaskMind keeps your data on the phone and sends only what a job needs, only to s
 | --- | --- | --- |
 | Your AI provider (OpenAI's gpt-4o-mini unless you changed it) | The text of messages that pass the free filter, email text (cleaned, at most 3,000 characters), brain dumps, shared text, the words read from screenshots, plus About you, your names, rules, areas and the titles of related open tasks | Each time something is read |
 | Your AI provider, only when you tap **Send and draft** in About you | A sample of messages you wrote (about 9,000 characters, numbers, emails and links masked), shown to you first | Once per draft |
+| Your AI provider, when you draft a nudge or reply | The task, the person's quoted words and, if your history is imported, up to ten of your own recent messages to them (masked) | Each draft |
 | Your backup AI provider, if you set one (OpenRouter by default) | The same text, but only for a call the main provider could not answer | When the main provider fails |
 | The same provider | Your question with your tasks, today's meetings and, if Search my messages is on, a few short snippets of your own messages | Each Twin question, plan or nudge draft |
 | Your transcription provider (Sarvam unless you changed it) | Call recordings | After each call worth reading |

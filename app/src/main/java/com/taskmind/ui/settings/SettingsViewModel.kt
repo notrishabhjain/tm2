@@ -304,6 +304,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsRepository.setCaptureNotifications(value) }
     }
 
+    fun setCallBriefing(value: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setCallBriefing(value) }
+    }
+
     fun setCaptureCalls(value: Boolean) {
         viewModelScope.launch { container.settingsRepository.setCaptureCalls(value) }
     }

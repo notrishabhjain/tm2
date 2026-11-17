@@ -253,6 +253,9 @@ class MainActivity : FragmentActivity() {
         /** Opens the twin; "twin|plan", "twin|week" and "twin|nudge:<id>" start it on something. */
         const val ROUTE_TWIN = "twin"
 
+        /** "person/<encoded name>": a person's page, from a call briefing. */
+        const val ROUTE_PERSON_PREFIX = "person/"
+
         private const val MAX_SHARED_CHARS = 20_000
     }
 }
@@ -411,6 +414,7 @@ fun TaskMindNavHost(
             // notification again used to stack one, and back then showed the
             // same task - the back arrow looked like it did nothing.
             route != null && route.startsWith("task/") -> if (!showingTask(navController, route)) navController.navigate(route)
+            route != null && route.startsWith(MainActivity.ROUTE_PERSON_PREFIX) -> navController.navigate(route) { launchSingleTop = true }
         }
         onIncomingHandled()
     }
@@ -684,6 +688,7 @@ fun TaskMindNavHost(
             // A task notification or the widget opens one task. Matched by
             // prefix rather than listed, because the id is part of the route.
             startRoute != null && startRoute.startsWith("task/") -> navController.navigate(startRoute)
+            startRoute != null && startRoute.startsWith(MainActivity.ROUTE_PERSON_PREFIX) -> navController.navigate(startRoute)
         }
     }
 }

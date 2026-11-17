@@ -758,6 +758,12 @@ private fun CallCaptureSection(
             checked = settings.captureCalls,
             onCheckedChange = viewModel::setCaptureCalls,
         )
+        LabeledSwitch(
+            label = "Brief me when someone calls",
+            checked = settings.callBriefing,
+            onCheckedChange = viewModel::setCallBriefing,
+            description = "When a saved contact rings, a notification shows what you owe each other and the last thing said in your chat. Made on the phone.",
+        )
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onOpenCalls) { Text("Recent calls") }

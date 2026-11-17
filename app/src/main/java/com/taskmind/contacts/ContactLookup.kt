@@ -25,6 +25,24 @@ object ContactLookup {
 
     private val PHONE_LIKE = Regex("^[+\\d][\\d\\s-]{6,}$")
 
+    /** The saved name for [number], or null (v1.33, for call briefings). */
+    fun nameFor(context: Context, number: String?): String? {
+        val n = number?.trim().orEmpty()
+        if (n.isEmpty()) return null
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) return null
+        return runCatching {
+            context.contentResolver.query(
+                Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(n)),
+                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+                null,
+                null,
+                null,
+            )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
     /** A dialable number for [name], or null. */
     fun numberFor(context: Context, name: String?): String? {
         val clean = name?.trim().orEmpty()

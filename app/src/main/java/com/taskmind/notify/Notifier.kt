@@ -396,6 +396,25 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         postSafely(ID_MEETING_PREP, notification)
     }
 
+    /** While someone is calling: what is open between you, and the last thing said (v1.33). */
+    fun postCallBrief(person: String, lines: List<String>) {
+        if (!canPost() || lines.isEmpty()) return
+        val style = NotificationCompat.InboxStyle().setBigContentTitle("$person is calling")
+        lines.forEach { style.addLine(it) }
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_stat_taskmind)
+            .setContentTitle("$person is calling")
+            .setContentText(lines.first())
+            .setStyle(style)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(contentIntent(MainActivity.ROUTE_PERSON_PREFIX + android.net.Uri.encode(person)))
+            .setAutoCancel(true)
+            .setTimeoutAfter(10 * 60 * 1000L)
+            .build()
+        postSafely(ID_CALL_BRIEF, notification)
+    }
+
     /** After a meeting: one tap to note what was agreed. */
     fun postMeetingFollowUp(title: String) {
         if (!canPost()) return
@@ -500,6 +519,7 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         const val ID_MEETING_AFTER = 1009
         const val ID_CHASE = 1010
         const val ID_CALL_AFTER = 1011
+        const val ID_CALL_BRIEF = 1012
         const val ID_UPDATE = 1002
         const val ID_FOREGROUND_WORKER = 1101
         const val ID_FOREGROUND_RESIDENCY = 1102
