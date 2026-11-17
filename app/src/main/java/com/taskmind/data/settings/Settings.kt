@@ -85,6 +85,8 @@ data class Settings(
     val groupsNeverWatch: Set<String> = emptySet(),
 
     val captureCalls: Boolean = true,
+    /** Brief the user on who is calling: open tasks and the last thing said (v1.33). */
+    val callBriefing: Boolean = true,
     val minCallDurationSeconds: Long = 15,
 
     val callRecordingDirUri: String? = null,

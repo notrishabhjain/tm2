@@ -60,6 +60,10 @@ class TwinBrain(private val container: AppContainer) {
         val subject: String?,
         val channel: String?,
         val usedModel: Boolean,
+        /** A reply to something the user owes (v1.33), rather than a nudge. */
+        val reply: Boolean = false,
+        /** How many of the user's own past messages shaped the tone. */
+        val voiceExamples: Int = 0,
     )
 
     /** The line at the top of the twin's screen. */
@@ -344,14 +348,20 @@ class TwinBrain(private val container: AppContainer) {
             null
         }
 
+        // Someone the user owes gets a reply; someone who owes the user, a nudge.
+        val reply = !com.taskmind.core.WaitingOn.matches(task.title, task.tags)
+        // A few of the user's own messages to this person, for tone (v1.33).
+        val voice = if (person != "there") voiceFor(person) else emptyList()
+
         var usedModel = false
         val text = proposed ?: run {
             val model = if (unavailable() == null) {
                 container.settingsRepository.recordLlmCall(DateResolver.dayKey(now), null)
                 val result = container.llmClient.complete(
                     config = container.llmConfig(),
-                    systemPrompt = Nudge.SYSTEM,
-                    userPrompt = Nudge.userPrompt(candidate, now, container.settingsRepository.current().aboutMe),
+                    systemPrompt = if (reply) Nudge.REPLY_SYSTEM else Nudge.SYSTEM,
+                    userPrompt = Nudge.userPrompt(candidate, now, container.settingsRepository.current().aboutMe) +
+                        (if (voice.isEmpty()) "" else "\n" + com.taskmind.core.Voice.block(voice)),
                     maxTokens = 300,
                     trace = TraceContext(KIND_NUDGE, sourceLabel = person),
                 )
@@ -360,7 +370,7 @@ class TwinBrain(private val container: AppContainer) {
                 null
             }
             usedModel = model != null
-            model ?: Nudge.draft(candidate, now)
+            model ?: if (reply) "Hi ${person.substringBefore(' ')}, on it: ${task.title}." else Nudge.draft(candidate, now)
         }
         return Draft(
             taskId = task.id,
@@ -371,7 +381,18 @@ class TwinBrain(private val container: AppContainer) {
             subject = meta?.subject?.let { "Re: $it" },
             channel = channel,
             usedModel = usedModel || proposed != null,
+            reply = reply,
+            voiceExamples = if (usedModel) voice.size else 0,
         )
+    }
+
+    /** The user's own recent messages in their chat with [person], from the memory. */
+    private suspend fun voiceFor(person: String): List<String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching {
+            val memory = container.memoryStore
+            val chat = memory.chatsNamed(person, groups = false, limit = 1).firstOrNull() ?: return@runCatching emptyList()
+            com.taskmind.core.Voice.examples(memory.recent(chat.chat, 60, fromMeOnly = true).map { it.body })
+        }.getOrDefault(emptyList())
     }
 
     private fun hm(at: Long): String = Instant.ofEpochMilli(at).atZone(DateResolver.IST).format(HM)

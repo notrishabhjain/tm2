@@ -43,6 +43,21 @@ class PhoneStateReceiver : BroadcastReceiver() {
                 }
             } else if (state == TelephonyManager.EXTRA_STATE_OFFHOOK) {
                 wasOffHook = true
+            } else if (state == TelephonyManager.EXTRA_STATE_RINGING) {
+                // Delivered with the number only because the app holds
+                // READ_CALL_LOG; the copy without it is ignored.
+                @Suppress("DEPRECATION")
+                val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
+                if (!number.isNullOrBlank()) {
+                    val pending = goAsync()
+                    container.applicationScope.launch {
+                        try {
+                            com.taskmind.reminders.PersonBrief.onRinging(container, number)
+                        } finally {
+                            pending.finish()
+                        }
+                    }
+                }
             }
         } catch (t: Throwable) {
             AppContainer.get(context).logger.post(Stage.CALL, LogLevel.ERROR, "PhoneStateReceiver failed", t.toString())

@@ -259,6 +259,8 @@ fun TaskDetailScreen(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.tight)) {
                     if (com.taskmind.core.WaitingOn.matches(task.title, task.tags)) {
                         TextButton(onClick = { onNudge(task.id) }) { Text("Draft a nudge") }
+                    } else if (contact?.person != null) {
+                        TextButton(onClick = { onNudge(task.id) }) { Text("Draft a reply") }
                     }
                     TextButton(onClick = { viewModel.snooze(HOUR) }) { Text("In 1 hour") }
                     TextButton(onClick = { viewModel.snooze(24 * HOUR) }) { Text("Tomorrow") }

@@ -54,6 +54,7 @@ class SettingsRepository(private val context: Context) {
         val captureEmailApps = booleanPreferencesKey("capture_email_apps")
         val emailConnectedAddress = stringPreferencesKey("email_connected_address")
         val captureCalls = booleanPreferencesKey("capture_calls")
+        val callBriefing = booleanPreferencesKey("call_briefing")
         val minCallDuration = longPreferencesKey("min_call_duration")
         val callRecordingDirUri = stringPreferencesKey("call_recording_dir_uri")
         val recordingCutoff = longPreferencesKey("recording_cutoff_millis")
@@ -129,6 +130,7 @@ class SettingsRepository(private val context: Context) {
             captureEmailApps = this[K.captureEmailApps] ?: d.captureEmailApps,
             emailConnectedAddress = this[K.emailConnectedAddress] ?: d.emailConnectedAddress,
             captureCalls = this[K.captureCalls] ?: d.captureCalls,
+            callBriefing = this[K.callBriefing] ?: d.callBriefing,
             minCallDurationSeconds = this[K.minCallDuration] ?: d.minCallDurationSeconds,
             callRecordingDirUri = this[K.callRecordingDirUri] ?: d.callRecordingDirUri,
             recordingCutoffMillis = this[K.recordingCutoff] ?: d.recordingCutoffMillis,
@@ -208,6 +210,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setCaptureEmailApps(value: Boolean) = edit { it[K.captureEmailApps] = value }
     suspend fun setEmailConnectedAddress(value: String) = edit { it[K.emailConnectedAddress] = value.trim() }
     suspend fun setCaptureCalls(value: Boolean) = edit { it[K.captureCalls] = value }
+    suspend fun setCallBriefing(value: Boolean) = edit { it[K.callBriefing] = value }
 
     suspend fun setMinCallDuration(seconds: Long) = edit { it[K.minCallDuration] = seconds }
     suspend fun setCallRecordingDirUri(uri: String?) = edit {

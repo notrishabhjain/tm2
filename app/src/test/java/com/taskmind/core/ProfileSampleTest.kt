@@ -60,3 +60,31 @@ class ChatSearchTest {
         assertTrue(ChatSearch.terms("a, बिजली bill!").containsAll(listOf("बिजली", "bill")))
     }
 }
+
+class BriefingTest {
+    private val now = java.time.ZonedDateTime.of(2026, 11, 17, 10, 0, 0, 0, DateResolver.IST).toInstant().toEpochMilli()
+    private val day = 24L * 60 * 60 * 1000
+
+    @Test
+    fun `a brief lists what is owed both ways and the last thing said`() {
+        val lines = Briefing.lines(
+            "Priya Sharma",
+            youOwe = listOf(Briefing.Open("Send the signed PO", now + 2 * 3600_000), Briefing.Open("Fix slide 4", null), Briefing.Open("Book venue", now + 3 * day)),
+            theyOwe = listOf(Briefing.Open("Revised quote", null)),
+            last = Briefing.LastSaid(now - day, fromMe = false, body = "call me on 9876543210 about the PO"),
+            now = now,
+        )
+        assertEquals("You owe 3: Send the signed PO (due today); Book venue (due 20 Nov); +1 more", lines[0])
+        assertEquals("They owe you 1: Revised quote", lines[1])
+        assertTrue(lines[2].startsWith("Last, 16 Nov - Priya: call me on [number]"))
+        assertTrue(Briefing.lines("X", emptyList(), emptyList(), null, now).isEmpty())
+    }
+
+    @Test
+    fun `voice examples are the user's own, masked, distinct and bounded`() {
+        val ex = Voice.examples(listOf("ok", "Haan bhai, kal tak bhej dunga PO", "haan bhai, kal tak bhej dunga po", "mail me at a@b.com about it please", "x".repeat(300)))
+        assertEquals(listOf("Haan bhai, kal tak bhej dunga PO", "mail me at [email] about it please"), ex)
+        assertTrue(Voice.block(ex).contains("- Haan bhai"))
+        assertEquals("", Voice.block(emptyList()))
+    }
+}

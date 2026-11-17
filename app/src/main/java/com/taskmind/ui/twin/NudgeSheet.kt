@@ -52,10 +52,17 @@ fun NudgeSheet(
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp),
         ) {
-            Text("Nudge ${draft.person}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(
-                if (draft.usedModel) "Drafted for you. Change anything, then send it yourself."
-                else "A starting point. Change anything, then send it yourself.",
+                (if (draft.reply) "Reply to " else "Nudge ") + draft.person,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                when {
+                    draft.voiceExamples > 0 -> "Drafted in your style, from ${draft.voiceExamples} of your own messages to them. Change anything, then send it yourself."
+                    draft.usedModel -> "Drafted for you. Change anything, then send it yourself."
+                    else -> "A starting point. Change anything, then send it yourself."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -128,6 +128,21 @@ object MeetingNudges {
         today(context, System.currentTimeMillis()).firstOrNull { it.id == eventId && it.begin == begin }
 
     /** Open tasks this meeting is about. */
+    /**
+     * "Last with Priya, 3 Nov - Priya: ..." for up to three people in the
+     * meeting (v1.33): attendees by name, and the people on its related tasks.
+     */
+    suspend fun lastSaid(container: AppContainer, event: Event, related: List<MeetingMatch.Task>): List<String> {
+        val names = (event.attendees.filter { '@' !in it } + related.mapNotNull { it.person })
+            .map { it.trim() }.filter { it.length >= 2 }.distinctBy { it.lowercase() }.take(3)
+        return names.mapNotNull { name ->
+            runCatching {
+                PersonBrief.lines(container, name).firstOrNull { it.startsWith("Last,") }
+                    ?.let { "With $name: " + it.removePrefix("Last, ") }
+            }.getOrNull()
+        }
+    }
+
     suspend fun related(container: AppContainer, event: Event): List<MeetingMatch.Task> {
         val all = container.taskRepository.observeTasks().first()
             .filter { it.status == TaskStatus.ACTIVE && it.parentTaskId == null }
@@ -162,7 +177,8 @@ class MeetingReceiver : BroadcastReceiver() {
                 when (kind) {
                     KIND_PREP -> {
                         val related = MeetingNudges.related(container, event)
-                        if (related.isNotEmpty()) container.notifier.postMeetingPrep(event.title, MeetingMatch.lines(related))
+                        val lines = MeetingMatch.lines(related) + MeetingNudges.lastSaid(container, event, related)
+                        if (lines.isNotEmpty()) container.notifier.postMeetingPrep(event.title, lines)
                     }
                     KIND_AFTER -> container.notifier.postMeetingFollowUp(event.title)
                 }
