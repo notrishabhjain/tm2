@@ -243,9 +243,10 @@ class ExtractionPipeline(
         // The quick check. Skipped when the phone's own first read already
         // saw a task here: a disagreement goes to the full read to settle.
         val pendingReads = firstReads?.pending(burstIds).orEmpty()
-        if (quickChecker != null && pendingReads.isEmpty()) {
+        val checker = quickChecker
+        if (checker != null && pendingReads.isEmpty()) {
             val decision = runCatching {
-                quickChecker.check(
+                checker.check(
                     sender = context.sender,
                     group = context.group,
                     userNames = userNames,
