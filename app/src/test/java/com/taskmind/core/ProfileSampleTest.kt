@@ -88,3 +88,32 @@ class BriefingTest {
         assertEquals("", Voice.block(emptyList()))
     }
 }
+
+class QuickCheckTest {
+    @Test
+    fun `only a confident none skips the full read`() {
+        assertTrue(QuickCheck.skip(QuickCheck.parse("""{"verdict":"none","confidence":0.93}""")))
+        assertFalse(QuickCheck.skip(QuickCheck.parse("""{"verdict":"none","confidence":0.6}""")))
+        assertFalse(QuickCheck.skip(QuickCheck.parse("""{"verdict":"maybe","confidence":0.99}""")))
+        assertFalse(QuickCheck.skip(QuickCheck.parse("""{"verdict":"task","confidence":0.99}""")))
+        // Anything unreadable goes on to the full read.
+        assertFalse(QuickCheck.skip(QuickCheck.parse("not json")))
+        assertFalse(QuickCheck.skip(QuickCheck.parse("""{"verdict":"none"}""")))
+        assertFalse(QuickCheck.skip(null))
+        assertEquals(QuickCheck.Verdict.NONE, QuickCheck.parse("```json\n{\"verdict\":\"None\",\"confidence\":\"0.9\"}\n```")?.verdict)
+    }
+
+    @Test
+    fun `the model is the user's, or a small one on Groq, or none`() {
+        assertEquals("my-model", QuickCheck.modelFor(" my-model ", "https://openrouter.ai/api/v1"))
+        assertEquals(QuickCheck.DEFAULT_GROQ_MODEL, QuickCheck.modelFor("", "https://api.groq.com/openai/v1"))
+        assertEquals(null, QuickCheck.modelFor("", "https://api.openai.com/v1"))
+    }
+
+    @Test
+    fun `the prompt stays small`() {
+        val p = QuickCheck.userPrompt("Priya", "Vendors", setOf("RJ"), (1..9).map { "task $it" }, "x".repeat(5000))
+        assertTrue(p.length < 1800)
+        assertTrue(p.contains("- task 5") && !p.contains("- task 6"))
+    }
+}

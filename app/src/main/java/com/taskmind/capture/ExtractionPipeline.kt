@@ -63,6 +63,8 @@ class ExtractionPipeline(
     private val emailAddresses: suspend () -> Set<String> = { emptySet() },
     /** The phone's first reads of messages, which the model's read confirms or withdraws. */
     private val firstReads: FirstReads? = null,
+    /** Screens chat messages before the full read (v1.34); null always reads in full. */
+    private val quickChecker: com.taskmind.ai.QuickChecker? = null,
 ) {
 
     sealed interface Outcome {
@@ -237,6 +239,41 @@ class ExtractionPipeline(
             rules = rules(),
             areas = settingsRepository.current().areas,
         )
+
+        // The quick check. Skipped when the phone's own first read already
+        // saw a task here: a disagreement goes to the full read to settle.
+        val pendingReads = firstReads?.pending(burstIds).orEmpty()
+        if (quickChecker != null && pendingReads.isEmpty()) {
+            val decision = runCatching {
+                quickChecker.check(
+                    sender = context.sender,
+                    group = context.group,
+                    userNames = userNames,
+                    openTasks = block.tasks.map { it.title },
+                    text = text,
+                    rawCaptureId = capture.id,
+                    sourceLabel = capture.sourceLabel,
+                )
+            }.getOrNull()
+            if (decision != null) {
+                logger.write(
+                    Stage.EXTRACT,
+                    LogLevel.DEBUG,
+                    "quick check: ${decision.verdict.name.lowercase()} (${"%.2f".format(decision.confidence)})",
+                    "tokens=${decision.tokens ?: "?"} sender=${context.sender}",
+                )
+            }
+            if (com.taskmind.core.QuickCheck.skip(decision)) {
+                rawCaptureDao.setState(capture.id, CaptureState.REJECTED)
+                logger.write(
+                    Stage.EXTRACT,
+                    LogLevel.INFO,
+                    "quick check: no task - full read skipped",
+                    "confidence=${"%.2f".format(decision!!.confidence)} tokens=${decision.tokens ?: "?"}",
+                )
+                return Outcome.Done(0, 0, 1)
+            }
+        }
 
         logger.write(
             Stage.EXTRACT,

@@ -41,6 +41,7 @@ data class RecordedCall(
         const val KIND_VERIFY = "verify"
         const val KIND_ASR = "asr"
         const val KIND_TEST = "connection-test"
+        const val KIND_QUICK_CHECK = "quick-check"
 
         /**
          * Prompts and replies are kilobytes each and the table keeps a hundred

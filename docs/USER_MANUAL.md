@@ -3,7 +3,7 @@
 > This file is an export of the living manual, refreshed with each release and attached to every
 > GitHub release as `TaskMind-User-Manual.md`.
 
-Nov 16, 2026 · @RJ · For TaskMind 1.33.0
+Nov 16, 2026 · @RJ · For TaskMind 1.34.0
 
 ## Welcome
 
@@ -767,7 +767,7 @@ Tap **Use this rule** or **No**; an idea you said no to is never suggested again
 
 Nothing here needs changing for everyday use.
 
-- **Settings, Advanced, Accuracy** sets the two thresholds by hand, how exactly the quoted words must match for messages, pasted transcripts and calls, and the **Second-opinion pass** (on by default: a second AI call reviews each candidate, at the cost of one extra call). **Reset to defaults** undoes it all.
+- **Settings, Advanced, Accuracy** sets the two thresholds by hand, how exactly the quoted words must match for messages, pasted transcripts and calls, the **Quick check first** switch (see What it costs) and the **Second-opinion pass** (on by default: a second AI call reviews each candidate, at the cost of one extra call). **Reset to defaults** undoes it all.
 - **Prompts** (in Health, under Diagnostics) shows the exact instructions the AI follows for messages, calls, email and the second opinion. **Read and edit** changes one, effective on the next message; **Reset** puts it back. Keep the reply format and the quoting rule intact, or tasks start being thrown away.
 
 ## The web page
@@ -895,6 +895,8 @@ Under **Your data**:
 The backup holds tasks only, not settings, keys or captured messages. On a new phone, install TaskMind, go through setup, enter your keys again, then restore.
 
 ### What it costs
+
+**The quick check (on by default with Groq).** Before the full read, a small, cheap model (`llama-3.1-8b-instant` on your Groq key) looks at each chat message with a short prompt of a few hundred tokens and answers *task*, *maybe* or *none*. Only a confident *none* (85% or more) stops the message there; the full read of 4,000 or more tokens is skipped. Everything else (*task*, *maybe*, an unsure *none*, an unreadable answer or an error) goes on to the full read exactly as before, and so does any message the phone's own first read already marked as a task. On Groq the small model has its own daily allowance, separate from the main model's. Turn it off, or name a different small model, in **Settings, Advanced, Accuracy**. **Model calls** shows each check as *quick-check*, and the activity log says when a full read was skipped.
 
 There are no daily caps. They used to hold captures back until midnight once a busy day had used them up, which is the opposite of what a second mind is for. Everything is read as soon as it arrives, on Wi-Fi or mobile data, and **Health** shows today's model calls and minutes of call audio so the spending stays visible.
 

@@ -374,6 +374,17 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsRepository.setTolerances(notification, clipboard, call) }
     }
 
+    fun setQuickCheck(value: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setQuickCheck(value) }
+    }
+
+    fun setQuickCheckModel(value: String) {
+        viewModelScope.launch {
+            container.settingsRepository.setQuickCheckModel(value)
+            _ui.value = _ui.value.copy(message = "Quick check model saved.")
+        }
+    }
+
     fun setVerifyPass(value: Boolean) {
         viewModelScope.launch { container.settingsRepository.setVerifyPass(value) }
     }
