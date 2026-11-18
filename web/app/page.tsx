@@ -14,6 +14,7 @@ import {
   type TaskPatch,
 } from "@/lib/mutations";
 import { bundles, isWaitingOn } from "@/lib/relate";
+import TwinPanel from "./TwinPanel";
 import { due, fullDate, isOverdue, isToday, priorityLabel, relative, todayKey } from "@/lib/format";
 
 const PRIORITIES: Priority[] = ["URGENT", "HIGH", "MEDIUM", "LOW"];
@@ -113,7 +114,7 @@ function Login() {
 
 /* -- dashboard ----------------------------------------------------------- */
 
-type Tab = "tasks" | "review";
+type Tab = "tasks" | "review" | "twin";
 
 function Dashboard({ email }: { email: string }) {
   const [tab, setTab] = useState<Tab>("tasks");
@@ -369,6 +370,9 @@ function Dashboard({ email }: { email: string }) {
         <button className="tab" role="tab" aria-selected={tab === "review"} onClick={() => setTab("review")}>
           Review<span className="count">{reviews.length}</span>
         </button>
+        <button className="tab" role="tab" aria-selected={tab === "twin"} onClick={() => setTab("twin")}>
+          Twin
+        </button>
         <div className="spacer" />
         {tab === "tasks" && !adding && (
           <button className="tab add" onClick={() => setAdding(true)}>
@@ -436,7 +440,9 @@ function Dashboard({ email }: { email: string }) {
 
       {error && <div className="error">{error}</div>}
 
-      {loading ? (
+      {tab === "twin" ? (
+        <TwinPanel />
+      ) : loading ? (
         <div className="empty">Loading…</div>
       ) : tab === "tasks" ? (
         <>

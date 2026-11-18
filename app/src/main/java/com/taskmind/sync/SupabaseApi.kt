@@ -195,6 +195,54 @@ class SupabaseApi(private val http: OkHttpClient) {
         return call(request) { Outcome.Ok(Unit) }
     }
 
+    /** Changes the given columns of one row (v1.36, the Twin on the web). */
+    fun patch(
+        projectUrl: String,
+        anonKey: String,
+        accessToken: String,
+        table: String,
+        id: String,
+        fields: JsonObject,
+        /** Extra PostgREST filter, e.g. `status=eq.asked`, so two phones cannot both claim a row. */
+        guard: String? = null,
+    ): Outcome<Int> {
+        val url = buildString {
+            append("$projectUrl/rest/v1/$table?id=eq.").append(URLEncoder.encode(id, "UTF-8"))
+            guard?.let { append('&').append(it) }
+        }
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("apikey", anonKey)
+            .addHeader("Authorization", "Bearer $accessToken")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Prefer", "return=representation")
+            .patch(json.encodeToString(JsonObject.serializer(), fields).toRequestBody(JSON))
+            .build()
+        return call(request) { text ->
+            val rows = runCatching { json.parseToJsonElement(text) as? JsonArray }.getOrNull()
+            Outcome.Ok(rows?.size ?: 0)
+        }
+    }
+
+    /** Deletes the rows matching a raw PostgREST [filter]; never unfiltered. */
+    fun deleteWhere(
+        projectUrl: String,
+        anonKey: String,
+        accessToken: String,
+        table: String,
+        filter: String,
+    ): Outcome<Unit> {
+        require(filter.isNotBlank())
+        val request = Request.Builder()
+            .url("$projectUrl/rest/v1/$table?$filter")
+            .addHeader("apikey", anonKey)
+            .addHeader("Authorization", "Bearer $accessToken")
+            .addHeader("Prefer", "return=minimal")
+            .delete()
+            .build()
+        return call(request) { Outcome.Ok(Unit) }
+    }
+
     // -- plumbing -----------------------------------------------------------
 
     private fun <T> call(request: Request, onSuccess: (String) -> Outcome<T>): Outcome<T> = try {

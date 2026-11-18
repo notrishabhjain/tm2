@@ -3,7 +3,7 @@
 > This file is an export of the living manual, refreshed with each release and attached to every
 > GitHub release as `TaskMind-User-Manual.md`.
 
-Nov 16, 2026 · @RJ · For TaskMind 1.35.0
+Nov 16, 2026 · @RJ · For TaskMind 1.36.0
 
 ## Welcome
 
@@ -806,7 +806,7 @@ There is no place in the web database for full message text or transcripts, so t
 `SETUP.md` in the TaskMind repository has every click. In short:
 
 1. **Supabase.** Create a free project. For India, pick the Mumbai region (ap-south-1).
-2. **The database.** In Supabase's SQL Editor, paste and run each file from the repository's `supabase` folder in order: `schema.sql`, then `schema_v2.sql` to `schema_v5.sql`. Each run should say *Success. No rows returned*. Running a file twice does no harm.
+2. **The database.** In Supabase's SQL Editor, paste and run each file from the repository's `supabase` folder in order: `schema.sql`, then `schema_v2.sql` to `schema_v6.sql`. Each run should say *Success. No rows returned*. Running a file twice does no harm.
 3. **Your login.** Authentication, Users, Add user, Create new user. Tick **Auto Confirm User**. The phone and the browser both sign in with this one account.
 4. **Two values.** From Project Settings, API, copy the **Project URL** and the **anon** (publishable) key. Never use the `service_role` key anywhere.
 5. **The page.** On Vercel, import the repository from GitHub, set **Root Directory** to `web`, and add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` with the two values. Tick Production, Preview and Development for both, then **Deploy**.
@@ -822,6 +822,7 @@ Open the address Vercel gives you (like `taskmind-xyz.vercel.app`) and sign in w
 - Tick a task off or reopen it. Open one to see the quoted words and its details, then **Edit** (title, notes, due date and priority), put it **On today's list** or take it off, or **Delete** it.
 - **+ Add task**. It shows as not on your phone yet until the phone picks it up.
 - The **Review** tab holds the maybes: **Approve** or **Reject** each one.
+- The **Twin** tab asks your Twin from the laptop. Type a question (or tap a suggestion) and press **Ask**. Your phone picks it up, usually within a minute while it is on and online, answers it with everything it knows (your tasks, calendar, matters and memory), and the answer appears on the page with the tasks it names and, under **From your messages**, the short snippets it used. Changes the Twin suggests are applied on the phone, never from the web: ask again in the phone's Twin tab to review them. Needs `schema_v6.sql` (the page says so if it has not been run).
 
 Dates on the web page are read as Indian time, the same as on the phone.
 
@@ -859,6 +860,7 @@ TaskMind keeps your data on the phone and sends only what a job needs, only to s
 | Your AI provider, only when you tap **Send and draft** in About you | A sample of messages you wrote (about 9,000 characters, numbers, emails and links masked), shown to you first | Once per draft |
 | Your AI provider, when you draft a nudge or reply | The task, the person's quoted words and, if your history is imported, up to ten of your own recent messages to them (masked) | Each draft |
 | Your AI provider, if Your WhatsApp replies is on | Your own replies from the same stretch of a chat, as part of the context when a message from that chat is read | Each time something is read |
+| Your Supabase project (the web page), when you ask the Twin there | The question, the answer, the titles of the tasks it names, and up to 8 message snippets it used (each at most 280 characters, with numbers, emails and links masked). Deleted after 30 days, or with **Delete** on the page | Each web question |
 | Your backup AI provider, if you set one (OpenRouter by default) | The same text, but only for a call the main provider could not answer | When the main provider fails |
 | The same provider | Your question with your tasks, today's meetings and, if Search my messages is on, a few short snippets of your own messages | Each Twin question, plan or nudge draft |
 | Your transcription provider (Sarvam unless you changed it) | Call recordings | After each call worth reading |

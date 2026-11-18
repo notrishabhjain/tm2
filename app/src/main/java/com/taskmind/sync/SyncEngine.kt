@@ -1,5 +1,7 @@
 package com.taskmind.sync
 
+import kotlinx.coroutines.sync.withLock
+
 import com.taskmind.core.LogLevel
 import com.taskmind.core.Stage
 import com.taskmind.core.Standing
@@ -109,7 +111,7 @@ class SyncEngine(
         // The policies let only this account's rows go. A table an older
         // schema never made (a 404) has nothing in it to erase.
         if (store.wipePending()) {
-            for (table in listOf("web_new_tasks", "review_items", "tasks", "matters")) {
+            for (table in listOf("twin_questions", "web_new_tasks", "review_items", "tasks", "matters")) {
                 val out = api.deleteNotIn(state.projectUrl, secrets.anonKey, token, table, emptyList())
                 if (out is SupabaseApi.Outcome.Failed && !out.message.startsWith("HTTP 404")) {
                     return@withContext fail("Could not erase the web copy: ${out.message}", out.retryable)
@@ -250,11 +252,11 @@ class SyncEngine(
      * Access tokens last an hour and sync runs for months, so the refresh path
      * is the normal path, not the exception.
      */
-    private suspend fun accessToken(projectUrl: String): String? {
+    private suspend fun accessToken(projectUrl: String): String? = SyncAuth.lock.withLock {
         val held = secrets.accessToken
-        if (held.isNotBlank() && System.currentTimeMillis() < secrets.accessTokenExpiresAt) return held
+        if (held.isNotBlank() && System.currentTimeMillis() < secrets.accessTokenExpiresAt) return@withLock held
 
-        return when (val out = api.refresh(projectUrl, secrets.anonKey, secrets.refreshToken)) {
+        when (val out = api.refresh(projectUrl, secrets.anonKey, secrets.refreshToken)) {
             is SupabaseApi.Outcome.Ok -> {
                 secrets.accessToken = out.value.accessToken
                 secrets.accessTokenExpiresAt = out.value.expiresAt

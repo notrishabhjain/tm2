@@ -46,7 +46,13 @@ class TwinBrain(private val container: AppContainer) {
     )
 
     sealed interface Answer {
-        data class Ok(val reply: Twin.Reply, val usedModel: Boolean, val note: String? = null) : Answer
+        data class Ok(
+            val reply: Twin.Reply,
+            val usedModel: Boolean,
+            val note: String? = null,
+            /** The message snippets the answer was given, for showing as sources (v1.36). */
+            val memory: List<Twin.Memory> = emptyList(),
+        ) : Answer
         data class Failed(val message: String) : Answer
     }
 
@@ -258,7 +264,7 @@ class TwinBrain(private val container: AppContainer) {
         )
         val content = (result as? AiResult.Ok)?.value?.content
         val reply = content?.let { Twin.parse(it, built.sent, built.ctx.now, built.ctx.areas) }
-        if (reply != null) return Answer.Ok(reply, usedModel = true, note = memoryNote(built))
+        if (reply != null) return Answer.Ok(reply, usedModel = true, note = memoryNote(built), memory = built.ctx.memory)
         val failure = if (content == null) (result.errorText ?: "The AI did not answer") else "The AI's answer could not be read"
         return when (plan) {
             Plan.DAY -> Answer.Ok(localDay(built), usedModel = false, note = "$failure, so this plan was made on the phone.")
