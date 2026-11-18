@@ -234,6 +234,13 @@ class AppContainer(context: Context) {
             taskDao = database.taskDao(),
             projectDao = database.projectDao(),
             journal = twinJournal,
+            myReplies = { chat, from, to ->
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    memoryStore.repliesBetween(chat, from, to).map {
+                        com.taskmind.core.ChatContext.Line(it.at, "The user (me)", it.body)
+                    }
+                }
+            },
         )
     }
 

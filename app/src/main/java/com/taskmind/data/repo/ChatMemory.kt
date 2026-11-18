@@ -31,6 +31,8 @@ class ChatMemory(
     private val projectDao: ProjectDao,
     /** Where a change made to an existing task is written down, so it can be undone. */
     private val journal: TwinJournal? = null,
+    /** The user's own sent replies in a chat between two times (v1.35); none when not set. */
+    private val myReplies: (suspend (chat: String, from: Long, to: Long) -> List<ChatContext.Line>)? = null,
 ) {
 
     /** The context for one capture. Empty when nothing relevant is known. */
@@ -60,7 +62,15 @@ class ChatMemory(
                 .mapNotNull { c ->
                     val text = c.rawText?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                     ChatContext.Line(c.occurredAt, ChatContext.parseLabel(c.contextLabel).sender, text)
-                }
+                } + runCatching {
+                    // The user's side of the same stretch, when the reply
+                    // service keeps it: "Sure, by 5" next to "Can you send the PO?".
+                    myReplies?.invoke(
+                        chat.group ?: chat.sender,
+                        capture.occurredAt - ChatContext.RECENT_WINDOW_MILLIS,
+                        capture.occurredAt,
+                    ).orEmpty()
+                }.getOrDefault(emptyList())
         } else {
             emptyList()
         }
