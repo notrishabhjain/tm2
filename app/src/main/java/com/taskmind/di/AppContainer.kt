@@ -177,6 +177,19 @@ class AppContainer(context: Context) {
         )
     }
 
+    /** The small model that screens chat messages before the full read (v1.34). */
+    val quickChecker: com.taskmind.ai.QuickChecker by lazy {
+        com.taskmind.ai.QuickChecker(llmClient) {
+            val s = settingsRepository.current()
+            val model = com.taskmind.core.QuickCheck.modelFor(s.quickCheckModel, s.llmBaseUrl)
+            if (!s.quickCheck || model == null || secretStore.llmApiKey.isBlank()) {
+                null
+            } else {
+                LlmClient.Config(baseUrl = s.llmBaseUrl, apiKey = secretStore.llmApiKey, model = model)
+            }
+        }
+    }
+
     val taskExtractor: TaskExtractor by lazy {
         CloudTaskExtractor(
             llm = llmClient,
@@ -247,6 +260,7 @@ class AppContainer(context: Context) {
             rules = { Rules.promptBlock(learningStore.rules.value) },
             emailAddresses = { emailStore.current().mine },
             firstReads = instantCapture,
+            quickChecker = quickChecker,
         )
     }
 

@@ -66,6 +66,8 @@ class SettingsRepository(private val context: Context) {
         val clipboardTolerance = doublePreferencesKey("clipboard_tolerance")
         val callTolerance = doublePreferencesKey("call_tolerance")
         val verifyPass = booleanPreferencesKey("verify_pass")
+        val quickCheck = booleanPreferencesKey("quick_check")
+        val quickCheckModel = stringPreferencesKey("quick_check_model")
 
         // The old daily caps (max_llm_calls_per_day, max_asr_minutes_per_day,
         // max_llm_calls_per_package, wifi_only_asr) are no longer read: v1.29
@@ -141,6 +143,8 @@ class SettingsRepository(private val context: Context) {
             clipboardTolerance = this[K.clipboardTolerance] ?: d.clipboardTolerance,
             callTolerance = this[K.callTolerance] ?: d.callTolerance,
             verifyPass = this[K.verifyPass] ?: d.verifyPass,
+            quickCheck = this[K.quickCheck] ?: d.quickCheck,
+            quickCheckModel = this[K.quickCheckModel] ?: d.quickCheckModel,
             instantCapture = this[K.instantCapture] ?: d.instantCapture,
             reviewExpiryDays = this[K.reviewExpiryDays] ?: d.reviewExpiryDays,
             retentionDays = this[K.retentionDays] ?: d.retentionDays,
@@ -258,6 +262,8 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setVerifyPass(value: Boolean) = edit { it[K.verifyPass] = value }
+    suspend fun setQuickCheck(value: Boolean) = edit { it[K.quickCheck] = value }
+    suspend fun setQuickCheckModel(value: String) = edit { it[K.quickCheckModel] = value.trim() }
 
     suspend fun setInstantCapture(value: Boolean) = edit { it[K.instantCapture] = value }
     suspend fun setReviewExpiryDays(days: Int) = edit { it[K.reviewExpiryDays] = days }

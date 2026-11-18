@@ -135,6 +135,13 @@ data class Settings(
     val clipboardTolerance: Double = 0.85,
     val callTolerance: Double = 0.75,
     val verifyPass: Boolean = true,
+    /**
+     * The quick check (v1.34): a small model screens each chat message and
+     * the full read is skipped only when it is confident there is nothing.
+     */
+    val quickCheck: Boolean = true,
+    /** Blank: a small Groq model when the main provider is Groq, else off. */
+    val quickCheckModel: String = "",
 
     /**
      * The phone's own first read of a message (see QuickRead): a clear ask or
