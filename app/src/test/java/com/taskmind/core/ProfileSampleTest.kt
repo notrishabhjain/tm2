@@ -154,3 +154,15 @@ class ReplyTrackerTest {
         assertEquals("entry", ReplyTracker.idTail("com.whatsapp:id/entry"))
     }
 }
+
+class TwinWebTest {
+    @Test
+    fun `snippets going online are cut, masked and capped`() {
+        val memory = (1..12).map { Twin.Memory(it.toLong(), "Priya", "call 9876543210 " + "x".repeat(400)) }
+        val s = TwinWeb.snippets(memory)
+        assertEquals(TwinWeb.MAX_SNIPPETS, s.size)
+        assertTrue(s.all { it.text.length <= TwinWeb.SNIPPET_CHARS })
+        assertFalse(s[0].text.contains("9876543210"))
+        assertEquals("asked_at=lt.1970-01-01T00:00:00Z", TwinWeb.expiredFilter(30L * 24 * 60 * 60 * 1000))
+    }
+}

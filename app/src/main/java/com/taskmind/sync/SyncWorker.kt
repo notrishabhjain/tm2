@@ -29,7 +29,10 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 store = SyncStore(applicationContext),
                 secrets = SyncSecrets(applicationContext),
             )
-            when (val outcome = engine.run()) {
+            val outcome = engine.run()
+            // Questions asked on the web page, answered on the way (v1.36).
+            runCatching { container.twinWebBridge.poll() }
+            when (outcome) {
                 is SyncEngine.Result.Pushed -> Result.success()
                 SyncEngine.Result.Skipped -> Result.success()
 

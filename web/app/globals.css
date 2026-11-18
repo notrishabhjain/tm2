@@ -338,3 +338,15 @@ button.link:hover { color: var(--text); text-decoration: underline; }
 @media (max-width: 520px) {
   .triage { gap: 6px; }
 }
+
+/* -- the Twin (v1.36) ----------------------------------------------------- */
+
+.twin { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.twin-ask { padding: 14px; overflow: visible; }
+.twin-ask textarea { width: 100%; resize: vertical; }
+.twin-item { padding: 14px 15px; }
+.twin-q { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; }
+.twin-a { margin: 10px 0 4px; white-space: pre-wrap; line-height: 1.5; }
+.twin-wait { margin: 10px 0 0; color: var(--text-dim); font-style: italic; }
+.twin-sources { margin-top: 10px; }
+.twin-sources summary { cursor: pointer; font-size: 13px; color: var(--text-dim); }

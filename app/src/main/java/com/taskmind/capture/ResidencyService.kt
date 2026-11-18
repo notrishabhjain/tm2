@@ -18,6 +18,8 @@ import com.taskmind.work.Scheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
@@ -45,6 +47,15 @@ class ResidencyService : Service() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer.get(this)
+        // The Twin on the web page (v1.36): a cheap look for new questions
+        // every minute while the phone is up. Nothing happens unless web sync
+        // is on and the twin_questions table exists.
+        scope.launch {
+            while (isActive) {
+                runCatching { container.twinWebBridge.poll() }
+                delay(TWIN_WEB_POLL_MILLIS)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -127,6 +138,7 @@ class ResidencyService : Service() {
     }
 
     companion object {
+        private const val TWIN_WEB_POLL_MILLIS = 60_000L
         fun start(context: Context) {
             runCatching {
                 ContextCompat.startForegroundService(context, Intent(context, ResidencyService::class.java))

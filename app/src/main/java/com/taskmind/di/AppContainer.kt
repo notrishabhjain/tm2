@@ -252,6 +252,9 @@ class AppContainer(context: Context) {
     val twinActions: com.taskmind.data.repo.TwinActions by lazy { com.taskmind.data.repo.TwinActions(this) }
     val twinBrain: com.taskmind.data.repo.TwinBrain by lazy { com.taskmind.data.repo.TwinBrain(this) }
 
+    /** Answers questions asked on the web page (v1.36). */
+    val twinWebBridge: com.taskmind.sync.TwinWebBridge by lazy { com.taskmind.sync.TwinWebBridge(this) }
+
     val extractionPipeline: ExtractionPipeline by lazy {
         ExtractionPipeline(
             rawCaptureDao = database.rawCaptureDao(),
