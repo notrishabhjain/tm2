@@ -3,7 +3,7 @@
 > This file is an export of the living manual, refreshed with each release and attached to every
 > GitHub release as `TaskMind-User-Manual.md`.
 
-Nov 16, 2026 · @RJ · For TaskMind 1.34.0
+Nov 16, 2026 · @RJ · For TaskMind 1.35.0
 
 ## Welcome
 
@@ -400,6 +400,22 @@ TaskMind can read every WhatsApp chat at once, both sides, from WhatsApp's own b
 A large backup takes a few minutes. When it finishes the card shows how many messages and chats were read. **Read again** after a later WhatsApp backup adds only what is new; the key is remembered. If the backup is not found, allow **All files access** on Health or use **Choose the file**.
 
 The memory is kept until you erase it: both erase buttons under Keeping and deleting empty it. Messages captured live also move into it when their keeping period ends, so the Twin no longer forgets after 30 days.
+
+### Your WhatsApp replies
+
+Notifications only show what other people send you, so TaskMind used to see one side of every chat. Turn on **Your WhatsApp replies** and it also keeps what you send.
+
+1. Open **Settings, You and your chats, Your WhatsApp replies** and tap **Open accessibility settings**.
+2. Open **Installed apps** (or **Downloaded apps**), pick **TaskMind: keep my WhatsApp replies** and switch it on.
+3. If Android says the setting is restricted (it does for apps installed outside the Play Store), open **App info** for TaskMind, tap the three dots at the top right, choose **Allow restricted settings**, and switch it on again.
+
+The card then shows **On** and how many replies it has kept.
+
+**What it does and does not do.** It reads WhatsApp and WhatsApp Business only, and keeps a message only when you press send, together with the chat's name from the top of the screen. A message you type and delete is never kept. What it keeps goes into the memory on the phone and nowhere else; it makes no AI call of its own.
+
+**What you get.** When TaskMind reads a message, your replies from the same stretch of the chat are put next to theirs, so "Can you send the PO?" followed by your "Sure, by 5" becomes a task due at 5. Your replies also show in Search my chats, on person pages, in the "last thing said" of call and meeting briefings, and in the examples that make drafts sound like you. Voice notes, photos and stickers are not kept.
+
+To stop, switch it off in the same Android page. Erasing the memory removes the replies it kept.
 
 ### Search by meaning
 
@@ -842,6 +858,7 @@ TaskMind keeps your data on the phone and sends only what a job needs, only to s
 | Your AI provider (OpenAI's gpt-4o-mini unless you changed it) | The text of messages that pass the free filter, email text (cleaned, at most 3,000 characters), brain dumps, shared text, the words read from screenshots, plus About you, your names, rules, areas and the titles of related open tasks | Each time something is read |
 | Your AI provider, only when you tap **Send and draft** in About you | A sample of messages you wrote (about 9,000 characters, numbers, emails and links masked), shown to you first | Once per draft |
 | Your AI provider, when you draft a nudge or reply | The task, the person's quoted words and, if your history is imported, up to ten of your own recent messages to them (masked) | Each draft |
+| Your AI provider, if Your WhatsApp replies is on | Your own replies from the same stretch of a chat, as part of the context when a message from that chat is read | Each time something is read |
 | Your backup AI provider, if you set one (OpenRouter by default) | The same text, but only for a call the main provider could not answer | When the main provider fails |
 | The same provider | Your question with your tasks, today's meetings and, if Search my messages is on, a few short snippets of your own messages | Each Twin question, plan or nudge draft |
 | Your transcription provider (Sarvam unless you changed it) | Call recordings | After each call worth reading |

@@ -146,6 +146,7 @@ fun SettingsScreen(
                     AboutMeSection(settings, ui, viewModel)
                     WhatsAppHistorySection()
                     SearchByMeaningSection()
+                    ReplyCaptureSection()
                     RulesSection(viewModel)
                     GroupSection(settings, viewModel)
                     HowManySection(settings, viewModel)

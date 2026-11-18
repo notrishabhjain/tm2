@@ -210,6 +210,18 @@ class MemoryStore(context: Context) {
         }
     }
 
+    /** The user's sent replies in [chat] between [from] and [to], oldest first (v1.35). */
+    fun repliesBetween(chat: String, from: Long, to: Long, limit: Int = 10): List<Message> = messages(
+        "SELECT source, ext, chat, is_group, sender, from_me, at, body FROM messages " +
+            "WHERE source = ? AND chat = ? COLLATE NOCASE AND at >= ? AND at < ? ORDER BY at DESC LIMIT " + limit.coerceIn(1, 100),
+        arrayOf(SOURCE_REPLY, chat, from.toString(), to.toString()),
+    ).reversed()
+
+    /** How many messages came from [source]. */
+    fun countFrom(source: String): Int = helper.readableDatabase
+        .rawQuery("SELECT COUNT(*) FROM messages WHERE source = ?", arrayOf(source))
+        .use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+
     /** The chats with the most messages, for the profile sample. */
     fun busiestChats(since: Long, limit: Int): List<String> = helper.readableDatabase.rawQuery(
         "SELECT chat FROM messages WHERE at >= ? AND from_me = 1 GROUP BY chat ORDER BY COUNT(*) DESC LIMIT " + limit.coerceIn(1, 200),
@@ -360,6 +372,8 @@ class MemoryStore(context: Context) {
     companion object {
         const val SOURCE_WHATSAPP = "whatsapp"
         const val SOURCE_CAPTURE = "capture"
+        /** A message the user sent in WhatsApp, kept by the reply service (v1.35). */
+        const val SOURCE_REPLY = "reply"
         private const val FILE = "taskmind_memory.db"
         private const val MAX_TERMS = 12
         private const val KEY_CHUNKED_THROUGH = "chunked_through"

@@ -117,3 +117,40 @@ class QuickCheckTest {
         assertTrue(p.contains("- task 5") && !p.contains("- task 6"))
     }
 }
+
+class ReplyTrackerTest {
+    @Test
+    fun `a reply is kept only when sent, once, in the open chat`() {
+        var t = 1_000L
+        val r = ReplyTracker { t }
+        assertEquals(null, r.onSend()) // no chat open
+        r.onChat("Priya")
+        r.onTyped("will send the PO by 5")
+        val sent = r.onSend()
+        assertEquals(ReplyTracker.Reply("Priya", "will send the PO by 5", 1_000L), sent)
+        // The box is empty after sending; a second report of the press keeps nothing.
+        assertEquals(null, r.onSend())
+        r.onTyped("will send the PO by 5")
+        t += 500
+        assertEquals(null, r.onSend()) // same text within 3s: the same press
+        // A draft left behind when the chat changes is not carried over.
+        r.onTyped("half typed")
+        r.onChat("Rahul")
+        assertEquals(null, r.onSend())
+        r.onTyped("   ")
+        assertEquals(null, r.onSend())
+        // WhatsApp empties the box before the press is reported.
+        r.onTyped("haan bhai, kal")
+        r.onTyped("")
+        t += 300
+        assertEquals("haan bhai, kal", r.onSend()?.text)
+        // Text deleted long before a press is not a reply.
+        r.onTyped("never mind")
+        r.onTyped("")
+        t += 5_000
+        assertEquals(null, r.onSend())
+        assertTrue(ReplyTracker.looksLikeSend("Send"))
+        assertFalse(ReplyTracker.looksLikeSend("Attach"))
+        assertEquals("entry", ReplyTracker.idTail("com.whatsapp:id/entry"))
+    }
+}
