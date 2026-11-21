@@ -166,3 +166,35 @@ class TwinWebTest {
         assertEquals("asked_at=lt.1970-01-01T00:00:00Z", TwinWeb.expiredFilter(30L * 24 * 60 * 60 * 1000))
     }
 }
+
+class QuickCheckSafetyTest {
+    @Test
+    fun `messages that might matter always get the full read`() {
+        listOf(
+            "bhai woh kal bhej dena",
+            "can you send the PO",
+            "meeting at 5",
+            "Invoice 4471 pending",
+            "what time?",
+            "please review the deck",
+            "कल भेज देना",
+            "let me know once it's there",
+        ).forEach { assertTrue(it, QuickCheck.mustRead(it)) }
+        listOf("haha", "ok", "good night 🙏", "😂😂", "nice pic", "thanks bro").forEach { assertFalse(it, QuickCheck.mustRead(it)) }
+    }
+
+    @Test
+    fun `two misses in the recent audits turn the check off`() {
+        var h = ""
+        repeat(10) { h = QuickCheck.record(h, missed = false) }
+        assertFalse(QuickCheck.shouldStop(h))
+        h = QuickCheck.record(h, missed = true)
+        assertFalse(QuickCheck.shouldStop(h))
+        h = QuickCheck.record(h, missed = true)
+        assertTrue(QuickCheck.shouldStop(h))
+        // Old misses age out of the window.
+        repeat(QuickCheck.AUDIT_WINDOW) { h = QuickCheck.record(h, missed = false) }
+        assertFalse(QuickCheck.shouldStop(h))
+        assertEquals(QuickCheck.AUDIT_WINDOW, h.length)
+    }
+}

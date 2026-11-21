@@ -104,6 +104,7 @@ class WhatsAppBackupImport(private val container: AppContainer) {
                 )
             }
             val size = file?.length() ?: 0L
+            val backupTime = file?.lastModified() ?: 0L
             val source: InputStream = if (file != null) file.inputStream() else {
                 context.contentResolver.openInputStream(picked!!) ?: return@withContext fail("That file could not be opened.")
             }
@@ -125,6 +126,7 @@ class WhatsAppBackupImport(private val container: AppContainer) {
 
             val result = readInto(scratch)
             _state.value = result
+            if (backupTime > 0) prefs.edit().putLong(K_LAST_BACKUP, backupTime).putLong(K_LAST_RUN, System.currentTimeMillis()).apply()
             // New history to search by meaning, if the model is there.
             container.semanticIndex.forget()
             container.applicationScope.launch { container.semanticIndex.run() }
@@ -155,6 +157,27 @@ class WhatsAppBackupImport(private val container: AppContainer) {
             runCatching { scratchDir.deleteRecursively() }
             running.unlock()
         }
+    }
+
+    private val prefs get() = context.getSharedPreferences("wa_backup_refresh", Context.MODE_PRIVATE)
+
+    /** When the backup last read was written by WhatsApp, and when it was read; 0 when never. */
+    fun lastBackupRead(): Long = prefs.getLong(K_LAST_BACKUP, 0L)
+    fun lastRefresh(): Long = prefs.getLong(K_LAST_RUN, 0L)
+
+    /**
+     * v1.36.1: reads WhatsApp's backup again on its own, once WhatsApp has
+     * written a newer one (it backs up every night by default). Needs the key
+     * from an earlier import and All files access. Only new messages are
+     * added; nothing here makes a task or an AI call. Returns true when it ran.
+     */
+    suspend fun refreshIfNewer(): Boolean {
+        val key = container.secretStore.waBackupKey
+        if (key.isBlank()) return false
+        val file = runCatching { findBackup() }.getOrNull() ?: return false
+        if (file.lastModified() <= lastBackupRead()) return false
+        run(key)
+        return _state.value is State.Done
     }
 
     private suspend fun fail(message: String) {
@@ -380,6 +403,8 @@ class WhatsAppBackupImport(private val container: AppContainer) {
     }
 
     private companion object {
+        const val K_LAST_BACKUP = "last_backup_mtime"
+        const val K_LAST_RUN = "last_run"
         const val PAGE = 2000
         const val MAX_BODY = 8000
         const val YOU = "You"

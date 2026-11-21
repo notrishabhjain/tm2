@@ -15,6 +15,7 @@ import com.taskmind.data.settings.Settings
 import com.taskmind.di.AppContainer
 import com.taskmind.work.Scheduler
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -65,6 +66,34 @@ class DiagnosticReport(private val context: Context, private val container: AppC
         )
 
         val settings = runCatching { container.settingsRepository.current() }.getOrNull()
+
+        // v1.36.1: one screenful that says where the last day's messages went,
+        // so "no tasks are being made" can be traced to a stage.
+        out.section("Last 24 hours")
+        runCatching {
+            val since = now - 24L * 60 * 60 * 1000
+            val captures = container.database.rawCaptureDao().recent(3000).filter { it.capturedAt >= since }
+            out.kv("Captured", "${captures.size} (" + captures.groupBy { it.sourceType }.entries.joinToString { "${it.key}: ${it.value.size}" } + ")")
+            out.kv("By state now", captures.groupBy { it.state }.entries.sortedByDescending { it.value.size }.joinToString { "${it.key}: ${it.value.size}" })
+            val log = container.database.activityLogDao().recent(3000).filter { it.timestamp >= since }
+            fun count(prefix: String) = log.count { it.message.startsWith(prefix) }
+            out.kv("Quick check: full read skipped", count("quick check: no task").toString())
+            out.kv("Quick check audits that caught a miss", count("quick check audit: it would have skipped").toString())
+            out.kv("Full reads: task found / no task", "${log.count { it.message == "extraction: isTask=true" }} / ${log.count { it.message == "extraction: isTask=false" }}")
+            out.kv("Rate-limit pauses", count("provider rate limited").toString())
+            out.kv("Backup answers not usable", count("backup provider's answer was not usable").toString())
+            val calls = container.database.inferenceCallDao().recent(1000).filter { it.startedAt >= since }
+            out.kv(
+                "Model calls",
+                "${calls.size} - " + calls.groupBy { "${it.kind} ${it.model}" }.entries.sortedByDescending { it.value.size }
+                    .joinToString { e -> "${e.key}: ${e.value.size} (${e.value.count { !it.ok }} failed)" },
+            )
+            val tasks = container.taskRepository.observeTasks().first().filter { it.createdAt >= since }
+            out.kv("Tasks created", "${tasks.size} (" + tasks.groupBy { it.sourceType }.entries.joinToString { "${it.key}: ${it.value.size}" } + ")")
+            out.kv("Made by the backup provider", tasks.count { it.inferenceOrigin?.endsWith("(backup)") == true }.toString())
+            val resting = container.llmClient.restingUntilAny()
+            out.kv("Main provider", if (resting > now) "resting after a rate limit until ${stamp(resting)}" else "available")
+        }.onFailure { out.appendLine("could not be summarised: $it") }
 
         out.section("Permissions")
         for (item in PermissionState.all(context)) {

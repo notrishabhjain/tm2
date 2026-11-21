@@ -182,6 +182,9 @@ class CloudTaskExtractor(
                 sourceLabel = input.sourceLabel ?: input.senderKey,
             ),
         )
+        // Tasks made by the backup say so in their origin (v1.36.1), so a drop
+        // in quality can be traced to the provider that answered.
+        if (result is AiResult.Ok && result.value.fromBackup) cachedOrigin = "cloud:${config.backup?.model ?: "backup"} (backup)"
         return when (result) {
             is AiResult.Ok -> parseMessage(result.value)
             is AiResult.HttpError -> result
@@ -194,6 +197,13 @@ class CloudTaskExtractor(
         val obj = LlmJson.parseObject(completion.content)
             ?: return AiResult.BadResponse("model output was not JSON: ${completion.content.take(200)}")
 
+        // v1.36.1: a reply without the field is not a "no". A weaker model (a
+        // backup, or a changed prompt) answering in its own shape used to be
+        // read as "no task" and the message silently dropped; it is now a bad
+        // reply, retried, and visible in the log.
+        if (!obj.containsKey("isTask")) {
+            return AiResult.BadResponse("the reply had no isTask field: ${completion.content.take(200)}")
+        }
         val isTask = obj.bool("isTask") ?: false
         val reasoning = obj.str("reasoning")
         val done = obj.ref("doneHint")?.let { DoneHint(it, obj.str("evidence")) }

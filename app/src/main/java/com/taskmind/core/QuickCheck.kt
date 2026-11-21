@@ -20,8 +20,57 @@ object QuickCheck {
 
     data class Decision(val verdict: Verdict, val confidence: Double, val tokens: Int?)
 
-    /** Below this, even a "none" goes on to the full read. */
-    const val SKIP_AT = 0.85
+    /** Below this, even a "none" goes on to the full read. Raised from 0.85 in v1.36.1. */
+    const val SKIP_AT = 0.9
+
+    /**
+     * v1.36.1: messages the small model is never asked about, because the
+     * phone can already see they might matter. A question, a number (a time,
+     * a date, an amount, an invoice), or a word that usually carries an ask or
+     * a plan - in English or Hinglish. These always get the full read; the
+     * check is left only the plain chatter it is good at.
+     */
+    fun mustRead(text: String): Boolean {
+        val t = text.lowercase()
+        if ('?' in t || t.any { it.isDigit() }) return true
+        val words = t.split(Regex("[^\\p{L}\\p{M}]+")).filter { it.isNotEmpty() }.toSet()
+        if (words.any { it in CUES }) return true
+        return PHRASES.any { it in t }
+    }
+
+    private val CUES = setOf(
+        // asks and promises
+        "please", "pls", "plz", "kindly", "can", "could", "will", "would", "need", "needs", "must", "should",
+        "send", "share", "call", "pay", "paid", "transfer", "book", "confirm", "check", "review", "update",
+        "remind", "reminder", "follow", "submit", "sign", "approve", "fix", "arrange", "bring", "buy", "order",
+        "deliver", "delivery", "meet", "meeting", "deadline", "due", "urgent", "asap", "eod", "tomorrow", "today",
+        "tonight", "morning", "evening", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+        "invoice", "payment", "quote", "quotation", "po", "bill", "rent", "fees", "appointment", "done", "sent",
+        "cancel", "cancelled", "postpone", "reschedule", "moved",
+        // Hinglish and Hindi
+        "kal", "aaj", "parso", "abhi", "jaldi", "bhej", "bhejo", "bhejna", "bhejdo", "karo", "kardo", "karna",
+        "kar", "dena", "lena", "dekh", "dekho", "batao", "bata", "bolo", "milte", "milna", "chahiye", "zaroor",
+        "yaad", "bhejiye", "kijiye", "dijiye", "bhugtan", "paisa", "paise",
+        "कल", "आज", "भेज", "भेजो", "करो", "कर", "देना", "चाहिए", "जल्दी", "बताओ", "याद",
+    )
+
+    private val PHRASES = listOf("let me know", "get back", "by end of", "kar dena", "bhej dena", "dekh lena", "yaad dila")
+
+    /** One in this many confident "none"s is read in full anyway, to check the check. */
+    const val AUDIT_EVERY = 5
+
+    /** How many audits are remembered, and how many misses among them turn the check off. */
+    const val AUDIT_WINDOW = 20
+    const val AUDIT_MISSES_TO_STOP = 2
+
+    /**
+     * [history] is the recent audits, oldest first: '1' where the full read
+     * found something the check would have skipped, '0' where it agreed.
+     */
+    fun shouldStop(history: String): Boolean =
+        history.takeLast(AUDIT_WINDOW).count { it == '1' } >= AUDIT_MISSES_TO_STOP
+
+    fun record(history: String, missed: Boolean): String = (history + if (missed) '1' else '0').takeLast(AUDIT_WINDOW)
 
     const val DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
     private const val MAX_TEXT = 1500
