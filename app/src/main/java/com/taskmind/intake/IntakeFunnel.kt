@@ -118,7 +118,14 @@ class IntakeFunnel(
         if (candidate.sourceType != SourceType.MANUAL) {
             // A missing or unparseable confidence is uncertain, never certain.
             val effective = confidence
-            when {
+            // A priority chat (v1.37): whatever the model called a task is
+            // created if it is anywhere near the bar, and kept for review
+            // otherwise - never left waiting as a quiet maybe or dropped.
+            if (candidate.priorityChat && !unverifiedEvidence) {
+                if (effective != null && effective < config.reviewThreshold) {
+                    return toReview(candidate, title, notes, resolved.dueAt, effective, now, false)
+                }
+            } else when {
                 effective == null -> return toReview(candidate, title, notes, resolved.dueAt, null, now, unverifiedEvidence)
                 effective < config.reviewThreshold ->
                     return IntakeResult.Discarded(
@@ -179,7 +186,16 @@ class IntakeFunnel(
         if (!candidate.provisional) markCapture(candidate)
 
         // ---- 7. Notify ---------------------------------------------------
-        notifier.onTaskCreated(task.id, task.title)
+        notifier.onTaskCreated(
+            task.id,
+            task.title,
+            TaskAlert(
+                from = candidate.sourceLabel?.substringBefore(" - ")?.takeIf { it.isNotBlank() && candidate.sourceType != SourceType.MANUAL },
+                dueAt = resolved.dueAt,
+                evidence = candidate.evidence,
+                priority = candidate.priorityChat,
+            ),
+        )
 
         return IntakeResult.Created(task.id, task.title)
     }

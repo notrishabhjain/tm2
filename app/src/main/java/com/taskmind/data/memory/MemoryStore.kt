@@ -210,12 +210,25 @@ class MemoryStore(context: Context) {
         }
     }
 
-    /** The user's sent replies in [chat] between [from] and [to], oldest first (v1.35). */
+    /**
+     * The user's own messages in [chat] between [from] and [to], oldest first:
+     * from WhatsApp's backup, or kept by the reply service of v1.35.
+     */
     fun repliesBetween(chat: String, from: Long, to: Long, limit: Int = 10): List<Message> = messages(
         "SELECT source, ext, chat, is_group, sender, from_me, at, body FROM messages " +
-            "WHERE source = ? AND chat = ? COLLATE NOCASE AND at >= ? AND at < ? ORDER BY at DESC LIMIT " + limit.coerceIn(1, 100),
-        arrayOf(SOURCE_REPLY, chat, from.toString(), to.toString()),
+            "WHERE from_me = 1 AND chat = ? COLLATE NOCASE AND at >= ? AND at < ? ORDER BY at DESC LIMIT " + limit.coerceIn(1, 100),
+        arrayOf(chat, from.toString(), to.toString()),
     ).reversed()
+
+    /**
+     * Messages other people wrote in [chat] since [since], oldest first, from
+     * WhatsApp's backup only (v1.37): what the priority catch-up reads.
+     */
+    fun othersSince(chat: String, since: Long, limit: Int = 200): List<Message> = messages(
+        "SELECT source, ext, chat, is_group, sender, from_me, at, body FROM messages " +
+            "WHERE source = ? AND from_me = 0 AND chat = ? COLLATE NOCASE AND at > ? ORDER BY at ASC LIMIT " + limit.coerceIn(1, 1000),
+        arrayOf(SOURCE_WHATSAPP, chat, since.toString()),
+    )
 
     /** How many messages came from [source]. */
     fun countFrom(source: String): Int = helper.readableDatabase

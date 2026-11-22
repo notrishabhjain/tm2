@@ -63,23 +63,9 @@ class ExtractionPipeline(
     private val emailAddresses: suspend () -> Set<String> = { emptySet() },
     /** The phone's first reads of messages, which the model's read confirms or withdraws. */
     private val firstReads: FirstReads? = null,
-    /** Screens chat messages before the full read (v1.34); null always reads in full. */
-    private val quickChecker: com.taskmind.ai.QuickChecker? = null,
-    /** Keeps the quick check honest (v1.36.1); null runs without the audit. */
-    private val quickAudit: QuickAudit? = null,
     /** When the main provider may next be asked after a rate limit; 0 when it is not resting. */
     private val mainRestingUntil: () -> Long = { 0L },
 ) {
-
-    /** Where the quick check's audits are remembered, and what happens when it keeps missing. */
-    interface QuickAudit {
-        /** Counts confident "none"s; true for the ones to read in full anyway. */
-        fun sampleThis(): Boolean
-        fun history(): String
-        fun save(history: String)
-        /** The audits caught the check missing tasks: switch it off and tell the user. */
-        suspend fun stop(misses: Int)
-    }
 
     sealed interface Outcome {
         data class Done(val created: Int, val review: Int, val dropped: Int, val updated: Int = 0) : Outcome
@@ -239,6 +225,7 @@ class ExtractionPipeline(
         burstIds: List<String>,
     ): Outcome {
         val context = parseContext(capture.contextLabel)
+        val priority = com.taskmind.core.PriorityChats.matches(settingsRepository.current().priorityChats, context.sender, context.group)
         val input = MessageInput(
             appLabel = appLabelFor(capture.sourceApp),
             senderKey = context.sender,
@@ -250,51 +237,9 @@ class ExtractionPipeline(
             userNames = userNames,
             aboutMe = aboutMe,
             context = ChatContext.render(block),
-            rules = rules(),
+            rules = if (priority) com.taskmind.core.PriorityChats.withRule(rules()) else rules(),
             areas = settingsRepository.current().areas,
         )
-
-        // The quick check. Skipped when the phone's own first read already
-        // saw a task here: a disagreement goes to the full read to settle.
-        // Also skipped (v1.36.1) for anything the phone can see might matter:
-        // a question, a number, an ask or a plan - see QuickCheck.mustRead.
-        val pendingReads = firstReads?.pending(burstIds).orEmpty()
-        val checker = quickChecker
-        var audited = false
-        if (checker != null && pendingReads.isEmpty() && !com.taskmind.core.QuickCheck.mustRead(text)) {
-            val decision = runCatching {
-                checker.check(
-                    sender = context.sender,
-                    group = context.group,
-                    userNames = userNames,
-                    openTasks = block.tasks.map { it.title },
-                    text = text,
-                    rawCaptureId = capture.id,
-                    sourceLabel = capture.sourceLabel,
-                )
-            }.getOrNull()
-            if (decision != null) {
-                logger.write(
-                    Stage.EXTRACT,
-                    LogLevel.DEBUG,
-                    "quick check: ${decision.verdict.name.lowercase()} (${"%.2f".format(decision.confidence)})",
-                    "tokens=${decision.tokens ?: "?"} sender=${context.sender}",
-                )
-            }
-            if (com.taskmind.core.QuickCheck.skip(decision) && quickAudit?.sampleThis() == true) {
-                // Read this one in full anyway, and see whether the check was right.
-                audited = true
-            } else if (com.taskmind.core.QuickCheck.skip(decision)) {
-                rawCaptureDao.setState(capture.id, CaptureState.REJECTED)
-                logger.write(
-                    Stage.EXTRACT,
-                    LogLevel.INFO,
-                    "quick check: no task - full read skipped",
-                    "confidence=${"%.2f".format(decision!!.confidence)} tokens=${decision.tokens ?: "?"}",
-                )
-                return Outcome.Done(0, 0, 1)
-            }
-        }
 
         logger.write(
             Stage.EXTRACT,
@@ -317,8 +262,6 @@ class ExtractionPipeline(
             "tokens=${extraction.tokens ?: "?"} reasoning=${extraction.reasoning?.take(300)}",
         )
 
-        if (audited) auditQuickCheck(missed = extraction.isTask || extraction.done != null, text)
-
         val marked = extraction.done?.let { markDone(capture, it, text, block, context.sender) } ?: 0
         val reads = firstReads?.pending(burstIds).orEmpty()
 
@@ -337,24 +280,8 @@ class ExtractionPipeline(
         }
         val candidates = verifyAndCorrect(fresh, text, verifyPass, now, todayKey, capture.sourceApp)
         val (remaining, confirmed) = reconcile(reads, candidates, text, capture, block)
-        val outcome = submitAll(capture, remaining, text, context.label(capture.sourceLabel), block)
+        val outcome = submitAll(capture, remaining, text, context.label(capture.sourceLabel), block, priority)
         return outcome.withUpdated(updated + marked + confirmed, capture)
-    }
-
-    private suspend fun auditQuickCheck(missed: Boolean, text: String) {
-        val audit = quickAudit ?: return
-        val history = com.taskmind.core.QuickCheck.record(audit.history(), missed)
-        audit.save(history)
-        logger.write(
-            Stage.EXTRACT,
-            if (missed) LogLevel.WARN else LogLevel.INFO,
-            if (missed) "quick check audit: it would have skipped a task" else "quick check audit: agreed",
-            if (missed) text.take(200) else null,
-        )
-        if (com.taskmind.core.QuickCheck.shouldStop(history)) {
-            audit.stop(history.count { it == '1' })
-            audit.save("")
-        }
     }
 
     // ---------------------------------------------------------- first reads
@@ -595,6 +522,8 @@ class ExtractionPipeline(
         sourceText: String,
         label: String,
         block: ChatContext.Block = ChatContext.Block.EMPTY,
+        /** From a priority person or group (v1.37): straight to the list, High or above. */
+        priority: Boolean = false,
     ): Outcome {
         val areas = settingsRepository.current().areas
         var created = 0
@@ -607,7 +536,7 @@ class ExtractionPipeline(
             val candidate = TaskCandidate(
                 title = task.title,
                 evidence = task.evidence,
-                priority = task.priority,
+                priority = if (priority) com.taskmind.core.PriorityChats.bump(task.priority) else task.priority,
                 dueAtRaw = task.dueDateRaw,
                 notes = task.notes,
                 confidence = task.confidence,
@@ -623,8 +552,10 @@ class ExtractionPipeline(
                 projectId = (matter as? ChatContext.MatterChoice.Existing)?.id,
                 area = Areas.normalize(task.areaRef, areas),
                 // Inbox-first: a captured task waits for the user's yes before
-                // it reaches their list.
-                inbox = true,
+                // it reaches their list - except from a priority chat (v1.37),
+                // where waiting is the thing to avoid.
+                inbox = !priority,
+                priorityChat = priority,
             )
             when (val result = funnel.submit(candidate)) {
                 is IntakeResult.Created -> {

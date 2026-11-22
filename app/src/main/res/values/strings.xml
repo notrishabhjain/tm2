@@ -2,8 +2,6 @@
 <resources>
     <string name="app_name">TaskMind</string>
     <string name="notification_listener_label">TaskMind message capture</string>
-    <string name="reply_capture_label">TaskMind: keep my WhatsApp replies</string>
-    <string name="reply_capture_description">Keeps the messages you send in WhatsApp and WhatsApp Business, so TaskMind knows both sides of a chat. It reads only those two apps, records a message only when you press send, and keeps it on this phone. Nothing is sent anywhere.</string>
     <string name="widget_title">Pending</string>
     <string name="widget_add">+</string>
     <string name="widget_add_description">New task</string>

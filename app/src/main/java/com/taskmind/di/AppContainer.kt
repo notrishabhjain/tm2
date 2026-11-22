@@ -177,19 +177,6 @@ class AppContainer(context: Context) {
         )
     }
 
-    /** The small model that screens chat messages before the full read (v1.34). */
-    val quickChecker: com.taskmind.ai.QuickChecker by lazy {
-        com.taskmind.ai.QuickChecker(llmClient) {
-            val s = settingsRepository.current()
-            val model = com.taskmind.core.QuickCheck.modelFor(s.quickCheckModel, s.llmBaseUrl)
-            if (!s.quickCheck || model == null || secretStore.llmApiKey.isBlank()) {
-                null
-            } else {
-                LlmClient.Config(baseUrl = s.llmBaseUrl, apiKey = secretStore.llmApiKey, model = model)
-            }
-        }
-    }
-
     val taskExtractor: TaskExtractor by lazy {
         CloudTaskExtractor(
             llm = llmClient,
@@ -270,8 +257,6 @@ class AppContainer(context: Context) {
             rules = { Rules.promptBlock(learningStore.rules.value) },
             emailAddresses = { emailStore.current().mine },
             firstReads = instantCapture,
-            quickChecker = quickChecker,
-            quickAudit = com.taskmind.capture.QuickAuditStore(appContext, this),
             mainRestingUntil = { llmClient.restingUntilAny() },
         )
     }
@@ -319,6 +304,9 @@ class AppContainer(context: Context) {
 
     /** Drafts About you from the user's own chats, after they see what is sent (v1.32). */
     val profileDrafter: com.taskmind.data.repo.ProfileDrafter by lazy { com.taskmind.data.repo.ProfileDrafter(this) }
+
+    /** Reads priority chats' messages from the backup that no notification showed (v1.37). */
+    val priorityCatchUp: com.taskmind.capture.PriorityCatchUp by lazy { com.taskmind.capture.PriorityCatchUp(this) }
 
     /** Reads WhatsApp's own backup into [memoryStore]. */
     val whatsAppBackupImport: com.taskmind.capture.WhatsAppBackupImport by lazy { com.taskmind.capture.WhatsAppBackupImport(this) }

@@ -144,9 +144,9 @@ fun SettingsScreen(
 
                 SettingsPage.YOU -> {
                     AboutMeSection(settings, ui, viewModel)
+                    PrioritySection(settings, viewModel)
                     WhatsAppHistorySection()
                     SearchByMeaningSection()
-                    ReplyCaptureSection()
                     RulesSection(viewModel)
                     GroupSection(settings, viewModel)
                     HowManySection(settings, viewModel)
@@ -857,35 +857,6 @@ private fun QualitySection(settings: Settings, viewModel: SettingsViewModel) {
             valueRange = 0.5f..1f,
             description = "Lower, because speech recognition itself is noisy.",
         )
-        LabeledSwitch(
-            label = "Quick check first",
-            description = "A small, cheap model screens each chat message. The full read is skipped only when it is " +
-                "confident there is no task, so most chatter costs a few hundred tokens instead of thousands. " +
-                "Unsure or failed checks always get the full read.",
-            checked = settings.quickCheck,
-            onCheckedChange = viewModel::setQuickCheck,
-        )
-        if (settings.quickCheck) {
-            var gateModel by remember(settings.quickCheckModel) { mutableStateOf(settings.quickCheckModel) }
-            val auto = com.taskmind.core.QuickCheck.modelFor("", settings.llmBaseUrl)
-            OutlinedTextField(
-                value = gateModel,
-                onValueChange = { gateModel = it },
-                label = { Text("Quick check model") },
-                placeholder = { Text(auto ?: "a small model on your main provider") },
-                supportingText = {
-                    Text(
-                        if (auto != null) "Blank uses $auto, on the same Groq key. It has its own daily allowance."
-                        else "Your main provider is not Groq, so name a small model it offers, or the check stays off.",
-                    )
-                },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (gateModel.trim() != settings.quickCheckModel) {
-                TextButton(onClick = { viewModel.setQuickCheckModel(gateModel) }) { Text("Save model") }
-            }
-        }
         LabeledSwitch(
             label = "Second-opinion pass",
             description = "A second model call reviews each candidate before it becomes a task. Costs one extra call.",

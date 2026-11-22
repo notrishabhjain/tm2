@@ -22,12 +22,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,7 +54,11 @@ fun PersonScreen(
     onAskTwin: (String) -> Unit,
 ) {
     val ui by viewModel.person.collectAsStateWithLifecycle()
+    val priorities by viewModel.priorityChats.collectAsStateWithLifecycle()
     LaunchedEffect(name) { viewModel.loadPerson(name) }
+    // The chat's own spelling when the history has it: that is what notifications carry.
+    val priorityName = ui.chat?.chat ?: name
+    val isPriority = priorities.any { it.equals(priorityName, ignoreCase = true) || it.equals(name, ignoreCase = true) }
 
     Scaffold(
         topBar = {
@@ -65,6 +71,28 @@ fun PersonScreen(
         },
     ) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize()) {
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Priority", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Their tasks go straight onto your list at High priority and alert you at once.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = isPriority,
+                        onCheckedChange = { on ->
+                            viewModel.setPriority(priorityName, on)
+                            if (!on && !priorityName.equals(name, ignoreCase = true)) viewModel.setPriority(name, false)
+                        },
+                    )
+                }
+            }
             item {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),

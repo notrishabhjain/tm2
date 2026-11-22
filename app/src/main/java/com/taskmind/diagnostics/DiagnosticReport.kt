@@ -77,10 +77,10 @@ class DiagnosticReport(private val context: Context, private val container: AppC
             out.kv("By state now", captures.groupBy { it.state }.entries.sortedByDescending { it.value.size }.joinToString { "${it.key}: ${it.value.size}" })
             val log = container.database.activityLogDao().recent(3000).filter { it.timestamp >= since }
             fun count(prefix: String) = log.count { it.message.startsWith(prefix) }
-            out.kv("Quick check: full read skipped", count("quick check: no task").toString())
-            out.kv("Quick check audits that caught a miss", count("quick check audit: it would have skipped").toString())
             out.kv("Full reads: task found / no task", "${log.count { it.message == "extraction: isTask=true" }} / ${log.count { it.message == "extraction: isTask=false" }}")
             out.kv("Rate-limit pauses", count("provider rate limited").toString())
+            out.kv("Priority chats", settings?.priorityChats?.joinToString().orEmpty().ifBlank { "none" })
+            out.kv("Priority catch-up runs that found missed messages", count("priority catch-up").toString())
             out.kv("Backup answers not usable", count("backup provider's answer was not usable").toString())
             val calls = container.database.inferenceCallDao().recent(1000).filter { it.startedAt >= since }
             out.kv(

@@ -50,6 +50,12 @@ data class TaskCandidate(
      * the model.
      */
     val provisional: Boolean = false,
+    /**
+     * From a person or group the user marked as a priority (v1.37). Created
+     * whenever it clears the review bar - never left as a silent maybe - and
+     * alerted at once.
+     */
+    val priorityChat: Boolean = false,
 )
 
 /** What the funnel decided to persist. Mapped to the Room entity by the sink. */
@@ -182,9 +188,20 @@ interface FunnelLog {
     suspend fun log(stage: String, level: LogLevel, message: String, detail: String? = null)
 }
 
+/** What a task-created alert says beyond the title (v1.37). */
+data class TaskAlert(
+    /** Who it came from, as the chat shows them: "Priya", "Rahul in Vendors". */
+    val from: String? = null,
+    val dueAt: Long? = null,
+    /** Their words, for the expanded notification. */
+    val evidence: String? = null,
+    /** From a priority person or group: alerts at once, heads-up. */
+    val priority: Boolean = false,
+)
+
 interface TaskCreatedNotifier {
     /** Spec 17.3: the only automatic notification with sound. */
-    suspend fun onTaskCreated(taskId: String, title: String)
+    suspend fun onTaskCreated(taskId: String, title: String, alert: TaskAlert = TaskAlert())
 
     /**
      * Something landed in the review inbox.

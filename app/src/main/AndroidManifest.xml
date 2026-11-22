@@ -107,21 +107,6 @@
             </intent-filter>
         </service>
 
-        <!-- v1.35: the replies the user sends in WhatsApp, kept on the phone.
-             Bound only by the system, and only once the user turns it on. -->
-        <service
-            android:name=".capture.ReplyCaptureService"
-            android:exported="true"
-            android:label="@string/reply_capture_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/reply_capture_config" />
-        </service>
-
         <!-- Spec 17.1: exactly two foreground services. -->
         <service
             android:name=".capture.ResidencyService"

@@ -113,7 +113,7 @@ class CaptureCoordinator(
             groupName = resolved.groupName,
             chosen = settings.groupPolicy,
             ownNames = settings.ownNames,
-            alwaysWatch = settings.groupsAlwaysWatch,
+            alwaysWatch = settings.groupsAlwaysWatch + settings.priorityChats,
             neverWatch = settings.groupsNeverWatch,
         )
 

@@ -3,7 +3,7 @@
 > This file is an export of the living manual, refreshed with each release and attached to every
 > GitHub release as `TaskMind-User-Manual.md`.
 
-Nov 16, 2026 · @RJ · For TaskMind 1.36.1
+Nov 16, 2026 · @RJ · For TaskMind 1.37.0
 
 ## Welcome
 
@@ -403,21 +403,9 @@ The history is memory, not a task source: it is what the Twin, search, person pa
 
 The memory is kept until you erase it: both erase buttons under Keeping and deleting empty it. Messages captured live also move into it when their keeping period ends, so the Twin no longer forgets after 30 days.
 
-### Your WhatsApp replies
+### Your own replies
 
-Notifications only show what other people send you, so TaskMind used to see one side of every chat. Turn on **Your WhatsApp replies** and it also keeps what you send.
-
-1. Open **Settings, You and your chats, Your WhatsApp replies** and tap **Open accessibility settings**.
-2. Open **Installed apps** (or **Downloaded apps**), pick **TaskMind: keep my WhatsApp replies** and switch it on.
-3. If Android says the setting is restricted (it does for apps installed outside the Play Store), open **App info** for TaskMind, tap the three dots at the top right, choose **Allow restricted settings**, and switch it on again.
-
-The card then shows **On** and how many replies it has kept.
-
-**What it does and does not do.** It reads WhatsApp and WhatsApp Business only, and keeps a message only when you press send, together with the chat's name from the top of the screen. A message you type and delete is never kept. What it keeps goes into the memory on the phone and nowhere else; it makes no AI call of its own.
-
-**What you get.** When TaskMind reads a message, your replies from the same stretch of the chat are put next to theirs, so "Can you send the PO?" followed by your "Sure, by 5" becomes a task due at 5. Your replies also show in Search my chats, on person pages, in the "last thing said" of call and meeting briefings, and in the examples that make drafts sound like you. Voice notes, photos and stickers are not kept.
-
-To stop, switch it off in the same Android page. Erasing the memory removes the replies it kept.
+Your own WhatsApp messages reach TaskMind through the nightly backup (see Your WhatsApp history), so when a message is read your recent replies in that chat sit next to it: "Can you send the PO?" followed by your "Sure, by 5" becomes a task due at 5. (Version 1.35 read them live with an accessibility permission; that was removed in 1.37 because banking apps refuse to work while such a permission is on. If you had turned it on, Android switches it off with the update.)
 
 ### Search by meaning
 
@@ -688,6 +676,20 @@ A matter is a project, a deal, a hire or a case: anything that will produce more
 - To file many loose tasks at once, use **Tidy up your list** and **Suggest matters** (see Your task list). You tick which suggestions to accept.
 - Matters cannot be renamed or deleted yet. A matter with nothing open in the current view is simply not shown.
 
+### Priority people and groups
+
+Mark the people and groups whose asks you must never miss: **Settings, You and your chats, Priority people and groups** (type a name and tap the matching chat), or the **Priority** switch at the top of a person's page.
+
+For a priority chat:
+
+- Every message in a priority group is read, whatever your group rule says.
+- The AI is told the chat matters, so a borderline ask is treated as a task rather than dropped.
+- Its tasks skip the Inbox and are never left as a quiet maybe: they go straight onto your list at **High** priority or above.
+- The alert comes at once, on top of the screen, in its own **Priority tasks** notification category, even if another task alerted a moment ago.
+- Each morning, after WhatsApp's nightly backup has been read, TaskMind checks these chats for messages that no notification showed you (a muted chat, a message rolled into a summary, a phone that held the app back) and reads those too. They appear marked *from the backup*.
+
+A chat you have muted in WhatsApp shows no notification, so TaskMind only sees it the next morning. To keep a priority chat quiet but still visible: unmute it, then in WhatsApp open the chat, tap its name, **Notifications** (or **Custom notifications**), and set the tone to **None**.
+
 ### People
 
 The **People** view in the Tasks tab lists everyone you have something open with, busiest first. Each row reads like *You owe 2, they owe you 1 - Send the revised deck*, where the last part is the soonest item between you.
@@ -785,7 +787,7 @@ Tap **Use this rule** or **No**; an idea you said no to is never suggested again
 
 Nothing here needs changing for everyday use.
 
-- **Settings, Advanced, Accuracy** sets the two thresholds by hand, how exactly the quoted words must match for messages, pasted transcripts and calls, the **Quick check first** switch (see What it costs) and the **Second-opinion pass** (on by default: a second AI call reviews each candidate, at the cost of one extra call). **Reset to defaults** undoes it all.
+- **Settings, Advanced, Accuracy** sets the two thresholds by hand, how exactly the quoted words must match for messages, pasted transcripts and calls, and the **Second-opinion pass** (on by default: a second AI call reviews each candidate, at the cost of one extra call). **Reset to defaults** undoes it all.
 - **Prompts** (in Health, under Diagnostics) shows the exact instructions the AI follows for messages, calls, email and the second opinion. **Read and edit** changes one, effective on the next message; **Reset** puts it back. Keep the reply format and the quoting rule intact, or tasks start being thrown away.
 
 ## The web page
@@ -861,7 +863,7 @@ TaskMind keeps your data on the phone and sends only what a job needs, only to s
 | Your AI provider (OpenAI's gpt-4o-mini unless you changed it) | The text of messages that pass the free filter, email text (cleaned, at most 3,000 characters), brain dumps, shared text, the words read from screenshots, plus About you, your names, rules, areas and the titles of related open tasks | Each time something is read |
 | Your AI provider, only when you tap **Send and draft** in About you | A sample of messages you wrote (about 9,000 characters, numbers, emails and links masked), shown to you first | Once per draft |
 | Your AI provider, when you draft a nudge or reply | The task, the person's quoted words and, if your history is imported, up to ten of your own recent messages to them (masked) | Each draft |
-| Your AI provider, if Your WhatsApp replies is on | Your own replies from the same stretch of a chat, as part of the context when a message from that chat is read | Each time something is read |
+| Your AI provider, once your WhatsApp history is imported | Your own replies from the same stretch of a chat, as part of the context when a message from that chat is read; and, for priority chats, messages from the backup that no notification showed | Each time something is read |
 | Your Supabase project (the web page), when you ask the Twin there | The question, the answer, the titles of the tasks it names, and up to 8 message snippets it used (each at most 280 characters, with numbers, emails and links masked). Deleted after 30 days, or with **Delete** on the page | Each web question |
 | Your backup AI provider, if you set one (OpenRouter by default) | The same text, but only for a call the main provider could not answer | When the main provider fails |
 | The same provider | Your question with your tasks, today's meetings and, if Search my messages is on, a few short snippets of your own messages | Each Twin question, plan or nudge draft |
@@ -916,10 +918,6 @@ Under **Your data**:
 The backup holds tasks only, not settings, keys or captured messages. On a new phone, install TaskMind, go through setup, enter your keys again, then restore.
 
 ### What it costs
-
-**The quick check (on by default with Groq).** Before the full read, a small, cheap model (`llama-3.1-8b-instant` on your Groq key) looks at each chat message with a short prompt of a few hundred tokens and answers *task*, *maybe* or *none*. Messages the phone can already see might matter (a question mark, any number such as a time, date or amount, or a word that usually carries an ask or a plan, like *send, pay, call, kal, bhej, kar dena*) are never given to the quick check at all; they always get the full read. Of the rest, only a confident *none* (90% or more) stops the message there; the full read of 4,000 or more tokens is skipped. Everything else (*task*, *maybe*, an unsure *none*, an unreadable answer or an error) goes on to the full read exactly as before, and so does any message the phone's own first read already marked as a task. On Groq the small model has its own daily allowance, separate from the main model's. Turn it off, or name a different small model, in **Settings, Advanced, Accuracy**. **Model calls** shows each check as *quick-check*, and the activity log says when a full read was skipped.
-
-**It checks itself.** One in five messages the quick check would skip is read in full anyway. If those full reads find a real task twice within the last 20 checks, the quick check switches itself off, a notification says so, and every message gets the full read again until you turn it back on.
 
 There are no daily caps. They used to hold captures back until midnight once a busy day had used them up, which is the opposite of what a second mind is for. Everything is read as soon as it arrives, on Wi-Fi or mobile data, and **Health** shows today's model calls and minutes of call audio so the spending stays visible.
 

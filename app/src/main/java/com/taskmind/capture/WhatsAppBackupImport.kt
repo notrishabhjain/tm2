@@ -130,6 +130,8 @@ class WhatsAppBackupImport(private val container: AppContainer) {
             // New history to search by meaning, if the model is there.
             container.semanticIndex.forget()
             container.applicationScope.launch { container.semanticIndex.run() }
+            // Priority chats' messages that no notification showed (v1.37).
+            container.applicationScope.launch { runCatching { container.priorityCatchUp.run() } }
             container.logger.write(
                 Stage.CAPTURE,
                 LogLevel.INFO,
