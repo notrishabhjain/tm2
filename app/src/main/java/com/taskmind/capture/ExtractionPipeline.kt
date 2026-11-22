@@ -65,7 +65,21 @@ class ExtractionPipeline(
     private val firstReads: FirstReads? = null,
     /** Screens chat messages before the full read (v1.34); null always reads in full. */
     private val quickChecker: com.taskmind.ai.QuickChecker? = null,
+    /** Keeps the quick check honest (v1.36.1); null runs without the audit. */
+    private val quickAudit: QuickAudit? = null,
+    /** When the main provider may next be asked after a rate limit; 0 when it is not resting. */
+    private val mainRestingUntil: () -> Long = { 0L },
 ) {
+
+    /** Where the quick check's audits are remembered, and what happens when it keeps missing. */
+    interface QuickAudit {
+        /** Counts confident "none"s; true for the ones to read in full anyway. */
+        fun sampleThis(): Boolean
+        fun history(): String
+        fun save(history: String)
+        /** The audits caught the check missing tasks: switch it off and tell the user. */
+        suspend fun stop(misses: Int)
+    }
 
     sealed interface Outcome {
         data class Done(val created: Int, val review: Int, val dropped: Int, val updated: Int = 0) : Outcome
@@ -242,9 +256,12 @@ class ExtractionPipeline(
 
         // The quick check. Skipped when the phone's own first read already
         // saw a task here: a disagreement goes to the full read to settle.
+        // Also skipped (v1.36.1) for anything the phone can see might matter:
+        // a question, a number, an ask or a plan - see QuickCheck.mustRead.
         val pendingReads = firstReads?.pending(burstIds).orEmpty()
         val checker = quickChecker
-        if (checker != null && pendingReads.isEmpty()) {
+        var audited = false
+        if (checker != null && pendingReads.isEmpty() && !com.taskmind.core.QuickCheck.mustRead(text)) {
             val decision = runCatching {
                 checker.check(
                     sender = context.sender,
@@ -264,7 +281,10 @@ class ExtractionPipeline(
                     "tokens=${decision.tokens ?: "?"} sender=${context.sender}",
                 )
             }
-            if (com.taskmind.core.QuickCheck.skip(decision)) {
+            if (com.taskmind.core.QuickCheck.skip(decision) && quickAudit?.sampleThis() == true) {
+                // Read this one in full anyway, and see whether the check was right.
+                audited = true
+            } else if (com.taskmind.core.QuickCheck.skip(decision)) {
                 rawCaptureDao.setState(capture.id, CaptureState.REJECTED)
                 logger.write(
                     Stage.EXTRACT,
@@ -297,6 +317,8 @@ class ExtractionPipeline(
             "tokens=${extraction.tokens ?: "?"} reasoning=${extraction.reasoning?.take(300)}",
         )
 
+        if (audited) auditQuickCheck(missed = extraction.isTask || extraction.done != null, text)
+
         val marked = extraction.done?.let { markDone(capture, it, text, block, context.sender) } ?: 0
         val reads = firstReads?.pending(burstIds).orEmpty()
 
@@ -317,6 +339,22 @@ class ExtractionPipeline(
         val (remaining, confirmed) = reconcile(reads, candidates, text, capture, block)
         val outcome = submitAll(capture, remaining, text, context.label(capture.sourceLabel), block)
         return outcome.withUpdated(updated + marked + confirmed, capture)
+    }
+
+    private suspend fun auditQuickCheck(missed: Boolean, text: String) {
+        val audit = quickAudit ?: return
+        val history = com.taskmind.core.QuickCheck.record(audit.history(), missed)
+        audit.save(history)
+        logger.write(
+            Stage.EXTRACT,
+            if (missed) LogLevel.WARN else LogLevel.INFO,
+            if (missed) "quick check audit: it would have skipped a task" else "quick check audit: agreed",
+            if (missed) text.take(200) else null,
+        )
+        if (com.taskmind.core.QuickCheck.shouldStop(history)) {
+            audit.stop(history.count { it == '1' })
+            audit.save("")
+        }
     }
 
     // ---------------------------------------------------------- first reads
@@ -756,6 +794,28 @@ class ExtractionPipeline(
                 },
             )
             return Outcome.BudgetHeld("provider rate limited")
+        }
+
+        // v1.36.1: the main provider is resting after a rate limit, so this
+        // answer came from the backup, and it was not usable. Retrying it on
+        // the backup would only spend attempts until the capture is given up
+        // on; wait for the main provider instead, without charging an attempt.
+        val resting = mainRestingUntil()
+        if (resting > now && (result is AiResult.BadResponse || result is AiResult.NetworkError || result is AiResult.HttpError)) {
+            rawCaptureDao.setRetry(
+                id = capture.id,
+                state = CaptureState.PENDING_EXTRACTION,
+                attemptCount = capture.attemptCount,
+                error = "backup's answer was not usable: $error",
+                nextAttemptAt = resting + 30_000,
+            )
+            logger.write(
+                Stage.EXTRACT,
+                LogLevel.WARN,
+                "backup provider's answer was not usable - waiting ${formatDuration(resting - now)} for the main provider",
+                error,
+            )
+            return Outcome.Parked("waiting for the main provider")
         }
 
         val configurationError = result is AiResult.HttpError && result.configuration

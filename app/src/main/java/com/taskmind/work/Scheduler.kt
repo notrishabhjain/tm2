@@ -39,6 +39,7 @@ object Scheduler {
     private const val WORK_MAINTENANCE = "taskmind.maintenance"
     private const val WORK_RETENTION = "taskmind.retention"
     private const val WORK_SEMANTIC = "taskmind.semantic_index"
+    private const val WORK_WA_REFRESH = "taskmind.whatsapp_refresh"
     private const val WORK_UPDATE = "taskmind.update_check"
     private const val WORK_SYNC = "taskmind.web_sync"
     private const val WORK_ONGOING = "taskmind.ongoing_reminder"
@@ -128,6 +129,19 @@ object Scheduler {
             ExistingPeriodicWorkPolicy.KEEP,
             PeriodicWorkRequestBuilder<com.taskmind.work.SemanticIndexWorker>(30, TimeUnit.MINUTES)
                 .setConstraints(androidx.work.Constraints.Builder().setRequiresBatteryNotLow(true).build())
+                .build(),
+        )
+        // WhatsApp's nightly backup, read again once it is newer (v1.36.1).
+        wm(context).enqueueUniquePeriodicWork(
+            WORK_WA_REFRESH,
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<com.taskmind.capture.WhatsAppRefreshWorker>(6, TimeUnit.HOURS)
+                .setConstraints(
+                    androidx.work.Constraints.Builder()
+                        .setRequiresBatteryNotLow(true)
+                        .setRequiresStorageNotLow(true)
+                        .build(),
+                )
                 .build(),
         )
         wm(context).enqueueUniquePeriodicWork(

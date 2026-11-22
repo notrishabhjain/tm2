@@ -3,7 +3,7 @@
 > This file is an export of the living manual, refreshed with each release and attached to every
 > GitHub release as `TaskMind-User-Manual.md`.
 
-Nov 16, 2026 · @RJ · For TaskMind 1.36.0
+Nov 16, 2026 · @RJ · For TaskMind 1.36.1
 
 ## Welcome
 
@@ -397,7 +397,9 @@ TaskMind can read every WhatsApp chat at once, both sides, from WhatsApp's own b
 4. Finish, tap **Back up**, and wait for it to complete.
 5. In TaskMind, open **Settings, You and your chats, Your WhatsApp history**, type the key and tap **Read my chats**.
 
-A large backup takes a few minutes. When it finishes the card shows how many messages and chats were read. **Read again** after a later WhatsApp backup adds only what is new; the key is remembered. If the backup is not found, allow **All files access** on Health or use **Choose the file**.
+A large backup takes a few minutes. When it finishes the card shows how many messages and chats were read. After that it **keeps itself up to date**: WhatsApp writes a new backup every night (unless you changed that in WhatsApp), and TaskMind reads the new messages from it on its own, a few hours later, while the battery is not low. **Read again** still does it at once. The key is remembered.
+
+The history is memory, not a task source: it is what the Twin, search, person pages and briefings answer from. Tasks come from messages as they arrive (notifications, and your replies if that is on), never from old history. If the backup is not found, allow **All files access** on Health or use **Choose the file**.
 
 The memory is kept until you erase it: both erase buttons under Keeping and deleting empty it. Messages captured live also move into it when their keeping period ends, so the Twin no longer forgets after 30 days.
 
@@ -915,7 +917,9 @@ The backup holds tasks only, not settings, keys or captured messages. On a new p
 
 ### What it costs
 
-**The quick check (on by default with Groq).** Before the full read, a small, cheap model (`llama-3.1-8b-instant` on your Groq key) looks at each chat message with a short prompt of a few hundred tokens and answers *task*, *maybe* or *none*. Only a confident *none* (85% or more) stops the message there; the full read of 4,000 or more tokens is skipped. Everything else (*task*, *maybe*, an unsure *none*, an unreadable answer or an error) goes on to the full read exactly as before, and so does any message the phone's own first read already marked as a task. On Groq the small model has its own daily allowance, separate from the main model's. Turn it off, or name a different small model, in **Settings, Advanced, Accuracy**. **Model calls** shows each check as *quick-check*, and the activity log says when a full read was skipped.
+**The quick check (on by default with Groq).** Before the full read, a small, cheap model (`llama-3.1-8b-instant` on your Groq key) looks at each chat message with a short prompt of a few hundred tokens and answers *task*, *maybe* or *none*. Messages the phone can already see might matter (a question mark, any number such as a time, date or amount, or a word that usually carries an ask or a plan, like *send, pay, call, kal, bhej, kar dena*) are never given to the quick check at all; they always get the full read. Of the rest, only a confident *none* (90% or more) stops the message there; the full read of 4,000 or more tokens is skipped. Everything else (*task*, *maybe*, an unsure *none*, an unreadable answer or an error) goes on to the full read exactly as before, and so does any message the phone's own first read already marked as a task. On Groq the small model has its own daily allowance, separate from the main model's. Turn it off, or name a different small model, in **Settings, Advanced, Accuracy**. **Model calls** shows each check as *quick-check*, and the activity log says when a full read was skipped.
+
+**It checks itself.** One in five messages the quick check would skip is read in full anyway. If those full reads find a real task twice within the last 20 checks, the quick check switches itself off, a notification says so, and every message gets the full read again until you turn it back on.
 
 There are no daily caps. They used to hold captures back until midnight once a busy day had used them up, which is the opposite of what a second mind is for. Everything is read as soon as it arrives, on Wi-Fi or mobile data, and **Health** shows today's model calls and minutes of call audio so the spending stays visible.
 

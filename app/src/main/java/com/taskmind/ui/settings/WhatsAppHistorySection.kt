@@ -56,6 +56,7 @@ fun WhatsAppHistorySection() {
     var hasSavedKey by remember { mutableStateOf(false) }
     var showSteps by rememberSaveable { mutableStateOf(false) }
     var stats by remember { mutableStateOf(MemoryStore.Stats(0, 0, null, null)) }
+    var lastRefresh by remember { mutableStateOf(0L) }
     var found by remember { mutableStateOf<String?>(null) }
 
     // Counts and the backup's whereabouts, read off the main thread, and
@@ -67,6 +68,7 @@ fun WhatsAppHistorySection() {
             found = runCatching { importer.findBackup() }.getOrNull()?.let { file ->
                 "Backup found, last written ${DateFormats.full(file.lastModified())}"
             }
+            lastRefresh = importer.lastRefresh()
         }
     }
 
@@ -92,6 +94,13 @@ fun WhatsAppHistorySection() {
                 "In memory: ${stats.messages} messages from ${stats.chats} chats" +
                     (stats.oldest?.let { ", going back to ${DateFormats.full(it)}" } ?: ""),
                 style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                "Kept up to date on its own: when WhatsApp writes a new backup (every night, unless you changed " +
+                    "it in WhatsApp), TaskMind reads the new messages from it." +
+                    (if (lastRefresh > 0) " Last read: ${DateFormats.full(lastRefresh)}." else ""),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
         }

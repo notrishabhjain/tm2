@@ -271,6 +271,8 @@ class AppContainer(context: Context) {
             emailAddresses = { emailStore.current().mine },
             firstReads = instantCapture,
             quickChecker = quickChecker,
+            quickAudit = com.taskmind.capture.QuickAuditStore(appContext, this),
+            mainRestingUntil = { llmClient.restingUntilAny() },
         )
     }
 

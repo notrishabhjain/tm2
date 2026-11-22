@@ -85,12 +85,27 @@ class SyncSecrets(context: Context) {
     /**
      * Held in memory only. It expires within the hour, so persisting it buys
      * nothing and widens what a backup extraction would yield.
+     *
+     * Shared by every instance (v1.36.1). Each sync run and each look for web
+     * questions makes its own SyncSecrets; with the token per instance, every
+     * one of them signed in afresh - once a minute for the web Twin.
      */
-    @Volatile
-    var accessToken: String = ""
+    var accessToken: String
+        get() = Memory.accessToken
+        set(value) {
+            Memory.accessToken = value
+        }
 
-    @Volatile
-    var accessTokenExpiresAt: Long = 0L
+    var accessTokenExpiresAt: Long
+        get() = Memory.expiresAt
+        set(value) {
+            Memory.expiresAt = value
+        }
+
+    private object Memory {
+        @Volatile var accessToken: String = ""
+        @Volatile var expiresAt: Long = 0L
+    }
 
     fun signedIn(): Boolean = refreshToken.isNotBlank()
 

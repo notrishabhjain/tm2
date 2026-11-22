@@ -128,6 +128,13 @@ class LlmClient(
 
     private fun keyOf(config: Config) = config.baseUrl.trimEnd('/') + "|" + config.model
 
+    /** When the main provider in [config] may next be asked; 0 when it is not resting (v1.36.1). */
+    fun restingUntil(config: Config): Long =
+        primaryRest?.takeIf { it.first == keyOf(config) }?.second?.takeIf { it > System.currentTimeMillis() } ?: 0L
+
+    /** The same, for whichever main provider last rested; for callers without a config at hand. */
+    fun restingUntilAny(): Long = primaryRest?.second?.takeIf { it > System.currentTimeMillis() } ?: 0L
+
     /** One provider: the JSON-mode attempt, the plain retry if needed, and the record. */
     private suspend fun once(
         config: Config,

@@ -415,6 +415,26 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         postSafely(ID_CALL_BRIEF, notification)
     }
 
+    /** The quick check's audit caught it skipping real tasks, so it was switched off (v1.36.1). */
+    fun postQuickCheckOff(misses: Int) {
+        if (!canPost()) return
+        val notification = NotificationCompat.Builder(context, CHANNEL_REVIEW)
+            .setSmallIcon(R.drawable.ic_stat_taskmind)
+            .setContentTitle("Quick check switched off")
+            .setContentText("It would have skipped $misses real task(s). Every message gets the full read again.")
+            .setStyle(
+                NotificationCompat.BigTextStyle().bigText(
+                    "TaskMind checks a sample of the messages the quick check skips. It would have skipped $misses " +
+                        "real task(s), so it has been switched off and every chat message gets the full read again. " +
+                        "You can turn it back on in Settings, Advanced, Accuracy.",
+                ),
+            )
+            .setContentIntent(contentIntent(ROUTE_TASKS))
+            .setAutoCancel(true)
+            .build()
+        postSafely(ID_QUICK_CHECK_OFF, notification)
+    }
+
     /** After a meeting: one tap to note what was agreed. */
     fun postMeetingFollowUp(title: String) {
         if (!canPost()) return
@@ -520,6 +540,7 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         const val ID_CHASE = 1010
         const val ID_CALL_AFTER = 1011
         const val ID_CALL_BRIEF = 1012
+        const val ID_QUICK_CHECK_OFF = 1013
         const val ID_UPDATE = 1002
         const val ID_FOREGROUND_WORKER = 1101
         const val ID_FOREGROUND_RESIDENCY = 1102
