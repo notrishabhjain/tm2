@@ -80,6 +80,8 @@ data class Settings(
 
     /** Groups where everything is read, whatever [groupPolicy] says. */
     val groupsAlwaysWatch: Set<String> = emptySet(),
+    /** People and groups whose asks matter most (v1.37); see PriorityChats. */
+    val priorityChats: Set<String> = emptySet(),
 
     /** Groups that are never read at all. */
     val groupsNeverWatch: Set<String> = emptySet(),
@@ -135,13 +137,6 @@ data class Settings(
     val clipboardTolerance: Double = 0.85,
     val callTolerance: Double = 0.75,
     val verifyPass: Boolean = true,
-    /**
-     * The quick check (v1.34): a small model screens each chat message and
-     * the full read is skipped only when it is confident there is nothing.
-     */
-    val quickCheck: Boolean = true,
-    /** Blank: a small Groq model when the main provider is Groq, else off. */
-    val quickCheckModel: String = "",
 
     /**
      * The phone's own first read of a message (see QuickRead): a clear ask or

@@ -14,7 +14,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,6 +69,15 @@ class ChatsViewModel(private val container: AppContainer) : ViewModel() {
     val person: StateFlow<PersonState> = _person.asStateFlow()
 
     private var searchJob: Job? = null
+
+    /** The priority people and groups (v1.37), for the person page's switch. */
+    val priorityChats: StateFlow<Set<String>> = container.settingsRepository.settings
+        .map { it.priorityChats }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    fun setPriority(name: String, on: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setPriorityChat(name, on) }
+    }
 
     // ----------------------------------------------------------- search
 

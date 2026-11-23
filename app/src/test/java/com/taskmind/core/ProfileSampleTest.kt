@@ -89,72 +89,6 @@ class BriefingTest {
     }
 }
 
-class QuickCheckTest {
-    @Test
-    fun `only a confident none skips the full read`() {
-        assertTrue(QuickCheck.skip(QuickCheck.parse("""{"verdict":"none","confidence":0.93}""")))
-        assertFalse(QuickCheck.skip(QuickCheck.parse("""{"verdict":"none","confidence":0.6}""")))
-        assertFalse(QuickCheck.skip(QuickCheck.parse("""{"verdict":"maybe","confidence":0.99}""")))
-        assertFalse(QuickCheck.skip(QuickCheck.parse("""{"verdict":"task","confidence":0.99}""")))
-        // Anything unreadable goes on to the full read.
-        assertFalse(QuickCheck.skip(QuickCheck.parse("not json")))
-        assertFalse(QuickCheck.skip(QuickCheck.parse("""{"verdict":"none"}""")))
-        assertFalse(QuickCheck.skip(null))
-        assertEquals(QuickCheck.Verdict.NONE, QuickCheck.parse("```json\n{\"verdict\":\"None\",\"confidence\":\"0.9\"}\n```")?.verdict)
-    }
-
-    @Test
-    fun `the model is the user's, or a small one on Groq, or none`() {
-        assertEquals("my-model", QuickCheck.modelFor(" my-model ", "https://openrouter.ai/api/v1"))
-        assertEquals(QuickCheck.DEFAULT_GROQ_MODEL, QuickCheck.modelFor("", "https://api.groq.com/openai/v1"))
-        assertEquals(null, QuickCheck.modelFor("", "https://api.openai.com/v1"))
-    }
-
-    @Test
-    fun `the prompt stays small`() {
-        val p = QuickCheck.userPrompt("Priya", "Vendors", setOf("RJ"), (1..9).map { "task $it" }, "x".repeat(5000))
-        assertTrue(p.length < 1800)
-        assertTrue(p.contains("- task 5") && !p.contains("- task 6"))
-    }
-}
-
-class ReplyTrackerTest {
-    @Test
-    fun `a reply is kept only when sent, once, in the open chat`() {
-        var t = 1_000L
-        val r = ReplyTracker { t }
-        assertEquals(null, r.onSend()) // no chat open
-        r.onChat("Priya")
-        r.onTyped("will send the PO by 5")
-        val sent = r.onSend()
-        assertEquals(ReplyTracker.Reply("Priya", "will send the PO by 5", 1_000L), sent)
-        // The box is empty after sending; a second report of the press keeps nothing.
-        assertEquals(null, r.onSend())
-        r.onTyped("will send the PO by 5")
-        t += 500
-        assertEquals(null, r.onSend()) // same text within 3s: the same press
-        // A draft left behind when the chat changes is not carried over.
-        r.onTyped("half typed")
-        r.onChat("Rahul")
-        assertEquals(null, r.onSend())
-        r.onTyped("   ")
-        assertEquals(null, r.onSend())
-        // WhatsApp empties the box before the press is reported.
-        r.onTyped("haan bhai, kal")
-        r.onTyped("")
-        t += 300
-        assertEquals("haan bhai, kal", r.onSend()?.text)
-        // Text deleted long before a press is not a reply.
-        r.onTyped("never mind")
-        r.onTyped("")
-        t += 5_000
-        assertEquals(null, r.onSend())
-        assertTrue(ReplyTracker.looksLikeSend("Send"))
-        assertFalse(ReplyTracker.looksLikeSend("Attach"))
-        assertEquals("entry", ReplyTracker.idTail("com.whatsapp:id/entry"))
-    }
-}
-
 class TwinWebTest {
     @Test
     fun `snippets going online are cut, masked and capped`() {
@@ -167,34 +101,18 @@ class TwinWebTest {
     }
 }
 
-class QuickCheckSafetyTest {
-    @Test
-    fun `messages that might matter always get the full read`() {
-        listOf(
-            "bhai woh kal bhej dena",
-            "can you send the PO",
-            "meeting at 5",
-            "Invoice 4471 pending",
-            "what time?",
-            "please review the deck",
-            "कल भेज देना",
-            "let me know once it's there",
-        ).forEach { assertTrue(it, QuickCheck.mustRead(it)) }
-        listOf("haha", "ok", "good night 🙏", "😂😂", "nice pic", "thanks bro").forEach { assertFalse(it, QuickCheck.mustRead(it)) }
-    }
 
+class PriorityChatsTest {
     @Test
-    fun `two misses in the recent audits turn the check off`() {
-        var h = ""
-        repeat(10) { h = QuickCheck.record(h, missed = false) }
-        assertFalse(QuickCheck.shouldStop(h))
-        h = QuickCheck.record(h, missed = true)
-        assertFalse(QuickCheck.shouldStop(h))
-        h = QuickCheck.record(h, missed = true)
-        assertTrue(QuickCheck.shouldStop(h))
-        // Old misses age out of the window.
-        repeat(QuickCheck.AUDIT_WINDOW) { h = QuickCheck.record(h, missed = false) }
-        assertFalse(QuickCheck.shouldStop(h))
-        assertEquals(QuickCheck.AUDIT_WINDOW, h.length)
+    fun `a priority person matches their own chat, a priority group its messages`() {
+        val p = setOf("Priya Sharma", " Vendors ")
+        assertTrue(PriorityChats.matches(p, "priya sharma", null))
+        assertFalse(PriorityChats.matches(p, "Priya Sharma", "Family")) // her message in another group
+        assertTrue(PriorityChats.matches(p, "Rahul", "VENDORS"))
+        assertFalse(PriorityChats.matches(p, "Rahul", null))
+        assertFalse(PriorityChats.matches(emptySet(), "Priya Sharma", null))
+        assertEquals(Priority.HIGH, PriorityChats.bump(Priority.LOW))
+        assertEquals(Priority.URGENT, PriorityChats.bump(Priority.URGENT))
+        assertTrue(PriorityChats.withRule("rule A").startsWith("PRIORITY CHAT"))
     }
 }

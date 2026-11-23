@@ -304,6 +304,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsRepository.setCaptureNotifications(value) }
     }
 
+    fun setPriorityChat(name: String, priority: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setPriorityChat(name, priority) }
+    }
+
     fun setCallBriefing(value: Boolean) {
         viewModelScope.launch { container.settingsRepository.setCallBriefing(value) }
     }
@@ -372,17 +376,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setTolerances(notification: Double, clipboard: Double, call: Double) {
         viewModelScope.launch { container.settingsRepository.setTolerances(notification, clipboard, call) }
-    }
-
-    fun setQuickCheck(value: Boolean) {
-        viewModelScope.launch { container.settingsRepository.setQuickCheck(value) }
-    }
-
-    fun setQuickCheckModel(value: String) {
-        viewModelScope.launch {
-            container.settingsRepository.setQuickCheckModel(value)
-            _ui.value = _ui.value.copy(message = "Quick check model saved.")
-        }
     }
 
     fun setVerifyPass(value: Boolean) {

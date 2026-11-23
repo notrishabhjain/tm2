@@ -69,7 +69,9 @@ class IntakeFunnelTest {
     private class FakeNotifier : TaskCreatedNotifier {
         val notified = mutableListOf<String>()
         val reviewNotified = mutableListOf<String>()
-        override suspend fun onTaskCreated(taskId: String, title: String) {
+        val alerts = mutableListOf<com.taskmind.intake.TaskAlert>()
+        override suspend fun onTaskCreated(taskId: String, title: String, alert: com.taskmind.intake.TaskAlert) {
+            alerts.add(alert)
             notified.add(title)
         }
 
@@ -132,6 +134,22 @@ class IntakeFunnelTest {
     )
 
     // ------------------------------------------------------------------ tests
+
+    @Test
+    fun `a priority chat's middling task is created, not left as a maybe, and alerts with who and when`() = runTest {
+        val h = Harness()
+        val c = notificationCandidate(confidence = (FunnelConfig.DEFAULT.reviewThreshold + FunnelConfig.DEFAULT.autoCreateThreshold) / 2)
+        assertTrue(h.funnel.submit(c) is IntakeResult.SentToReview)
+        val p = Harness()
+        val r = p.funnel.submit(c.copy(priorityChat = true, sourceRef = "n:prio"))
+        assertTrue(r is IntakeResult.Created)
+        val alert = p.notifier.alerts.single()
+        assertTrue(alert.priority)
+        assertEquals("Sharma Ji", alert.from)
+        assertNotNull(alert.dueAt)
+        // No confidence at all from a priority chat: still created.
+        assertTrue(Harness().funnel.submit(c.copy(priorityChat = true, confidence = null, sourceRef = "n:p2")) is IntakeResult.Created)
+    }
 
     @Test
     fun `a confident grounded notification creates a task`() = runTest {

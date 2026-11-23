@@ -49,6 +49,7 @@ class SettingsRepository(private val context: Context) {
         val areas = stringPreferencesKey("areas")
         val groupPolicy = stringPreferencesKey("group_policy")
         val groupsAlwaysWatch = stringSetPreferencesKey("groups_always_watch")
+        val priorityChats = stringSetPreferencesKey("priority_chats")
         val groupsNeverWatch = stringSetPreferencesKey("groups_never_watch")
         val captureNotifications = booleanPreferencesKey("capture_notifications")
         val captureEmailApps = booleanPreferencesKey("capture_email_apps")
@@ -66,8 +67,6 @@ class SettingsRepository(private val context: Context) {
         val clipboardTolerance = doublePreferencesKey("clipboard_tolerance")
         val callTolerance = doublePreferencesKey("call_tolerance")
         val verifyPass = booleanPreferencesKey("verify_pass")
-        val quickCheck = booleanPreferencesKey("quick_check")
-        val quickCheckModel = stringPreferencesKey("quick_check_model")
 
         // The old daily caps (max_llm_calls_per_day, max_asr_minutes_per_day,
         // max_llm_calls_per_package, wifi_only_asr) are no longer read: v1.29
@@ -127,6 +126,7 @@ class SettingsRepository(private val context: Context) {
             // than crashing - a saved value can outlive the enum it came from.
             groupPolicy = PreFilter.GroupPolicy.byName(this[K.groupPolicy]) ?: d.groupPolicy,
             groupsAlwaysWatch = this[K.groupsAlwaysWatch] ?: d.groupsAlwaysWatch,
+            priorityChats = this[K.priorityChats] ?: d.priorityChats,
             groupsNeverWatch = this[K.groupsNeverWatch] ?: d.groupsNeverWatch,
             captureNotifications = this[K.captureNotifications] ?: d.captureNotifications,
             captureEmailApps = this[K.captureEmailApps] ?: d.captureEmailApps,
@@ -143,8 +143,6 @@ class SettingsRepository(private val context: Context) {
             clipboardTolerance = this[K.clipboardTolerance] ?: d.clipboardTolerance,
             callTolerance = this[K.callTolerance] ?: d.callTolerance,
             verifyPass = this[K.verifyPass] ?: d.verifyPass,
-            quickCheck = this[K.quickCheck] ?: d.quickCheck,
-            quickCheckModel = this[K.quickCheckModel] ?: d.quickCheckModel,
             instantCapture = this[K.instantCapture] ?: d.instantCapture,
             reviewExpiryDays = this[K.reviewExpiryDays] ?: d.reviewExpiryDays,
             retentionDays = this[K.retentionDays] ?: d.retentionDays,
@@ -214,6 +212,14 @@ class SettingsRepository(private val context: Context) {
     suspend fun setCaptureEmailApps(value: Boolean) = edit { it[K.captureEmailApps] = value }
     suspend fun setEmailConnectedAddress(value: String) = edit { it[K.emailConnectedAddress] = value.trim() }
     suspend fun setCaptureCalls(value: Boolean) = edit { it[K.captureCalls] = value }
+
+    /** Marks or unmarks a person or group as a priority (v1.37). */
+    suspend fun setPriorityChat(name: String, priority: Boolean) = edit { prefs ->
+        val clean = name.trim()
+        if (clean.isEmpty()) return@edit
+        val rest = (prefs[K.priorityChats] ?: emptySet()).filterNot { it.equals(clean, ignoreCase = true) }.toSet()
+        prefs[K.priorityChats] = if (priority) rest + clean else rest
+    }
     suspend fun setCallBriefing(value: Boolean) = edit { it[K.callBriefing] = value }
 
     suspend fun setMinCallDuration(seconds: Long) = edit { it[K.minCallDuration] = seconds }
@@ -262,8 +268,6 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setVerifyPass(value: Boolean) = edit { it[K.verifyPass] = value }
-    suspend fun setQuickCheck(value: Boolean) = edit { it[K.quickCheck] = value }
-    suspend fun setQuickCheckModel(value: String) = edit { it[K.quickCheckModel] = value.trim() }
 
     suspend fun setInstantCapture(value: Boolean) = edit { it[K.instantCapture] = value }
     suspend fun setReviewExpiryDays(days: Int) = edit { it[K.reviewExpiryDays] = days }

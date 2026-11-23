@@ -15,6 +15,7 @@ import com.taskmind.MainActivity
 import com.taskmind.R
 import com.taskmind.core.Brief
 import com.taskmind.core.WeeklyReview
+import com.taskmind.intake.TaskAlert
 import com.taskmind.intake.TaskCreatedNotifier
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -50,6 +51,11 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         system.createNotificationChannel(
             NotificationChannel(CHANNEL_TASKS, "Tasks captured", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "A commitment was found in a message or a call and added to your list."
+            },
+        )
+        system.createNotificationChannel(
+            NotificationChannel(CHANNEL_PRIORITY, "Priority tasks", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "A task from a person or group you marked as a priority. Shown at once, on top of the screen."
             },
         )
         system.createNotificationChannel(
@@ -183,12 +189,13 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
      * sound is rationed now: a busy minute buzzes once, and the rest arrive
      * quietly beside it. Android bundles them once there are several.
      */
-    override suspend fun onTaskCreated(taskId: String, title: String) {
+    override suspend fun onTaskCreated(taskId: String, title: String, alert: TaskAlert) {
         if (!canPost()) return
         val now = System.currentTimeMillis()
-        val quiet = now - lastTaskAlertAt < TASK_ALERT_GAP_MILLIS
+        // A priority task always alerts; the rest share the one buzz a minute.
+        val quiet = !alert.priority && now - lastTaskAlertAt < TASK_ALERT_GAP_MILLIS
         if (!quiet) lastTaskAlertAt = now
-        postSafely(taskNotificationId(taskId), taskNotification(taskId, title, quiet))
+        postSafely(taskNotificationId(taskId), taskNotification(taskId, title, quiet, alert))
     }
 
     /**
@@ -208,13 +215,28 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         runCatching { manager.cancel(taskNotificationId(taskId)) }
     }
 
-    private fun taskNotification(taskId: String, title: String, quiet: Boolean): Notification {
+    /**
+     * v1.37: the alert says who it is from and when it is due, and the
+     * expanded view shows their words, so most tasks can be judged from the
+     * notification alone without opening the app.
+     */
+    private fun taskNotification(taskId: String, title: String, quiet: Boolean, alert: TaskAlert = TaskAlert()): Notification {
         val id = taskNotificationId(taskId)
-        return NotificationCompat.Builder(context, CHANNEL_TASKS)
+        val heading = buildString {
+            append(if (alert.priority) "Priority" else "New task")
+            alert.from?.let { append(" from ").append(it) }
+            alert.dueAt?.let { append(" - due ").append(com.taskmind.ui.components.DateFormats.due(it).replaceFirstChar { c -> c.lowercase() }) }
+        }
+        val body = buildString {
+            append(title)
+            alert.evidence?.takeIf { it.isNotBlank() }?.let { append("\n\n\u201c").append(it.take(300)).append("\u201d") }
+        }
+        return NotificationCompat.Builder(context, if (alert.priority) CHANNEL_PRIORITY else CHANNEL_TASKS)
             .setSmallIcon(R.drawable.ic_stat_taskmind)
-            .setContentTitle("Task captured")
+            .setContentTitle(heading)
             .setContentText(title)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(title))
+            .setPriority(if (alert.priority) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(contentIntent("$ROUTE_TASK_DETAIL/$taskId"))
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
@@ -415,26 +437,6 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         postSafely(ID_CALL_BRIEF, notification)
     }
 
-    /** The quick check's audit caught it skipping real tasks, so it was switched off (v1.36.1). */
-    fun postQuickCheckOff(misses: Int) {
-        if (!canPost()) return
-        val notification = NotificationCompat.Builder(context, CHANNEL_REVIEW)
-            .setSmallIcon(R.drawable.ic_stat_taskmind)
-            .setContentTitle("Quick check switched off")
-            .setContentText("It would have skipped $misses real task(s). Every message gets the full read again.")
-            .setStyle(
-                NotificationCompat.BigTextStyle().bigText(
-                    "TaskMind checks a sample of the messages the quick check skips. It would have skipped $misses " +
-                        "real task(s), so it has been switched off and every chat message gets the full read again. " +
-                        "You can turn it back on in Settings, Advanced, Accuracy.",
-                ),
-            )
-            .setContentIntent(contentIntent(ROUTE_TASKS))
-            .setAutoCancel(true)
-            .build()
-        postSafely(ID_QUICK_CHECK_OFF, notification)
-    }
-
     /** After a meeting: one tap to note what was agreed. */
     fun postMeetingFollowUp(title: String) {
         if (!canPost()) return
@@ -523,6 +525,7 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
 
     companion object {
         const val CHANNEL_TASKS = "tasks"
+        const val CHANNEL_PRIORITY = "priority_tasks"
         const val CHANNEL_REVIEW = "review"
         const val CHANNEL_REMINDERS = "reminders"
         const val CHANNEL_SERVICE = "service"
@@ -540,7 +543,6 @@ class Notifier(private val context: Context) : TaskCreatedNotifier {
         const val ID_CHASE = 1010
         const val ID_CALL_AFTER = 1011
         const val ID_CALL_BRIEF = 1012
-        const val ID_QUICK_CHECK_OFF = 1013
         const val ID_UPDATE = 1002
         const val ID_FOREGROUND_WORKER = 1101
         const val ID_FOREGROUND_RESIDENCY = 1102
